@@ -5,7 +5,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:  # e.g. isolated .venv-ddsp TF worker
+    load_dotenv = None
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ENV_LOADED = False
@@ -21,7 +24,8 @@ def load_project_env(*, repo_root: Path | None = None) -> None:
     if _ENV_LOADED:
         return
     root = repo_root or _REPO_ROOT
-    load_dotenv(root / ".env")
+    if load_dotenv is not None:
+        load_dotenv(root / ".env")
     _ENV_LOADED = True
 
 
