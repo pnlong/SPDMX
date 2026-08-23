@@ -26,7 +26,7 @@ hmmlearn
 tensorflow-datasets
 music21
 pandas
-# midi-ddsp/ddsp runtime deps (needed because those packages are installed --no-deps)
+# midi-ddsp/ddsp/note-seq runtime deps (needed because those packages are installed --no-deps)
 cloudml-hypertune
 google-cloud-storage
 dill
@@ -34,6 +34,13 @@ future
 pydub
 mir-eval
 resampy
+bokeh
+attrs
+intervaltree
+IPython
+h5py
+imageio
+scikit-learn
 # Then (see bootstrap_venv.sh):
 #   uv pip install --python .venv-ddsp nvidia-*-cu12 nvidia-cudnn-cu12==8.9.7.29
 #   uv pip install --python .venv-ddsp --no-deps ddsp==3.7.0 note-seq==0.0.3 crepe midi-ddsp
