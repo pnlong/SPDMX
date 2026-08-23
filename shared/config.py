@@ -2,17 +2,33 @@
 
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+from shared.env import load_project_env, path_from_env, repo_root
 
-PDMX_FILEPATH = "/deepfreeze/pnlong/PDMX/PDMX/PDMX.csv"
-OUTPUT_DIR = "/deepfreeze/pnlong/SPDMX"
+load_project_env()
+_REPO_ROOT = repo_root()
+
+# Machine-specific paths: copy .env.example → .env and edit (not this file).
+PDMX_FILEPATH = path_from_env(
+    "SPDMX_PDMX_FILEPATH",
+    "/deepfreeze/pnlong/PDMX/PDMX/PDMX.csv",
+)
+OUTPUT_DIR = path_from_env(
+    "SPDMX_OUTPUT_DIR",
+    "/deepfreeze/pnlong/SPDMX",
+)
 
 # Local soundfont library (symlinked at repo root via shared.setup_symlinks).
-SOUNDFONT_DIR = "/data3/pnlong/soundfonts"
+SOUNDFONT_DIR = path_from_env(
+    "SPDMX_SOUNDFONT_DIR",
+    "/data3/pnlong/soundfonts",
+)
 _REPO_SOUNDFONTS_SYMLINK = _REPO_ROOT / "soundfonts"
 if _REPO_SOUNDFONTS_SYMLINK.is_dir():
     SOUNDFONT_DIR = str(_REPO_SOUNDFONTS_SYMLINK)
-SOUNDFONT_PATH = f"{SOUNDFONT_DIR}/SGM-V2.01.sf2"
+SOUNDFONT_PATH = path_from_env(
+    "SPDMX_SOUNDFONT_PATH",
+    f"{SOUNDFONT_DIR}/SGM-V2.01.sf2",
+)
 
 CHUNK_SIZE = 1
 NA_STRING = "NA"

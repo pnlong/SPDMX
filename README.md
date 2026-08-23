@@ -26,7 +26,7 @@ For SA3 realify, submodule, flash-attention, and Hugging Face login, follow **Tr
 
 ## Usage
 
-Default output root: `/deepfreeze/pnlong/SPDMX` (`OUTPUT_DIR` in [`shared/config.py`](shared/config.py)).
+Default output root: `/deepfreeze/pnlong/SPDMX` (`SPDMX_OUTPUT_DIR` in [`.env`](.env.example); imported as `OUTPUT_DIR` from [`shared/config.py`](shared/config.py)).
 
 Development artifacts (ablations, analysis) live under `{OUTPUT_DIR}/dev/`. Production stems go to `{OUTPUT_DIR}/SPDMX/` via `synthesis.final`.
 
@@ -129,7 +129,8 @@ Also symlinks in-repo dev output (both gitignored; run `uv run python -m shared.
 | `synthesis/realify/` | SA3 wrapper + submodule |
 | `synthesis/realify/captions/` | Caption generation from PDMX metadata |
 | `analysis/` | Duration analysis and SA3 model recommendation — see [`analysis/README.md`](analysis/README.md) |
-| `shared/config.py` | Paths, ablation sample size, constants — see [`shared/README.md`](shared/README.md) |
+| `.env` | Machine paths (`SPDMX_PDMX_FILEPATH`, `SPDMX_OUTPUT_DIR`, …); copy from `.env.example` |
+| `shared/config.py` | Constants + path imports from `.env` — see [`shared/README.md`](shared/README.md) |
 | `shared/setup_symlinks.py` | Create in-repo symlinks after clone (`python -m shared.setup_symlinks`) |
 
 See [`synthesis/RENDERING_NOTES.md`](synthesis/RENDERING_NOTES.md) for Slakh alignment, ablation design, and listening test plans. Synthesis layout: [`synthesis/README.md`](synthesis/README.md).

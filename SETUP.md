@@ -22,6 +22,8 @@ Do **Track A** first. Add **Track B** when you need `--realify`.
 ```bash
 git clone <your-spdmx-repo-url> ~/spdmx
 cd ~/spdmx
+cp .env.example .env
+# edit .env for your PDMX / output / soundfont paths
 ```
 
 ### Install uv (user-local, not system Python)
@@ -65,15 +67,21 @@ Add the `export PATH=...` line to your shell when working on spdmx.
 
 ### Data paths (edit for your machine)
 
-Check [`shared/config.py`](shared/config.py):
+Copy the example env file and set paths for your storage layout:
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `PDMX_FILEPATH` | `/deepfreeze/pnlong/PDMX/PDMX/PDMX.csv` | PDMX metadata |
-| `OUTPUT_DIR` | `/deepfreeze/pnlong/SPDMX` | All spdmx outputs |
-| `SOUNDFONT_PATH` | `/data3/pnlong/soundfonts/SGM-V2.01.sf2` | fluidsynth soundfont |
+```bash
+cp .env.example .env
+# edit .env — SPDMX_PDMX_FILEPATH, SPDMX_OUTPUT_DIR, SPDMX_SOUNDFONT_DIR
+```
 
-Update these before running synthesis on a new machine.
+| Variable | Purpose |
+|----------|---------|
+| `SPDMX_PDMX_FILEPATH` | PDMX metadata CSV |
+| `SPDMX_OUTPUT_DIR` | All spdmx outputs |
+| `SPDMX_SOUNDFONT_DIR` | Soundfont library directory |
+| `SPDMX_SOUNDFONT_PATH` | (optional) Override default `SGM-V2.01.sf2` path |
+
+Python code still imports `PDMX_FILEPATH`, `OUTPUT_DIR`, etc. from [`shared/config.py`](shared/config.py); those names read from `.env` at import time. Non-path constants stay in `config.py`.
 
 ### GPU (Track B only)
 

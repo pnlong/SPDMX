@@ -8,6 +8,7 @@ dependencies = [
     "mido",
     "numpy",
     "pandas",
+    "python-dotenv",
     "pyyaml",
     "soundfile",
     "torch==2.7.1",
