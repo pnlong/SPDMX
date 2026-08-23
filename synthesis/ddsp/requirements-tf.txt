@@ -25,6 +25,7 @@ matplotlib
 hmmlearn
 tensorflow-datasets
 music21
+pandas
 # Then (see bootstrap_venv.sh):
 #   uv pip install --python .venv-ddsp nvidia-*-cu12 nvidia-cudnn-cu12==8.9.7.29
 #   uv pip install --python .venv-ddsp --no-deps ddsp==3.7.0 note-seq==0.0.3 crepe midi-ddsp

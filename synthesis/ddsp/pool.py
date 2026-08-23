@@ -281,7 +281,12 @@ class DdspWorkerPool:
                         f"{timeout:.0f}s\nstderr:\n{worker.stderr_tail()}"
                     )
                 print(f"DDSP GPU {worker.gpu_id} ready.", flush=True)
-        except Exception:
+        except Exception as exc:
+            from synthesis.job_log import get_job_log
+
+            log = get_job_log()
+            if log is not None:
+                log.fatal(exc, where="ddsp pool startup")
             for w in workers:
                 w.shutdown()
             raise

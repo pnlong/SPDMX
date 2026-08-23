@@ -18,7 +18,7 @@ PY=(uv pip install --python .venv-ddsp --no-build-isolation)
 # 2) TensorFlow + shared audio deps.
 "${PY[@]}" "tensorflow>=2.11,<2.16" "tensorflow-probability==0.23.0" \
   soundfile gin-config protobuf absl-py pretty_midi "librosa>=0.10" matplotlib \
-  hmmlearn tensorflow-datasets music21
+  hmmlearn tensorflow-datasets music21 pandas
 
 # 2b) CUDA 12 + cuDNN 8 pip wheels (TF 2.15). Host driver may be newer (e.g. 13.x);
 # synthesis.ddsp.env prepends these to LD_LIBRARY_PATH for the worker.

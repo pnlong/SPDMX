@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import multiprocessing
+import os
 import shutil
 import sys
 import tempfile
@@ -923,6 +924,51 @@ def _run_song_pool(
         dynamic_ncols=True,
     )
 
+    from synthesis.job_log import (
+        close_job_log,
+        get_job_log,
+        job_log_enabled,
+        open_job_log,
+    )
+
+    pass_name = getattr(args, "ddsp_pass", None) or "synthesis"
+    job_log = None
+    if job_log_enabled():
+        log_path = (
+            os.environ.get("SPDMX_SYNTH_LOG_PATH")
+            or str(Path(stems_output_filepath).parent / f"synthesis.{pass_name}.log")
+        )
+        job_log = open_job_log(
+            log_path,
+            synthesis_pass=pass_name,
+            desc=desc,
+            songs=len(work_indices),
+            tracks=track_total,
+            workers=jobs,
+            threads=use_threads,
+        )
+        print(f"Synthesis job log: {log_path}", flush=True)
+
+    def _synthesis_worker_logged(idx: int):
+        log = get_job_log()
+        path = str(dataset.at[idx, "path_output"])
+        if log is not None:
+            log.song_start(idx, path)
+        try:
+            result = _synthesis_worker(idx)
+        except Exception as exc:
+            if log is not None:
+                log.song_error(idx, path, exc)
+            raise
+        if log is not None:
+            _, _, _, _, n_progress = result
+            log.song_done(
+                idx,
+                path,
+                n_tracks=int(n_progress) if use_tracks else 1,
+            )
+        return result
+
     def _consume(result) -> None:
         song_info, stem_rows, routing_rows, recipe_rows, n_progress = result
         pbar.update(int(n_progress) if use_tracks else 1)
@@ -959,44 +1005,67 @@ def _run_song_pool(
             [song_info],
         )
 
-    if use_threads:
-        _preload_track_maps(args)
-        _init_synthesis_worker(dataset, completed_paths, args)
-        workers = max(1, int(jobs))
-        pending: set = set()
-        todo = iter(work_indices)
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            def _fill() -> None:
-                while len(pending) < workers:
-                    try:
-                        idx = next(todo)
-                    except StopIteration:
-                        return
-                    pending.add(pool.submit(_synthesis_worker, idx))
+    try:
+        if use_threads:
+            _preload_track_maps(args)
+            _init_synthesis_worker(dataset, completed_paths, args)
+            workers = max(1, int(jobs))
+            pending: set = set()
+            todo = iter(work_indices)
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                def _fill() -> None:
+                    while len(pending) < workers:
+                        try:
+                            idx = next(todo)
+                        except StopIteration:
+                            return
+                        pending.add(pool.submit(_synthesis_worker_logged, idx))
 
-            _fill()
-            while pending:
-                done, pending = wait(pending, return_when=FIRST_COMPLETED)
-                pending = set(pending)
-                for fut in done:
-                    _consume(fut.result())
                 _fill()
-        pbar.close()
-        return
+                while pending:
+                    try:
+                        done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                    except KeyboardInterrupt:
+                        if job_log is not None:
+                            job_log.interrupted(where="thread pool wait")
+                        raise
+                    pending = set(pending)
+                    for fut in done:
+                        try:
+                            _consume(fut.result())
+                        except Exception as exc:
+                            if job_log is not None:
+                                job_log.fatal(exc, where="thread pool result")
+                            raise
+                    _fill()
+            return
 
-    pool_ctx = (
-        multiprocessing.get_context("spawn")
-        if _pool_should_spawn(args)
-        else multiprocessing
-    )
-    with pool_ctx.Pool(
-        processes=jobs,
-        initializer=_init_synthesis_worker,
-        initargs=(dataset, completed_paths, args),
-    ) as pool:
-        for result in pool.imap(_synthesis_worker, work_indices, chunksize=CHUNK_SIZE):
-            _consume(result)
-    pbar.close()
+        pool_ctx = (
+            multiprocessing.get_context("spawn")
+            if _pool_should_spawn(args)
+            else multiprocessing
+        )
+        with pool_ctx.Pool(
+            processes=jobs,
+            initializer=_init_synthesis_worker,
+            initargs=(dataset, completed_paths, args),
+        ) as pool:
+            for result in pool.imap(
+                _synthesis_worker_logged, work_indices, chunksize=CHUNK_SIZE
+            ):
+                _consume(result)
+    except KeyboardInterrupt:
+        if job_log is not None:
+            job_log.interrupted(where="song pool")
+        raise
+    except Exception as exc:
+        if job_log is not None:
+            job_log.fatal(exc, where="song pool")
+        raise
+    finally:
+        pbar.close()
+        if job_log is not None:
+            close_job_log()
 
 
 def _hybrid_neural_song_workers() -> int:

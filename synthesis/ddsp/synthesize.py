@@ -110,6 +110,24 @@ def _run_worker(args: list[str], *, timeout_sec: float, backend: str | None = No
         raise RuntimeError(f"DDSP worker returned non-JSON status: {lines[-1]!r}") from exc
 
 
+def _log_ddsp_pool_failure(exc: BaseException, *, payload: dict) -> None:
+    from synthesis.job_log import get_job_log
+
+    log = get_job_log()
+    if log is None:
+        return
+    msg = str(exc)
+    stderr_tail = ""
+    marker = "\nstderr:\n"
+    if marker in msg:
+        stderr_tail = msg.split(marker, 1)[1]
+        msg = msg.split(marker, 1)[0]
+    log.ddsp_failure(
+        f"{msg} (command={payload.get('command')!r})",
+        stderr_tail=stderr_tail,
+    )
+
+
 def _run_via_pool_or_oneshot(payload: dict, *, cli_args: list[str], timeout_sec: float) -> dict:
     if ddsp_oneshot_enabled():
         return _run_worker(
@@ -118,11 +136,17 @@ def _run_via_pool_or_oneshot(payload: dict, *, cli_args: list[str], timeout_sec:
             backend=str(payload.get("command") or ""),
         )
     pool = get_ddsp_pool()
-    status = pool.submit(payload, timeout_sec=timeout_sec)
+    try:
+        status = pool.submit(payload, timeout_sec=timeout_sec)
+    except (RuntimeError, TimeoutError) as exc:
+        _log_ddsp_pool_failure(exc, payload=payload)
+        raise
     if not status.get("ok"):
-        raise RuntimeError(
+        err = RuntimeError(
             f"DDSP pool job failed: {status.get('error', status)}"
         )
+        _log_ddsp_pool_failure(err, payload=payload)
+        raise err
     return status
 
 

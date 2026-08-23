@@ -126,6 +126,10 @@ def _resolve_chunk_params(args: argparse.Namespace | SimpleNamespace) -> tuple[f
     return chunk_sec, overlap_sec
 
 
+# PrettyMIDI cannot round-trip notes shorter than ~1.5 ms; MIDI-DDSP uses 4 ms frames.
+_MIN_CHUNK_NOTE_SEC = 0.004
+
+
 def _slice_midi_time_window(
     midi_path: str | Path,
     start_sec: float,
@@ -153,13 +157,21 @@ def _slice_midi_time_window(
                 start=max(0.0, note.start - start_sec),
                 end=min(end_sec - start_sec, note.end - start_sec),
             )
-            if clipped.end > clipped.start + 1e-4:
+            # Sub-frame slivers at chunk edges write invalid MIDI (0 instruments on read).
+            if clipped.end > clipped.start + _MIN_CHUNK_NOTE_SEC:
                 new_inst.notes.append(clipped)
                 has_notes = True
-        dst.instruments.append(new_inst)
+        if new_inst.notes:
+            dst.instruments.append(new_inst)
+    if not has_notes:
+        return False
     out_path.parent.mkdir(parents=True, exist_ok=True)
     dst.write(str(out_path))
-    return has_notes
+    # Belt-and-suspenders: confirm PrettyMIDI can read what we wrote.
+    check = pretty_midi.PrettyMIDI(str(out_path))
+    if not check.instruments or not any(inst.notes for inst in check.instruments):
+        return False
+    return True
 
 
 def _run_midi_ddsp(args: argparse.Namespace | SimpleNamespace) -> dict:
