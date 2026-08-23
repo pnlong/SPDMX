@@ -178,3 +178,21 @@ def add_synthesis_args(
             f"(default: {OUTPUT_DIR}/SPDMX/mid/)."
         ),
     )
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help=(
+            "Process songs last-to-first so two jobs on shared storage can "
+            "meet in the middle (pair with a forward job without --reverse)."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-every",
+        default=10,
+        type=int,
+        metavar="N",
+        help=(
+            "Every N songs, reload stem_recipe / data CSVs and on-disk progress "
+            "from shared storage (0=disable). Default: 10."
+        ),
+    )

@@ -781,6 +781,7 @@ def _render_soundfont_stem(track_path: str, meta: dict, args, path_output: str):
 
 
 _WORKER_CTX: dict = {}
+_WORKER_SONG_COUNT = 0
 
 
 def _resolved_recipe(args):
@@ -812,6 +813,72 @@ def _recipe_done_by_path(stem_recipe_index: dict | None, pass_name: str) -> dict
         key = str(path)
         done[key] = done.get(key, 0) + 1
     return done
+
+
+def _reload_progress_from_disk(
+    args,
+    *,
+    output_filepath: str,
+    routing_output_filepath: str | None,
+    recipe_output_filepath: str | None,
+    completed_paths: set[str],
+) -> set[str]:
+    """Reload pass tables and completed-song sets from shared storage."""
+    if not args.reset and Path(output_filepath).is_file():
+        routing_for_completed = (
+            routing_output_filepath if _needs_ddsp_routing(args) else None
+        )
+        completed_paths = load_completed_song_paths(
+            output_filepath,
+            routing_csv=routing_for_completed,
+        )
+    ddsp_pass = getattr(args, "ddsp_pass", None)
+    if recipe_output_filepath and ddsp_pass in (
+        "fluidsynth", "ddsp_piano", "midi_ddsp",
+    ):
+        from synthesis.recipe import load_stem_recipe_index
+
+        recipe_path = Path(recipe_output_filepath)
+        args.stem_recipe_index = load_stem_recipe_index(
+            recipe_path.parent,
+            filename=recipe_path.name,
+        )
+    return completed_paths
+
+
+def _song_index_needs_work(
+    i: int,
+    dataset: pd.DataFrame,
+    args,
+    completed_paths: set[str],
+    audio_format: str,
+) -> bool:
+    """False when another job already finished this song for the current pass."""
+    if args.reset:
+        return True
+    path_output = str(dataset.at[i, "path_output"])
+    n_tracks = int(dataset.at[i, "n_tracks"])
+    recipe = _hybrid_recipe(args)
+    ddsp_pass = getattr(args, "ddsp_pass", None)
+    if recipe is not None and ddsp_pass in ("fluidsynth", "ddsp_piano", "midi_ddsp"):
+        indices, _ = _work_for_pass(
+            dataset,
+            [i],
+            ddsp_pass,
+            stem_recipe_index=getattr(args, "stem_recipe_index", None),
+        )
+        return i in indices
+    if path_output not in completed_paths:
+        return True
+    if not song_is_complete(
+        Path(path_output), n_tracks, audio_format, require_mixture=False,
+    ):
+        return True
+    if recipe is not None and not _hybrid_song_raw_current(
+        args, path_output, n_tracks, Path(path_output), audio_format, recipe,
+    ):
+        return True
+    return False
 
 
 def _work_for_pass(
@@ -863,7 +930,8 @@ def _preload_track_maps(args) -> None:
 
 
 def _init_synthesis_worker(dataset, completed_paths, args):
-    global _WORKER_CTX
+    global _WORKER_CTX, _WORKER_SONG_COUNT
+    _WORKER_SONG_COUNT = 0
     _WORKER_CTX = {
         "dataset": dataset,
         "completed_paths": completed_paths,
@@ -884,11 +952,25 @@ def _init_synthesis_worker(dataset, completed_paths, args):
 
 
 def _synthesis_worker(i: int):
+    global _WORKER_SONG_COUNT
+    ctx = _WORKER_CTX
+    args = ctx["args"]
+    refresh_every = int(getattr(args, "refresh_every", 0) or 0)
+    if refresh_every > 0:
+        _WORKER_SONG_COUNT += 1
+        if _WORKER_SONG_COUNT % refresh_every == 0:
+            ctx["completed_paths"] = _reload_progress_from_disk(
+                args,
+                output_filepath=str(getattr(args, "_progress_output_filepath", "")),
+                routing_output_filepath=getattr(args, "_progress_routing_filepath", None),
+                recipe_output_filepath=getattr(args, "_progress_recipe_filepath", None),
+                completed_paths=ctx["completed_paths"],
+            )
     return synthesize_song_at_index(
         i,
-        _WORKER_CTX["dataset"],
-        _WORKER_CTX["completed_paths"],
-        _WORKER_CTX["args"],
+        ctx["dataset"],
+        ctx["completed_paths"],
+        args,
     )
 
 
@@ -1006,39 +1088,85 @@ def _run_song_pool(
             [song_info],
         )
 
+    refresh_every = int(getattr(args, "refresh_every", 0) or 0)
+    audio_format = synthesis_audio_format(args.flac)
+    args._progress_output_filepath = output_filepath
+    args._progress_routing_filepath = routing_output_filepath
+    args._progress_recipe_filepath = recipe_output_filepath
+    shared_completed = completed_paths
+    songs_since_refresh = 0
+    skipped = 0
+
+    def _maybe_refresh_progress() -> None:
+        nonlocal shared_completed, songs_since_refresh
+        if refresh_every <= 0:
+            return
+        songs_since_refresh += 1
+        if songs_since_refresh < refresh_every:
+            return
+        songs_since_refresh = 0
+        shared_completed = _reload_progress_from_disk(
+            args,
+            output_filepath=output_filepath,
+            routing_output_filepath=routing_output_filepath,
+            recipe_output_filepath=recipe_output_filepath,
+            completed_paths=shared_completed,
+        )
+        if use_threads and _WORKER_CTX:
+            _WORKER_CTX["completed_paths"] = shared_completed
+
+    def _next_work_index(todo_iter):
+        nonlocal skipped
+        while True:
+            try:
+                idx = next(todo_iter)
+            except StopIteration:
+                return None
+            if _song_index_needs_work(
+                idx, dataset, args, shared_completed, audio_format,
+            ):
+                return idx
+            skipped += 1
+
+    def _run_dynamic_pool(*, executor_submit) -> None:
+        workers = max(1, int(jobs))
+        pending: set = set()
+        todo = iter(work_indices)
+        while True:
+            while len(pending) < workers:
+                idx = _next_work_index(todo)
+                if idx is None:
+                    break
+                pending.add(executor_submit(_synthesis_worker_logged, idx))
+            if not pending:
+                break
+            try:
+                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            except KeyboardInterrupt:
+                if job_log is not None:
+                    job_log.interrupted(where="song pool wait")
+                raise
+            pending = set(pending)
+            for fut in done:
+                try:
+                    _consume(fut.result())
+                except Exception as exc:
+                    if job_log is not None:
+                        job_log.fatal(exc, where="song pool result")
+                    raise
+                _maybe_refresh_progress()
+        if skipped:
+            print(
+                f"Skipped {skipped} song(s) already complete on shared storage.",
+                flush=True,
+            )
+
     try:
         if use_threads:
             _preload_track_maps(args)
-            _init_synthesis_worker(dataset, completed_paths, args)
-            workers = max(1, int(jobs))
-            pending: set = set()
-            todo = iter(work_indices)
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                def _fill() -> None:
-                    while len(pending) < workers:
-                        try:
-                            idx = next(todo)
-                        except StopIteration:
-                            return
-                        pending.add(pool.submit(_synthesis_worker_logged, idx))
-
-                _fill()
-                while pending:
-                    try:
-                        done, pending = wait(pending, return_when=FIRST_COMPLETED)
-                    except KeyboardInterrupt:
-                        if job_log is not None:
-                            job_log.interrupted(where="thread pool wait")
-                        raise
-                    pending = set(pending)
-                    for fut in done:
-                        try:
-                            _consume(fut.result())
-                        except Exception as exc:
-                            if job_log is not None:
-                                job_log.fatal(exc, where="thread pool result")
-                            raise
-                    _fill()
+            _init_synthesis_worker(dataset, shared_completed, args)
+            with ThreadPoolExecutor(max_workers=max(1, int(jobs))) as pool:
+                _run_dynamic_pool(executor_submit=pool.submit)
             return
 
         pool_ctx = (
@@ -1049,12 +1177,15 @@ def _run_song_pool(
         with pool_ctx.Pool(
             processes=jobs,
             initializer=_init_synthesis_worker,
-            initargs=(dataset, completed_paths, args),
+            initargs=(dataset, shared_completed, args),
         ) as pool:
-            for result in pool.imap(
-                _synthesis_worker_logged, work_indices, chunksize=CHUNK_SIZE
-            ):
-                _consume(result)
+            if refresh_every > 0:
+                _run_dynamic_pool(executor_submit=pool.apply_async)
+            else:
+                for result in pool.imap(
+                    _synthesis_worker_logged, work_indices, chunksize=CHUNK_SIZE
+                ):
+                    _consume(result)
     except KeyboardInterrupt:
         if job_log is not None:
             job_log.interrupted(where="song pool")
@@ -1710,6 +1841,20 @@ def run_synthesis(args, output_dir: str, *, media_dir: str | None = None):
             args, path_output, n_tracks, Path(path_output), audio_format, recipe,
         ):
             work_indices.append(i)
+
+    refresh_every = int(getattr(args, "refresh_every", 10) or 0)
+    if refresh_every < 0:
+        refresh_every = 0
+    args.refresh_every = refresh_every
+
+    if getattr(args, "reverse", False):
+        work_indices = list(reversed(work_indices))
+        print(f"Processing {len(work_indices)} songs in reverse order.", flush=True)
+    if refresh_every > 0:
+        print(
+            f"Reloading progress from shared storage every {refresh_every} song(s).",
+            flush=True,
+        )
 
     if not work_indices:
         return

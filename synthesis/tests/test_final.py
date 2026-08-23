@@ -244,6 +244,64 @@ def test_work_for_pass_counts_remaining_renders():
     assert remaining == 2
 
 
+def test_song_index_needs_work_hybrid_midi_ddsp():
+    from synthesis.recipe import CategoryRecipe, CategorySpec
+    from synthesis.synthesize import _song_index_needs_work
+
+    df = pd.DataFrame({
+        "path_output": ["/a", "/b"],
+        "n_tracks": [2, 2],
+        "n_midi_ddsp": [0, 4],
+    })
+    recipe = CategoryRecipe(
+        specs={"strings": CategorySpec("midi-ddsp", True, "basic", "ddsp_basic_realify")},
+    )
+    args = parse_args(["--only-pass", "midi_ddsp", "-o", "/tmp"])
+    args.recipe = recipe
+    args.ddsp_pass = "midi_ddsp"
+    args.reset = False
+    args.stem_recipe_index = {
+        ("/b", 0): {"backend": "midi_ddsp"},
+        ("/b", 1): {"backend": "midi_ddsp"},
+        ("/b", 2): {"backend": "midi_ddsp"},
+        ("/b", 3): {"backend": "midi_ddsp"},
+    }
+    assert not _song_index_needs_work(1, df, args, set(), "flac")
+    args.stem_recipe_index = {( "/b", 0): {"backend": "midi_ddsp"}}
+    assert _song_index_needs_work(1, df, args, set(), "flac")
+
+
+def test_reload_progress_from_disk_reads_pass_recipe(tmp_path: Path):
+    from synthesis.recipe import STEM_RECIPE_COLUMNS
+    from synthesis.synthesize import _reload_progress_from_disk
+
+    tables = tmp_path / "dev" / "final"
+    tables.mkdir(parents=True)
+    recipe_csv = tables / "stem_recipe.midi_ddsp.csv"
+    pd.DataFrame({
+        "path": ["/song"],
+        "track": [0],
+        "category": ["strings"],
+        "method": ["midi-ddsp"],
+        "fallback": ["basic"],
+        "realify": [True],
+        "backend": ["midi_ddsp"],
+    }).to_csv(recipe_csv, index=False)
+    args = parse_args(["--only-pass", "midi_ddsp", "-o", str(tmp_path)])
+    args.ddsp_pass = "midi_ddsp"
+    args.reset = False
+    args.stem_recipe_index = {}
+    out = _reload_progress_from_disk(
+        args,
+        output_filepath=str(tables / "data.csv"),
+        routing_output_filepath=None,
+        recipe_output_filepath=str(recipe_csv),
+        completed_paths=set(),
+    )
+    assert out == set()
+    assert args.stem_recipe_index[("/song", 0)]["backend"] == "midi_ddsp"
+
+
 def test_raw_upstream_command_includes_ddsp_when_needed():
     fluidsynth_only = CategoryRecipe(
         specs={"piano": CategorySpec("basic", True, "basic", "basic_realify")},
