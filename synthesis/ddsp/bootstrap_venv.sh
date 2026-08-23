@@ -18,7 +18,7 @@ PY=(uv pip install --python .venv-ddsp --no-build-isolation)
 # 2) TensorFlow + shared audio deps.
 # Runtime deps that midi-ddsp/ddsp need but are skipped by --no-deps below.
 "${PY[@]}" "tensorflow>=2.11,<2.16" "tensorflow-probability==0.23.0" \
-  soundfile gin-config protobuf absl-py pretty_midi "librosa>=0.10" matplotlib \
+  soundfile gin-config "protobuf<=3.20" absl-py pretty_midi "librosa>=0.10" matplotlib \
   hmmlearn tensorflow-datasets music21 pandas \
   cloudml-hypertune google-cloud-storage dill future pydub "mir-eval" resampy
 
