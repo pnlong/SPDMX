@@ -23,10 +23,15 @@ def get_job_log() -> "SynthesisJobLog | None":
     return _CURRENT
 
 
-def open_job_log(path: str | Path, **meta: Any) -> "SynthesisJobLog":
+def open_job_log(
+    path: str | Path,
+    *,
+    verbose: bool = False,
+    **meta: Any,
+) -> "SynthesisJobLog":
     """Open (append) a pass log and register it as the process-global log."""
     global _CURRENT
-    log = SynthesisJobLog(path, **meta)
+    log = SynthesisJobLog(path, verbose=verbose, **meta)
     with _LOCK:
         _CURRENT = log
     return log
@@ -41,10 +46,15 @@ def close_job_log() -> None:
 
 
 class SynthesisJobLog:
-    """Thread-safe append log; also mirrors important lines to stdout."""
+    """Thread-safe append log.
 
-    def __init__(self, path: str | Path, **meta: Any):
+    Always writes to the log file. INFO lines (song start/done, heartbeat) echo
+    to stdout only when ``verbose`` is True; WARN/ERROR/FATAL always echo.
+    """
+
+    def __init__(self, path: str | Path, *, verbose: bool = False, **meta: Any):
         self.path = Path(path)
+        self.verbose = bool(verbose)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._file = open(self.path, "a", encoding="utf-8", buffering=1)
         self._lock = threading.Lock()
@@ -60,11 +70,13 @@ class SynthesisJobLog:
     def _ts(self) -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    def _write(self, level: str, message: str, *, echo: bool = True) -> None:
+    def _write(self, level: str, message: str, *, echo: bool | None = None) -> None:
         line = f"[{self._ts()}] [{level}] {message}\n"
         with self._lock:
             self._file.write(line)
             self._file.flush()
+        if echo is None:
+            echo = self.verbose or level in ("WARN", "ERROR", "FATAL")
         if echo:
             print(line.rstrip(), flush=True, file=sys.stdout)
 

@@ -25,6 +25,31 @@ def test_job_log_writes_and_registers_global():
         assert "ValueError: boom" in text
 
 
+def test_job_log_quiet_by_default(capsys):
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "job.log"
+        log = open_job_log(path, verbose=False)
+        log.song_start(0, "/songs/foo")
+        log.song_done(0, "/songs/foo", n_tracks=2)
+        log.warn("keep me")
+        close_job_log()
+        out = capsys.readouterr().out
+        assert "song start" not in out
+        assert "song done" not in out
+        assert "keep me" in out
+        assert "song start" in path.read_text(encoding="utf-8")
+
+
+def test_job_log_verbose_echoes_info(capsys):
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "job.log"
+        log = open_job_log(path, verbose=True)
+        log.song_start(0, "/songs/foo")
+        close_job_log()
+        out = capsys.readouterr().out
+        assert "song start" in out
+
+
 def test_job_log_interrupted_message():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "job.log"

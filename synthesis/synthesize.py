@@ -940,6 +940,7 @@ def _run_song_pool(
         )
         job_log = open_job_log(
             log_path,
+            verbose=bool(getattr(args, "verbose", False)),
             synthesis_pass=pass_name,
             desc=desc,
             songs=len(work_indices),

@@ -85,6 +85,15 @@ def parse_args(args=None, namespace=None):
         action="store_true",
         help="Regenerate stems that no longer match the recipe without prompting.",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help=(
+            "Echo per-song job-log INFO lines (song start/done, heartbeat) to "
+            "stdout. The log file is always written; WARN/ERROR always print."
+        ),
+    )
     ns = parser.parse_args(args=args, namespace=namespace)
     ns.flac = True
     return ns
