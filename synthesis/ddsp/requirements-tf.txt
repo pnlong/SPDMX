@@ -17,13 +17,14 @@ tensorflow>=2.11,<2.16
 tensorflow-probability==0.23.0
 soundfile
 gin-config
-protobuf<=3.20
+protobuf==3.20.3
 absl-py
 pretty_midi
 librosa>=0.10
 matplotlib
 hmmlearn
-tensorflow-datasets
+tensorflow-datasets<=4.9.0
+tensorflow-metadata==1.14.0
 music21
 pandas
 # midi-ddsp/ddsp/note-seq runtime deps (needed because those packages are installed --no-deps)

@@ -17,9 +17,11 @@ PY=(uv pip install --python .venv-ddsp --no-build-isolation)
 
 # 2) TensorFlow + shared audio deps.
 # Runtime deps that midi-ddsp/ddsp/note-seq need but are skipped by --no-deps below.
+# Keep protobuf 3.20.x for note-seq, and pin tensorflow-metadata so it does not
+# require protobuf.runtime_version (newer tfmd + old protobuf = ImportError).
 "${PY[@]}" "tensorflow>=2.11,<2.16" "tensorflow-probability==0.23.0" \
-  soundfile gin-config "protobuf<=3.20" absl-py pretty_midi "librosa>=0.10" matplotlib \
-  hmmlearn tensorflow-datasets music21 pandas \
+  soundfile gin-config "protobuf==3.20.3" absl-py pretty_midi "librosa>=0.10" matplotlib \
+  hmmlearn "tensorflow-datasets<=4.9.0" "tensorflow-metadata==1.14.0" music21 pandas \
   cloudml-hypertune google-cloud-storage dill future pydub "mir-eval" resampy \
   bokeh attrs intervaltree IPython h5py imageio "scikit-learn"
 
