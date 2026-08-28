@@ -4,6 +4,8 @@ Turn PDMX symbolic MIDI into mono FLAC stems; optionally realify with Stable Aud
 
 Environment setup: **[`SETUP.md`](../SETUP.md)** at repo root.
 
+Production multi-machine setup: **[`FINAL_SETUP.md`](FINAL_SETUP.md)**.
+
 See also [`RENDERING_NOTES.md`](RENDERING_NOTES.md) for ablation design, Slakh alignment, and output layout.
 Paper-oriented mixing / stem-summability write-up: [`MIXING.md`](MIXING.md).
 

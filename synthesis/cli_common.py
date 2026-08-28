@@ -179,12 +179,20 @@ def add_synthesis_args(
         ),
     )
     parser.add_argument(
-        "--reverse",
-        action="store_true",
+        "--shard-count",
+        default=1,
+        type=int,
         help=(
-            "Process songs last-to-first so two jobs on shared storage can "
-            "meet in the middle (pair with a forward job without --reverse)."
+            "Number of machines sharing this render pass (default 1). All songs "
+            "are shuffled with seed=shard-count and split evenly; each machine "
+            "uses a unique --shard-index. Resume-safe on shared storage."
         ),
+    )
+    parser.add_argument(
+        "--shard-index",
+        default=0,
+        type=int,
+        help="Zero-based shard for this machine (default 0). Must be in [0, shard-count).",
     )
     parser.add_argument(
         "--refresh-every",

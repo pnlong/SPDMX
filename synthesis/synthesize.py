@@ -43,6 +43,11 @@ from synthesis.audio import (
     synthesis_audio_format,
 )
 from synthesis.cli_common import add_synthesis_args, default_gm_register_path
+from synthesis.shard import (
+    filter_work_indices_by_shard,
+    format_shard_summary,
+    validate_shard_args,
+)
 from synthesis.dataset import listening_sample_path, prepare_ablation_dataset, prepare_full_dataset
 from shared.csv_tables import append_rows, append_rows_deduped, sanitize_track_name
 from synthesis.paths import (
@@ -1847,9 +1852,27 @@ def run_synthesis(args, output_dir: str, *, media_dir: str | None = None):
         refresh_every = 0
     args.refresh_every = refresh_every
 
-    if getattr(args, "reverse", False):
-        work_indices = list(reversed(work_indices))
-        print(f"Processing {len(work_indices)} songs in reverse order.", flush=True)
+    shard_count = int(getattr(args, "shard_count", 1) or 1)
+    shard_index = int(getattr(args, "shard_index", 0) or 0)
+    try:
+        validate_shard_args(shard_count, shard_index)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    work_indices, assigned_count = filter_work_indices_by_shard(
+        work_indices,
+        dataset,
+        shard_count=shard_count,
+        shard_index=shard_index,
+    )
+    if shard_count > 1:
+        print(
+            format_shard_summary(
+                shard_count, shard_index, assigned_count, len(work_indices),
+            ),
+            flush=True,
+        )
+
     if refresh_every > 0:
         print(
             f"Reloading progress from shared storage every {refresh_every} song(s).",
@@ -2035,7 +2058,7 @@ def raw_synthesis_command(args) -> str:
     return cmd
 
 
-def run_realify_pass(args, source_dir: str, dest_dir: str):
+def run_realify_pass(args, source_dir: str, dest_dir: str, *, allowed_song_ids: set[str] | None = None):
     from synthesis.realify.realify import run_realify
 
     audio_format = synthesis_audio_format(args.flac)
@@ -2070,6 +2093,7 @@ def run_realify_pass(args, source_dir: str, dest_dir: str):
             else None
         ),
         recipe=_hybrid_recipe(args),
+        allowed_song_ids=allowed_song_ids,
     )
 
 

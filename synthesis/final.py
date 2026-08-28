@@ -15,6 +15,7 @@ from shared.config import (
 )
 from synthesis.cli_common import add_synthesis_args
 from synthesis.paths import (
+    MIDI_INDEX_FILE_NAME,
     ablation_raw_dir,
     production_tables_dir,
     spdmx_dataset_dir,
@@ -27,12 +28,50 @@ from synthesis.recipe import (
     require_recipe_conflicts_ok,
     scan_recipe_conflicts,
 )
+from synthesis.shard import format_shard_summary, shard_song_ids, validate_shard_args
 from synthesis.synthesize import (
     require_raw_synthesis,
     run_layout_pass,
     run_realify_pass,
     run_synthesis,
 )
+GLOBAL_ONLY_PASSES = ("layout", "merge", "mix")
+
+
+def _reject_sharded_global_pass(args) -> None:
+    shard_count = int(getattr(args, "shard_count", 1) or 1)
+    if shard_count > 1:
+        raise SystemExit(
+            f"--only-pass {args.only_pass} must run unsharded (--shard-count 1). "
+            "Use --shard-count / --shard-index only on fluidsynth, ddsp_piano, "
+            "midi_ddsp, or realify."
+        )
+
+
+def _realify_allowed_song_ids(args, tables_dir: str) -> set[str] | None:
+    shard_count = int(getattr(args, "shard_count", 1) or 1)
+    shard_index = int(getattr(args, "shard_index", 0) or 0)
+    try:
+        validate_shard_args(shard_count, shard_index)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if shard_count == 1:
+        return None
+    index_path = Path(tables_dir) / MIDI_INDEX_FILE_NAME
+    if not index_path.is_file():
+        raise SystemExit(
+            f"Cannot shard realify: missing {index_path}. "
+            "Run --only-pass layout first."
+        )
+    song_ids = pd.read_csv(index_path, usecols=["song_id"])["song_id"].astype(str).tolist()
+    allowed = shard_song_ids(
+        song_ids, shard_count=shard_count, shard_index=shard_index,
+    )
+    print(
+        format_shard_summary(shard_count, shard_index, len(allowed), len(allowed)),
+        flush=True,
+    )
+    return allowed
 
 FINAL_CONDITION = "final"
 ONLY_PASSES = (
@@ -244,6 +283,9 @@ def main(argv=None):
     if only != "layout":
         args.skip_output_reset = True
 
+    if only in GLOBAL_ONLY_PASSES:
+        _reject_sharded_global_pass(args)
+
     if only == "layout":
         run_layout_pass(args, tables_dir, media_dir=media_dir)
     elif only in ("fluidsynth", "ddsp_piano", "midi_ddsp"):
@@ -268,7 +310,8 @@ def main(argv=None):
                     ),
                     yes=bool(args.yes),
                 )
-            run_realify_pass(args, tables_dir, tables_dir)
+            allowed = _realify_allowed_song_ids(args, tables_dir)
+            run_realify_pass(args, tables_dir, tables_dir, allowed_song_ids=allowed)
     elif only == "mix":
         merge_pass_tables(tables_dir)
         require_raw_synthesis(

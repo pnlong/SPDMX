@@ -1495,6 +1495,7 @@ def run_realify(
     render_mode: str | None = None,
     category_allowlist: set[str] | frozenset[str] | None = None,
     recipe=None,
+    allowed_song_ids: set[str] | frozenset[str] | None = None,
 ):
     """Realify stems on visible GPU(s) or CPU (small-music only)."""
     configure_sa3_env()
@@ -1521,6 +1522,14 @@ def run_realify(
 
     presets = load_presets(presets_filepath)
     captions = generate_captions(source_dir, seed=sample_seed, presets=presets)
+    if allowed_song_ids is not None:
+        from synthesis.shard import song_id_from_synthesis_path
+
+        paths = captions["path"].astype(str)
+        keep = paths.map(
+            lambda p: song_id_from_synthesis_path(p) in allowed_song_ids
+        )
+        captions = captions.loc[keep].reset_index(drop=True)
     if limit:
         captions = captions.head(limit)
 

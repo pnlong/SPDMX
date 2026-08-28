@@ -2,6 +2,9 @@
 
 Step-by-step guide to set up spdmx on a new machine. Everything Python-related lives in **`~/spdmx/.venv`** via [uv](https://docs.astral.sh/uv/). Python **3.10** is required (see `.python-version`).
 
+**Joining an existing production synthesis job** (shared Deep Freeze, sharded
+GPU rendering): see [`synthesis/FINAL_SETUP.md`](synthesis/FINAL_SETUP.md).
+
 ---
 
 ## What you get

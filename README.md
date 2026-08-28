@@ -14,6 +14,8 @@ Turn the [PDMX](https://zenodo.org/records/13763756) symbolic music dataset into
 
 **→ Full step-by-step guide: [`SETUP.md`](SETUP.md)**
 
+**→ Join an existing production job on a new GPU machine: [`synthesis/FINAL_SETUP.md`](synthesis/FINAL_SETUP.md)**
+
 Quick start (synthesis + analysis only):
 
 ```bash
@@ -26,7 +28,7 @@ For SA3 realify, submodule, flash-attention, and Hugging Face login, follow **Tr
 
 ## Usage
 
-Default output root: `/deepfreeze/pnlong/SPDMX` (`SPDMX_OUTPUT_DIR` in [`.env`](.env.example); imported as `OUTPUT_DIR` from [`shared/config.py`](shared/config.py)).
+Default output root: `/deepfreeze/share/SPDMX` (`SPDMX_OUTPUT_DIR` in [`.env`](.env.example); imported as `OUTPUT_DIR` from [`shared/config.py`](shared/config.py)).
 
 Development artifacts (ablations, analysis) live under `{OUTPUT_DIR}/dev/`. Production stems go to `{OUTPUT_DIR}/SPDMX/` via `synthesis.final`.
 
@@ -74,6 +76,10 @@ uv run python -m synthesis.final --only-pass ddsp_piano
 uv run python -m synthesis.final --only-pass midi_ddsp
 uv run python -m synthesis.final --only-pass mix
 ```
+
+**Multi-machine GPU rendering:** pass `--shard-count N --shard-index k` on
+`fluidsynth`, `ddsp_piano`, `midi_ddsp`, or `realify` (one unique index per
+machine). See [`synthesis/FINAL_SETUP.md`](synthesis/FINAL_SETUP.md).
 
 Writes FLAC stems to `{OUTPUT_DIR}/SPDMX/audio/` (PDMX `data/*.json` → a directory of `0.flac`, `1.flac`, …). Sanitized MIDIs, `SPDMX.csv`, `LICENSE`, and `README.md` come from `prepare_synthesis` / layout. Mix is `sum(stems)` (no `mixture.*`). Pipeline tables live under `{OUTPUT_DIR}/dev/final/` (`stems.fluidsynth.csv` etc. during render; `stems.csv` / `data.csv` after mix or `--only-pass merge`).
 
