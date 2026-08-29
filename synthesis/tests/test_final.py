@@ -29,6 +29,69 @@ from synthesis.recipe import (
 from synthesis.synthesize import attach_corrected_midi, run_layout_pass
 
 
+def test_parse_args_accepts_resume_check_disk():
+    args = parse_args(["--only-pass", "midi_ddsp", "--resume-check-disk"])
+    assert args.resume_check_disk is True
+    default = parse_args(["--only-pass", "midi_ddsp"])
+    assert default.resume_check_disk is False
+
+
+def test_hybrid_raw_current_csv_only_skips_without_disk(tmp_path: Path):
+    from synthesis.recipe import CategorySpec, TrackPlan
+    from synthesis.synthesize import _hybrid_raw_current
+
+    plan = TrackPlan(
+        category="strings",
+        method="midi-ddsp",
+        realify=False,
+        use_slakh=False,
+        neural_ok=True,
+        fallback="basic",
+        ablation="ddsp_basic",
+    )
+    missing = tmp_path / "nope.flac"
+    args = parse_args(["--only-pass", "midi_ddsp", "-o", str(tmp_path)])
+    args.reset = False
+    args.stem_recipe_index = {
+        ("/song", 0): {
+            "method": "midi-ddsp",
+            "fallback": "basic",
+            "backend": "midi_ddsp",
+        },
+    }
+    assert _hybrid_raw_current(args, "/song", 0, missing, plan, "midi_ddsp")
+
+    args.resume_check_disk = True
+    assert not _hybrid_raw_current(args, "/song", 0, missing, plan, "midi_ddsp")
+
+
+def test_verify_claimed_stems_on_disk_raises_when_missing(tmp_path: Path):
+    from synthesis.synthesize import verify_claimed_stems_on_disk
+
+    tables = tmp_path / "final"
+    tables.mkdir()
+    song = tmp_path / "audio" / "a" / "b" / "Qm"
+    song.mkdir(parents=True)
+    pd.DataFrame({
+        "path": [str(song)],
+        "track": [0],
+        "original_track": [0],
+        "program": [0],
+        "is_drum": [False],
+        "name": ["x"],
+        "has_lyrics": [False],
+        "max_velocity": [80],
+        "velocity_scale": [1.0],
+    }).to_csv(tables / "stems.csv", index=False)
+    with pytest.raises(RuntimeError, match="missing or invalid"):
+        verify_claimed_stems_on_disk(tables, "flac")
+
+
+def test_parse_args_accepts_verify():
+    args = parse_args(["--only-pass", "verify"])
+    assert args.only_pass == "verify"
+
+
 def test_parse_args_accepts_merge():
     args = parse_args(["--only-pass", "merge"])
     assert args.only_pass == "merge"
@@ -83,13 +146,15 @@ def test_pass_sequence_starts_with_layout():
     with_ddsp_realify = CategoryRecipe(
         specs={"strings": CategorySpec("midi-ddsp", True, "basic", "ddsp_basic_realify")},
     )
-    assert pass_sequence(no_realify) == ("layout", "fluidsynth", "mix")
+    assert pass_sequence(no_realify) == ("layout", "fluidsynth", "verify", "mix")
     assert pass_sequence(with_ddsp) == (
-        "layout", "fluidsynth", "midi_ddsp", "mix",
+        "layout", "fluidsynth", "midi_ddsp", "verify", "mix",
     )
-    assert pass_sequence(with_realify) == ("layout", "fluidsynth", "realify", "mix")
+    assert pass_sequence(with_realify) == (
+        "layout", "fluidsynth", "realify", "verify", "mix",
+    )
     assert pass_sequence(with_ddsp_realify) == (
-        "layout", "fluidsynth", "midi_ddsp", "realify", "mix",
+        "layout", "fluidsynth", "midi_ddsp", "realify", "verify", "mix",
     )
     with_piano_ddsp = CategoryRecipe(
         specs={
@@ -98,7 +163,7 @@ def test_pass_sequence_starts_with_layout():
         },
     )
     assert pass_sequence(with_piano_ddsp) == (
-        "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "mix",
+        "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "verify", "mix",
     )
 
 

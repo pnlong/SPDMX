@@ -34,8 +34,9 @@ from synthesis.synthesize import (
     run_layout_pass,
     run_realify_pass,
     run_synthesis,
+    verify_claimed_stems_on_disk,
 )
-GLOBAL_ONLY_PASSES = ("layout", "merge", "mix")
+GLOBAL_ONLY_PASSES = ("layout", "merge", "verify", "mix")
 
 
 def _reject_sharded_global_pass(args) -> None:
@@ -75,7 +76,8 @@ def _realify_allowed_song_ids(args, tables_dir: str) -> set[str] | None:
 
 FINAL_CONDITION = "final"
 ONLY_PASSES = (
-    "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "merge", "realify", "mix",
+    "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "merge", "realify",
+    "verify", "mix",
 )
 DDSP_PASSES = ("ddsp_piano", "midi_ddsp")
 
@@ -89,9 +91,9 @@ def parse_args(args=None, namespace=None):
             "and sanitized MIDI under mid/. Join SPDMX.csv to PDMX.csv on song_id. "
             "Audio format is always FLAC. "
             "Run one pass at a time with --only-pass "
-            "(layout → fluidsynth → ddsp_piano → midi_ddsp → mix). "
+            "(layout → fluidsynth → ddsp_piano → midi_ddsp → verify → mix). "
             "Fluidsynth, ddsp_piano, and midi_ddsp may run in parallel. "
-            "Realify and mix merge per-pass CSVs first."
+            "Realify, verify, and mix merge per-pass CSVs first."
         ),
     )
     add_synthesis_args(
@@ -114,8 +116,9 @@ def parse_args(args=None, namespace=None):
         required=True,
         help=(
             "Required. One method pass: layout, fluidsynth, ddsp_piano, midi_ddsp, "
-            "merge, realify, or mix. Fluidsynth, ddsp_piano, and midi_ddsp may "
-            "run in parallel. Mix/realify merge per-pass tables first."
+            "merge, realify, verify, or mix. Fluidsynth, ddsp_piano, and midi_ddsp "
+            "may run in parallel. Verify checks every claimed stem exists on disk "
+            "before mix. Mix/realify/verify merge per-pass tables first."
         ),
     )
     parser.add_argument(
@@ -159,7 +162,7 @@ def pass_sequence(recipe) -> tuple[str, ...]:
         steps.append("midi_ddsp")
     if recipe.uses_realify():
         steps.append("realify")
-    steps.append("mix")
+    steps.extend(["verify", "mix"])
     return tuple(steps)
 
 
@@ -211,7 +214,7 @@ def log_next_pass(recipe, only: str) -> None:
         return " -j 8" if nxt in ("fluidsynth", "mix") else ""
 
     if only == "merge":
-        nxt = "realify" if recipe.uses_realify() else "mix"
+        nxt = "realify" if recipe.uses_realify() else "verify"
         print(
             f"Next: uv run python -m synthesis.final --only-pass {nxt}{_extra(nxt)}",
             flush=True,
@@ -244,6 +247,12 @@ def log_next_pass(recipe, only: str) -> None:
     if only in DDSP_PASSES and "realify" in plan:
         print(
             "Start realify only after Fluidsynth and both DDSP jobs have exited.",
+            flush=True,
+        )
+    if only == "verify":
+        print(
+            "Verify checks every stem claimed in tables exists on disk "
+            "(run after rsync finishes, before mix).",
             flush=True,
         )
     print(f"Next: uv run python -m synthesis.final --only-pass {nxt}{extra}", flush=True)
@@ -312,6 +321,15 @@ def main(argv=None):
                 )
             allowed = _realify_allowed_song_ids(args, tables_dir)
             run_realify_pass(args, tables_dir, tables_dir, allowed_song_ids=allowed)
+    elif only == "verify":
+        merge_pass_tables(tables_dir)
+        require_raw_synthesis(
+            tables_dir,
+            run_command=raw_upstream_command(recipe),
+            audio_format=audio_format,
+            expected_n_songs=expected_song_count(args, media_dir),
+        )
+        verify_claimed_stems_on_disk(tables_dir, audio_format)
     elif only == "mix":
         merge_pass_tables(tables_dir)
         require_raw_synthesis(

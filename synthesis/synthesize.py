@@ -89,18 +89,31 @@ def _pool_should_spawn(args) -> bool:
     return False
 
 
+def _resume_check_disk(args) -> bool:
+    """Hybrid default is CSV-only; ``--resume-check-disk`` also requires FLACs."""
+    return bool(getattr(args, "resume_check_disk", False))
+
+
 def _hybrid_raw_current(args, song_path: str, track: int, out_stem, plan, backend: str) -> bool:
-    """True when the on-disk stem is valid and matches the current raw recipe."""
+    """True when this stem can be skipped for the current raw recipe.
+
+    Default (hybrid): matching ``stem_recipe`` row is enough. With
+    ``--resume-check-disk``, the on-disk FLAC must also be valid.
+    """
     from synthesis.recipe import raw_fingerprint, recorded_raw_fingerprint
 
-    if args.reset or not stem_is_valid(out_stem):
+    if args.reset:
         return False
     rec = (getattr(args, "stem_recipe_index", None) or {}).get(
         (str(song_path), int(track))
     )
-    return recorded_raw_fingerprint(rec) == raw_fingerprint(
+    if recorded_raw_fingerprint(rec) != raw_fingerprint(
         plan.method, plan.fallback, backend,
-    )
+    ):
+        return False
+    if _resume_check_disk(args) and not stem_is_valid(out_stem):
+        return False
+    return True
 
 
 def _hybrid_song_raw_current(
@@ -109,8 +122,9 @@ def _hybrid_song_raw_current(
     from synthesis.recipe import desired_raw_fingerprint, recorded_raw_fingerprint
 
     index = getattr(args, "stem_recipe_index", None) or {}
+    check_disk = _resume_check_disk(args)
     for j in range(n_tracks):
-        if not stem_is_valid(stem_path(song_dir, j, audio_format)):
+        if check_disk and not stem_is_valid(stem_path(song_dir, j, audio_format)):
             return False
         rec = index.get((str(path_output), j))
         if rec is None:
@@ -287,16 +301,20 @@ def synthesize_song_at_index(
     midi = mido.MidiFile(filename=str(midi_path), charset="utf8")
     n_tracks = len(track_map)
 
+    if hybrid and not args.reset and _hybrid_song_raw_current(
+        args, path_output, n_tracks, song_dir, audio_format, recipe,
+    ):
+        # CSV-only resume: recipe rows cover every track (disk optional).
+        if not _resume_check_disk(args) or song_is_complete(
+            song_dir, n_tracks, audio_format, require_mixture=False,
+        ):
+            del midi
+            return None, [], [], [], 0
     if (
-        path_output in completed_paths
+        not hybrid
+        and path_output in completed_paths
         and song_is_complete(song_dir, n_tracks, audio_format, require_mixture=False)
         and not args.reset
-        and (
-            not hybrid
-            or _hybrid_song_raw_current(
-                args, path_output, n_tracks, song_dir, audio_format, recipe,
-            )
-        )
     ):
         del midi
         return None, [], [], [], 0
@@ -1943,6 +1961,71 @@ def run_synthesis(args, output_dir: str, *, media_dir: str | None = None):
         routing_output_filepath=None,
         output_filepath=output_filepath,
         write_tables=True,
+    )
+
+
+def find_missing_claimed_stems(
+    tables_dir: str | Path,
+    audio_format: str,
+    *,
+    limit: int | None = None,
+) -> list[str]:
+    """Paths claimed in ``stems.csv`` (or per-pass shards) that lack a valid FLAC.
+
+    Used as the mix-time verify so CSV-only resume cannot ship missing audio.
+    """
+    root = Path(tables_dir)
+    stems_csv = root / f"{STEMS_FILE_NAME}.csv"
+    frames = []
+    if stems_csv.is_file():
+        frames.append(pd.read_csv(stems_csv, usecols=["path", "track"]))
+    else:
+        from synthesis.pass_tables import RENDER_PASSES, pass_stems_csv
+
+        for name in RENDER_PASSES:
+            path = pass_stems_csv(root, name)
+            if path.is_file() and path.stat().st_size > 0:
+                frames.append(pd.read_csv(path, usecols=["path", "track"]))
+    if not frames:
+        return []
+    stems = pd.concat(frames, ignore_index=True).drop_duplicates(["path", "track"])
+    missing: list[str] = []
+    for _, row in stems.iterrows():
+        song_dir = Path(str(row["path"]))
+        track = int(row["track"])
+        out = stem_path(song_dir, track, audio_format)
+        if not stem_is_valid(out):
+            missing.append(str(out))
+            if limit is not None and len(missing) >= limit:
+                break
+    return missing
+
+
+def verify_claimed_stems_on_disk(
+    tables_dir: str | Path,
+    audio_format: str,
+    *,
+    sample_limit: int = 25,
+) -> None:
+    """Raise if any stem claimed in tables is missing or invalid on disk."""
+    missing = find_missing_claimed_stems(
+        tables_dir, audio_format, limit=sample_limit + 1,
+    )
+    if not missing:
+        print(
+            f"Verified claimed stems on disk under {tables_dir} "
+            f"({audio_format}).",
+            flush=True,
+        )
+        return
+    more = len(missing) > sample_limit
+    shown = missing[:sample_limit]
+    lines = "\n  ".join(shown)
+    suffix = "\n  ..." if more else ""
+    raise RuntimeError(
+        f"Stem tables claim files that are missing or invalid on disk "
+        f"({len(missing)}{'+' if more else ''} shown):\n  {lines}{suffix}\n"
+        "Finish copying audio (rsync) or re-render missing stems before mix."
     )
 
 

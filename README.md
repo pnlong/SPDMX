@@ -74,6 +74,7 @@ uv run python -m synthesis.final --only-pass layout
 uv run python -m synthesis.final --only-pass fluidsynth -j 8
 uv run python -m synthesis.final --only-pass ddsp_piano
 uv run python -m synthesis.final --only-pass midi_ddsp
+uv run python -m synthesis.final --only-pass verify
 uv run python -m synthesis.final --only-pass mix
 ```
 

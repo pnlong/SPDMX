@@ -204,3 +204,12 @@ def add_synthesis_args(
             "from shared storage (0=disable). Default: 10."
         ),
     )
+    parser.add_argument(
+        "--resume-check-disk",
+        action="store_true",
+        help=(
+            "Hybrid final: also require a valid on-disk FLAC before skipping a "
+            "stem (default: resume from stem_recipe CSV only, so concurrent "
+            "rsync of audio does not re-trigger renders)."
+        ),
+    )

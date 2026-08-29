@@ -214,12 +214,13 @@ uv run python -m synthesis.final --only-pass layout
 uv run python -m synthesis.final --only-pass fluidsynth -j 8
 uv run python -m synthesis.final --only-pass ddsp_piano
 uv run python -m synthesis.final --only-pass midi_ddsp
+uv run python -m synthesis.final --only-pass verify
 uv run python -m synthesis.final --only-pass mix
 
-# Optional: rebuild canonical CSVs without mixing (mix/realify already do this):
+# Optional: rebuild canonical CSVs without mixing (mix/realify/verify already do this):
 uv run python -m synthesis.final --only-pass merge
 
-# If the recipe uses *_realify, insert before mix — after Fluidsynth, DDSP-Piano, and MIDI-DDSP:
+# If the recipe uses *_realify, insert before verify — after Fluidsynth, DDSP-Piano, and MIDI-DDSP:
 uv run python -m synthesis.final --only-pass realify
 
 # Recipe changed; regenerate mismatches without prompting:
