@@ -8,6 +8,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from os import makedirs, remove
 from os.path import dirname, exists, expanduser
@@ -1191,9 +1192,31 @@ def _run_song_pool(
             skipped += 1
 
     def _run_dynamic_pool(*, executor_submit) -> None:
+        """Fill a worker pool dynamically so ``--refresh-every`` can skip peers' work.
+
+        Supports ``concurrent.futures`` (``.result``) and ``multiprocessing``
+        ``ApplyResult`` (``.get`` / ``.ready``).
+        """
         workers = max(1, int(jobs))
         pending: set = set()
         todo = iter(work_indices)
+
+        def _wait_first_completed(active: set):
+            sample = next(iter(active))
+            if hasattr(sample, "ready"):
+                # multiprocessing.pool.ApplyResult
+                while True:
+                    finished = {job for job in active if job.ready()}
+                    if finished:
+                        return finished, active - finished
+                    time.sleep(0.05)
+            return wait(active, return_when=FIRST_COMPLETED)
+
+        def _job_result(job):
+            if hasattr(job, "get") and not hasattr(job, "result"):
+                return job.get()
+            return job.result()
+
         while True:
             while len(pending) < workers:
                 idx = _next_work_index(todo)
@@ -1203,7 +1226,7 @@ def _run_song_pool(
             if not pending:
                 break
             try:
-                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                done, pending = _wait_first_completed(pending)
             except KeyboardInterrupt:
                 if job_log is not None:
                     job_log.interrupted(where="song pool wait")
@@ -1211,7 +1234,7 @@ def _run_song_pool(
             pending = set(pending)
             for fut in done:
                 try:
-                    _consume(fut.result())
+                    _consume(_job_result(fut))
                 except Exception as exc:
                     if job_log is not None:
                         job_log.fatal(exc, where="song pool result")
