@@ -24,6 +24,31 @@ REASON_VOCAL = "soundfont_vocal"
 REASON_GUITAR = "soundfont_guitar"
 REASON_EMPTY = "empty_track"
 
+
+def track_uses_drum_channel(track) -> bool:
+    """True if any sounding note_on uses GM drum channel 9.
+
+    Do not use the first channel-bearing message: meta/control on ch 0 often
+    precedes channel-9 percussion notes, which mis-labeled drums as melodic and
+    sent them to MIDI-DDSP (PrettyMIDI then raises ``Cannot synthesize drum``).
+    """
+    if track is None:
+        return False
+    for message in track:
+        if (
+            getattr(message, "type", None) == "note_on"
+            and int(getattr(message, "velocity", 0) or 0) > 0
+            and getattr(message, "channel", None) == 9
+        ):
+            return True
+    return False
+
+
+def midi_path_uses_drum_channel(midi_path: str | Path) -> bool:
+    """True if any track in a MIDI file has sounding channel-9 notes."""
+    midi = mido.MidiFile(filename=str(midi_path), charset="utf8")
+    return any(track_uses_drum_channel(t) for t in midi.tracks)
+
 # Canonical MIDI-DDSP / URMP names → GM program (0-indexed), matching magenta midi-ddsp.
 MIDI_DDSP_NAME_TO_PROGRAM: dict[str, int] = {
     "violin": 40,
@@ -317,7 +342,7 @@ def route_stem(
     Monophony is only required for MIDI-DDSP. DDSP-Piano accepts polyphony.
     When ``check_monophony`` is True, pass ``midi_path`` and/or ``track``.
     """
-    if is_drum:
+    if is_drum or track_uses_drum_channel(track):
         return StemRoute(BACKEND_SOUNDFONT, None, REASON_DRUM)
 
     # Grand-staff / conductor stubs often have a name + program default 0 but no notes.

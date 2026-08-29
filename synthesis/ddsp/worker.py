@@ -193,6 +193,8 @@ def _run_midi_ddsp(args: argparse.Namespace | SimpleNamespace) -> dict:
     sample_rate = 16000
 
     pm = pretty_midi.PrettyMIDI(str(args.midi))
+    if any(bool(inst.is_drum) for inst in pm.instruments):
+        raise ValueError("Cannot synthesize drum")
     total_sec = float(pm.get_end_time())
     if total_sec <= 0:
         _write_wav(Path(args.out), np.zeros(0, dtype=np.float32), sample_rate)

@@ -357,13 +357,14 @@ def synthesize_song_at_index(
         has_lyrics = False
         n_notes = 0
         max_velocity = 0
-        determined_whether_track_is_drum = False
         original_track = int(track_map[j]["original_track"])
 
         for message in track:
             if message.type == "note_on" and message.velocity > 0:
                 n_notes += 1
                 max_velocity = max(max_velocity, int(message.velocity))
+                if getattr(message, "channel", None) == 9:
+                    is_drum = True
             elif message.type == "program_change":
                 program = message.program
             elif message.type == "track_name":
@@ -372,14 +373,13 @@ def synthesize_song_at_index(
                 )
             elif message.type == "lyrics":
                 has_lyrics = True
-            if not determined_whether_track_is_drum and hasattr(message, "channel"):
-                is_drum = message.channel == 9
-                determined_whether_track_is_drum = True
             if need_to_synthesize and n_notes <= MAX_N_NOTES_IN_STEM:
                 track_midi_track.append(message)
 
-        # Dense corrected midis already bake register programs.
+        # Dense corrected midis already bake register programs / drum flags.
         program = int(track_map[j].get("program", program))
+        if bool(track_map[j].get("is_drum", False)):
+            is_drum = True
 
         if need_to_synthesize:
             track_midi.tracks.append(track_midi_track)
@@ -548,6 +548,8 @@ def synthesize_song_at_index(
 
             # Global two-pass: neural phases only render one backend; finalize does the rest.
             if ddsp_pass in ("ddsp_piano", "midi_ddsp"):
+                from synthesis.recipe import BACKEND_FLUIDSYNTH
+
                 neural_jobs: list[tuple[int, str, StemRoute]] = []
                 rendered_stem_rows: list[dict] = []
                 for j, track_path in enumerate(track_paths):
@@ -567,6 +569,22 @@ def synthesize_song_at_index(
                         continue
                     if stem_is_valid(out_stem) and not args.reset and plan is None:
                         continue
+                    # Defense: never send channel-9 / PrettyMIDI-drum stems to neural.
+                    from synthesis.ddsp.routing import midi_path_uses_drum_channel
+
+                    if midi_path_uses_drum_channel(track_path):
+                        waveform = _render_soundfont_stem(
+                            track_path, meta, args, path_output,
+                        )
+                        save_stem(waveform, song_dir, j, audio_format)
+                        rendered_stem_rows.append(stem_rows[j])
+                        if plan is not None:
+                            recipe_rows.append(plan.sidecar_row(
+                                path=path_output,
+                                track=j,
+                                backend=BACKEND_FLUIDSYNTH,
+                            ))
+                        continue
                     neural_jobs.append((
                         j,
                         track_path,
@@ -580,7 +598,13 @@ def synthesize_song_at_index(
                 if neural_jobs:
                     def _neural_one(job: tuple[int, str, StemRoute]):
                         idx, mid_path, route = job
-                        return idx, synthesize_stem_neural(mid_path, route)
+                        try:
+                            return idx, synthesize_stem_neural(mid_path, route), None
+                        except Exception as exc:
+                            if "Cannot synthesize drum" not in str(exc):
+                                raise
+                            # Last-resort Fluidsynth if a drum still reaches the worker.
+                            return idx, None, exc
 
                     inner = int(getattr(args, "neural_inner_workers", 0) or 0)
                     if ddsp_oneshot_enabled():
@@ -594,13 +618,30 @@ def synthesize_song_at_index(
                             executor.submit(_neural_one, job) for job in neural_jobs
                         ]
                         for fut in as_completed(futures):
-                            idx, waveform = fut.result()
+                            idx, waveform, drum_exc = fut.result()
+                            plan = track_render_meta[idx].get("plan")
+                            backend_name = ddsp_pass
+                            if waveform is None:
+                                meta = track_render_meta[idx]
+                                waveform = _render_soundfont_stem(
+                                    track_paths[idx], meta, args, path_output,
+                                )
+                                backend_name = BACKEND_FLUIDSYNTH
+                                from synthesis.job_log import get_job_log
+
+                                log = get_job_log()
+                                if log is not None:
+                                    log.warn(
+                                        f"MIDI-DDSP drum reject; Fluidsynth fallback "
+                                        f"track={idx} error={drum_exc}"
+                                    )
                             save_stem(waveform, song_dir, idx, audio_format)
                             rendered_stem_rows.append(stem_rows[idx])
-                            plan = track_render_meta[idx].get("plan")
                             if plan is not None:
                                 recipe_rows.append(plan.sidecar_row(
-                                    path=path_output, track=idx, backend=ddsp_pass,
+                                    path=path_output,
+                                    track=idx,
+                                    backend=backend_name,
                                 ))
 
                 for path in track_paths:
@@ -819,19 +860,17 @@ def _resolved_recipe(args):
 
 
 def _recipe_done_by_path(stem_recipe_index: dict | None, pass_name: str) -> dict[str, int]:
-    """Count stem_recipe rows already recorded for this pass backend."""
-    from synthesis.recipe import BACKEND_FLUIDSYNTH
+    """Count tracks finished in this pass's stem_recipe index.
 
-    backend = {
-        "fluidsynth": BACKEND_FLUIDSYNTH,
-        "ddsp_piano": "ddsp_piano",
-        "midi_ddsp": "midi_ddsp",
-    }.get(pass_name)
+    The index is loaded from a pass-scoped CSV (``stem_recipe.<pass>.csv``), so
+    every recorded track counts — including soundfont/fluidsynth redirects written
+    when a neural pass re-routes a mis-indexed drum or similar.
+    """
     done: dict[str, int] = {}
-    if not backend or not stem_recipe_index:
+    if not stem_recipe_index:
         return done
     for (path, _track), rec in stem_recipe_index.items():
-        if not rec or str(rec.get("backend") or "") != backend:
+        if not rec:
             continue
         key = str(path)
         done[key] = done.get(key, 0) + 1

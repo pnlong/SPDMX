@@ -24,6 +24,7 @@ from synthesis.ddsp.routing import (
     is_monophonic_messages,
     is_monophonic_midi,
     route_stem,
+    track_uses_drum_channel,
 )
 
 
@@ -135,6 +136,29 @@ def test_route_drums_and_vocals():
     vocal = route_stem(program=52, is_drum=False, track_name="Choir", check_monophony=False)
     assert vocal.backend == BACKEND_SOUNDFONT
     assert vocal.reason == REASON_VOCAL
+
+
+def test_drum_channel_after_non_drum_control_routes_to_soundfont():
+    """First channel msg can be ch0; sounding notes on ch9 must still be drums."""
+    track = mido.MidiTrack()
+    track.append(mido.Message("control_change", channel=0, control=7, value=100, time=0))
+    track.append(mido.Message("program_change", channel=0, program=0, time=0))
+    track.append(mido.Message("note_on", channel=9, note=36, velocity=80, time=0))
+    track.append(mido.Message("note_off", channel=9, note=36, velocity=0, time=100))
+    assert track_uses_drum_channel(track)
+    # is_drum=False mimics the old first-channel bug; track scan must still catch it.
+    route = route_stem(
+        program=0, is_drum=False, track_name="Kick", track=track, check_monophony=False,
+    )
+    assert route.backend == BACKEND_SOUNDFONT
+    assert route.reason == REASON_DRUM
+
+
+def test_melodic_track_not_marked_drum():
+    track = mido.MidiTrack()
+    track.append(mido.Message("note_on", channel=0, note=60, velocity=80, time=0))
+    track.append(mido.Message("note_off", channel=0, note=60, velocity=0, time=100))
+    assert not track_uses_drum_channel(track)
 
 
 def test_alto_sax_not_vocal_goes_midi_ddsp():

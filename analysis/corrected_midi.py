@@ -266,13 +266,16 @@ def _conductor_meta_prefix(midi: mido.MidiFile) -> list:
 def _track_program_and_drum(track) -> tuple[int, bool]:
     program = 0
     is_drum = False
-    determined = False
     for message in track:
         if message.type == "program_change":
             program = int(message.program)
-        if not determined and hasattr(message, "channel"):
-            is_drum = message.channel == 9
-            determined = True
+        # Any sounding note on GM channel 9 → drum (not the first channel msg).
+        if (
+            message.type == "note_on"
+            and int(getattr(message, "velocity", 0) or 0) > 0
+            and getattr(message, "channel", None) == 9
+        ):
+            is_drum = True
     return program, is_drum
 
 
