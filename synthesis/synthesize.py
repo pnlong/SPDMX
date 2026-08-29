@@ -8,7 +8,6 @@ import os
 import shutil
 import sys
 import tempfile
-import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from os import makedirs, remove
 from os.path import dirname, exists, expanduser
@@ -1037,6 +1036,34 @@ def _synthesis_worker(i: int):
     )
 
 
+def _synthesis_worker_logged(idx: int):
+    """Module-level so multiprocessing.Pool can pickle it (nested defs cannot)."""
+    from synthesis.job_log import get_job_log
+
+    log = get_job_log()
+    ctx = _WORKER_CTX
+    dataset = ctx["dataset"]
+    args = ctx["args"]
+    path = str(dataset.at[idx, "path_output"])
+    if log is not None:
+        log.song_start(idx, path)
+    try:
+        result = _synthesis_worker(idx)
+    except Exception as exc:
+        if log is not None:
+            log.song_error(idx, path, exc)
+        raise
+    if log is not None:
+        _, _, _, _, n_progress = result
+        use_tracks = bool(getattr(args, "_use_tracks_progress", False))
+        log.song_done(
+            idx,
+            path,
+            n_tracks=int(n_progress) if use_tracks else 1,
+        )
+    return result
+
+
 def _run_song_pool(
     *,
     dataset: pd.DataFrame,
@@ -1059,7 +1086,9 @@ def _run_song_pool(
 
     write_row = append_rows if append_only else append_rows_deduped
     write_kw = {} if append_only else {"key_cols": ["path", "track"]}
-    use_tracks = track_total is not None
+    # track_total==0 (all assigned stems already in recipe) still leaves Fluidsynth
+    # visiting songs for neural fallbacks — use song counts so tqdm has a real total.
+    use_tracks = track_total is not None and int(track_total) > 0
     pbar = tqdm(
         total=int(track_total) if use_tracks else len(work_indices),
         desc=desc,
@@ -1095,25 +1124,7 @@ def _run_song_pool(
         )
         print(f"Synthesis job log: {log_path}", flush=True)
 
-    def _synthesis_worker_logged(idx: int):
-        log = get_job_log()
-        path = str(dataset.at[idx, "path_output"])
-        if log is not None:
-            log.song_start(idx, path)
-        try:
-            result = _synthesis_worker(idx)
-        except Exception as exc:
-            if log is not None:
-                log.song_error(idx, path, exc)
-            raise
-        if log is not None:
-            _, _, _, _, n_progress = result
-            log.song_done(
-                idx,
-                path,
-                n_tracks=int(n_progress) if use_tracks else 1,
-            )
-        return result
+    args._use_tracks_progress = use_tracks
 
     def _consume(result) -> None:
         song_info, stem_rows, routing_rows, recipe_rows, n_progress = result
@@ -1151,7 +1162,21 @@ def _run_song_pool(
             [song_info],
         )
 
-    refresh_every = int(getattr(args, "refresh_every", 0) or 0)
+    # Dynamic --refresh-every only works with thread pools (MIDI-DDSP /
+    # DDSP-Piano). Fluidsynth uses multiprocessing.Pool + imap; ignore the
+    # flag there rather than plumbing apply_async / cross-process state.
+    requested_refresh = int(getattr(args, "refresh_every", 0) or 0)
+    refresh_every = 0 if not use_threads else requested_refresh
+    if requested_refresh > 0 and not use_threads:
+        print(
+            "Ignoring --refresh-every (Fluidsynth process pool).",
+            flush=True,
+        )
+    elif refresh_every > 0:
+        print(
+            f"Reloading progress from shared storage every {refresh_every} song(s).",
+            flush=True,
+        )
     audio_format = synthesis_audio_format(args.flac)
     args._progress_output_filepath = output_filepath
     args._progress_routing_filepath = routing_output_filepath
@@ -1191,55 +1216,35 @@ def _run_song_pool(
                 return idx
             skipped += 1
 
-    def _run_dynamic_pool(*, executor_submit) -> None:
-        """Fill a worker pool dynamically so ``--refresh-every`` can skip peers' work.
-
-        Supports ``concurrent.futures`` (``.result``) and ``multiprocessing``
-        ``ApplyResult`` (``.get`` / ``.ready``).
-        """
+    def _run_dynamic_thread_pool() -> None:
+        """Fill a thread pool dynamically so ``--refresh-every`` can skip peers' work."""
         workers = max(1, int(jobs))
         pending: set = set()
         todo = iter(work_indices)
-
-        def _wait_first_completed(active: set):
-            sample = next(iter(active))
-            if hasattr(sample, "ready"):
-                # multiprocessing.pool.ApplyResult
-                while True:
-                    finished = {job for job in active if job.ready()}
-                    if finished:
-                        return finished, active - finished
-                    time.sleep(0.05)
-            return wait(active, return_when=FIRST_COMPLETED)
-
-        def _job_result(job):
-            if hasattr(job, "get") and not hasattr(job, "result"):
-                return job.get()
-            return job.result()
-
-        while True:
-            while len(pending) < workers:
-                idx = _next_work_index(todo)
-                if idx is None:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            while True:
+                while len(pending) < workers:
+                    idx = _next_work_index(todo)
+                    if idx is None:
+                        break
+                    pending.add(pool.submit(_synthesis_worker_logged, idx))
+                if not pending:
                     break
-                pending.add(executor_submit(_synthesis_worker_logged, idx))
-            if not pending:
-                break
-            try:
-                done, pending = _wait_first_completed(pending)
-            except KeyboardInterrupt:
-                if job_log is not None:
-                    job_log.interrupted(where="song pool wait")
-                raise
-            pending = set(pending)
-            for fut in done:
                 try:
-                    _consume(_job_result(fut))
-                except Exception as exc:
+                    done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                except KeyboardInterrupt:
                     if job_log is not None:
-                        job_log.fatal(exc, where="song pool result")
+                        job_log.interrupted(where="song pool wait")
                     raise
-                _maybe_refresh_progress()
+                pending = set(pending)
+                for fut in done:
+                    try:
+                        _consume(fut.result())
+                    except Exception as exc:
+                        if job_log is not None:
+                            job_log.fatal(exc, where="song pool result")
+                        raise
+                    _maybe_refresh_progress()
         if skipped:
             print(
                 f"Skipped {skipped} song(s) already complete on shared storage.",
@@ -1250,8 +1255,7 @@ def _run_song_pool(
         if use_threads:
             _preload_track_maps(args)
             _init_synthesis_worker(dataset, shared_completed, args)
-            with ThreadPoolExecutor(max_workers=max(1, int(jobs))) as pool:
-                _run_dynamic_pool(executor_submit=pool.submit)
+            _run_dynamic_thread_pool()
             return
 
         pool_ctx = (
@@ -1264,13 +1268,10 @@ def _run_song_pool(
             initializer=_init_synthesis_worker,
             initargs=(dataset, shared_completed, args),
         ) as pool:
-            if refresh_every > 0:
-                _run_dynamic_pool(executor_submit=pool.apply_async)
-            else:
-                for result in pool.imap(
-                    _synthesis_worker_logged, work_indices, chunksize=CHUNK_SIZE
-                ):
-                    _consume(result)
+            for result in pool.imap(
+                _synthesis_worker_logged, work_indices, chunksize=CHUNK_SIZE
+            ):
+                _consume(result)
     except KeyboardInterrupt:
         if job_log is not None:
             job_log.interrupted(where="song pool")
@@ -1741,7 +1742,13 @@ def _run_hybrid_synthesis(
         )
         extra = ""
         if track_total is not None:
-            extra = f", {track_total} tracks left, {len(indices)} songs"
+            if int(track_total) > 0:
+                extra = f", {track_total} tracks left, {len(indices)} songs"
+            else:
+                extra = (
+                    f", 0 tracks left, {len(indices)} songs "
+                    "(scanning for neural fallbacks)"
+                )
         workers = (
             f"{pass_jobs} GPUs across songs" if use_threads else f"-j {pass_jobs}"
         )
@@ -1950,12 +1957,6 @@ def run_synthesis(args, output_dir: str, *, media_dir: str | None = None):
             format_shard_summary(
                 shard_count, shard_index, assigned_count, len(work_indices),
             ),
-            flush=True,
-        )
-
-    if refresh_every > 0:
-        print(
-            f"Reloading progress from shared storage every {refresh_every} song(s).",
             flush=True,
         )
 

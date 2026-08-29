@@ -201,7 +201,9 @@ def add_synthesis_args(
         metavar="N",
         help=(
             "Every N songs, reload stem_recipe / data CSVs and on-disk progress "
-            "from shared storage (0=disable). Default: 10."
+            "from shared storage (0=disable). Applies to threaded neural passes "
+            "(MIDI-DDSP / DDSP-Piano); ignored for Fluidsynth process pools. "
+            "Default: 10."
         ),
     )
     parser.add_argument(
