@@ -82,9 +82,142 @@ def test_verify_claimed_stems_on_disk_raises_when_missing(tmp_path: Path):
         "has_lyrics": [False],
         "max_velocity": [80],
         "velocity_scale": [1.0],
-    }).to_csv(tables / "stems.csv", index=False)
-    with pytest.raises(RuntimeError, match="missing or invalid"):
+    }).to_csv(tables / "stems.fluidsynth.csv", index=False)
+    with pytest.raises(RuntimeError, match="missing or invalid") as excinfo:
         verify_claimed_stems_on_disk(tables, "flac")
+    assert str(song / "0.flac") in str(excinfo.value) or "0.flac" in str(excinfo.value)
+
+
+def test_count_pass_remaining_and_verify_reports(tmp_path: Path):
+    from synthesis.audio import save_stem
+    from synthesis.pass_tables import pass_recipe_csv, pass_stems_csv
+    from synthesis.paths import MIDI_INDEX_FILE_NAME
+    from synthesis.recipe import CategoryRecipe, CategorySpec
+    from synthesis.synthesize import count_pass_remaining, verify_claimed_stems_on_disk
+    import torch
+
+    tables = tmp_path / "final"
+    tables.mkdir()
+    song = tmp_path / "SPDMX" / "audio" / "1" / "11" / "QmA"
+    song.mkdir(parents=True)
+    path = str(song)
+    pd.DataFrame({
+        "song_id": ["1/11/QmA"],
+        "mid": [str(tmp_path / "SPDMX" / "mid" / "1" / "11" / "QmA.mid")],
+        "n_tracks": [2],
+        "n_fluidsynth": [2],
+        "n_ddsp_piano": [0],
+        "n_midi_ddsp": [0],
+    }).to_csv(tables / MIDI_INDEX_FILE_NAME, index=False)
+    # One of two fluidsynth stems recorded → 1 remaining
+    pd.DataFrame([{
+        "path": path,
+        "track": 0,
+        "category": "piano",
+        "ablation": "basic",
+        "method": "basic",
+        "fallback": "basic",
+        "backend": "fluidsynth",
+        "realify": False,
+    }]).to_csv(pass_recipe_csv(tables, "fluidsynth"), index=False)
+    recipe = CategoryRecipe(
+        specs={"piano": CategorySpec("basic", False, "basic", "basic")},
+    )
+    rows = count_pass_remaining(tables, recipe=recipe)
+    assert rows[0]["pass"] == "fluidsynth"
+    assert rows[0]["remaining"] == 1
+    assert rows[0]["examples"] == [{"song_id": "1/11/QmA", "remaining": 1}]
+    with pytest.raises(RuntimeError, match=r"1/11/QmA") as excinfo:
+        verify_claimed_stems_on_disk(tables, "flac", recipe=recipe)
+    assert "stems left to do" in str(excinfo.value)
+
+    # Finish recipe + write both stems on disk → verify passes
+    pd.DataFrame([
+        {
+            "path": path, "track": t, "category": "piano", "ablation": "basic",
+            "method": "basic", "fallback": "basic", "backend": "fluidsynth",
+            "realify": False,
+        }
+        for t in (0, 1)
+    ]).to_csv(pass_recipe_csv(tables, "fluidsynth"), index=False)
+    save_stem(torch.zeros(1, 100), song, 0, "flac")
+    save_stem(torch.zeros(1, 100), song, 1, "flac")
+    pd.DataFrame({
+        "path": [path, path],
+        "track": [0, 1],
+        "original_track": [0, 1],
+        "program": [0, 0],
+        "is_drum": [False, False],
+        "name": ["a", "b"],
+        "has_lyrics": [False, False],
+        "max_velocity": [80, 80],
+        "velocity_scale": [1.0, 1.0],
+    }).to_csv(pass_stems_csv(tables, "fluidsynth"), index=False)
+    verify_claimed_stems_on_disk(tables, "flac", recipe=recipe)
+    assert count_pass_remaining(tables, recipe=recipe)[0]["remaining"] == 0
+
+
+def test_raw_path_to_audio():
+    from synthesis.paths import raw_path_to_audio
+
+    assert raw_path_to_audio("./raw/1/11/Qm") == "./audio/1/11/Qm"
+    assert (
+        raw_path_to_audio("/deepfreeze/share/SPDMX/SPDMX/raw/1/11/Qm")
+        == "/deepfreeze/share/SPDMX/SPDMX/audio/1/11/Qm"
+    )
+
+
+def test_hybrid_mix_writes_audio_leaves_raw(tmp_path: Path):
+    """Final mix writes to SPDMX/audio and leaves SPDMX/raw untouched."""
+    from shared.config import SAMPLE_RATE, SPDMX_FILE_NAME
+    from synthesis.audio import load_stem
+    from synthesis.final import run_summable_mix
+    import numpy as np
+    import soundfile as sf
+
+    media = tmp_path / "SPDMX"
+    tables = tmp_path / "dev" / "final"
+    tables.mkdir(parents=True)
+    song_rel = "1/11/QmMix"
+    raw_song = media / "raw" / song_rel
+    raw_song.mkdir(parents=True)
+    sr = SAMPLE_RATE
+    sf.write(str(raw_song / "0.flac"), np.full(sr, 0.9, np.float32), sr, format="FLAC")
+    sf.write(str(raw_song / "1.flac"), np.full(sr, 0.9, np.float32), sr, format="FLAC")
+    path = str(raw_song)
+    pd.DataFrame({
+        "path": [path, path],
+        "track": [0, 1],
+        "velocity_scale": [1.0, 1.0],
+    }).to_csv(tables / "stems.csv", index=False)
+    pd.DataFrame({"path": [path], "n_tracks": [2]}).to_csv(tables / "data.csv", index=False)
+    pd.DataFrame({
+        "song_id": [song_rel],
+        "path": [f"./raw/{song_rel}"],
+        "track": [0],
+    }).to_csv(media / f"{SPDMX_FILE_NAME}.csv", index=False)
+
+    class _Args:
+        jobs = 1
+        dataset_filepath = str(tmp_path / "PDMX.csv")
+        output_dir = str(tmp_path)
+
+    run_summable_mix(_Args(), str(tables), media_dir=str(media))
+
+    audio_song = media / "audio" / song_rel
+    assert (audio_song / "0.flac").is_file()
+    assert (audio_song / "1.flac").is_file()
+    # Raw still loud / untouched peak region
+    assert load_stem(raw_song / "0.flac").abs().max().item() > 0.8
+    # Mixable peak-limited when summed
+    s0 = load_stem(audio_song / "0.flac")
+    s1 = load_stem(audio_song / "1.flac")
+    assert (s0 + s1).abs().max().item() <= 1.0 + 1e-4
+    # Pipeline tables still point at raw/
+    assert pd.read_csv(tables / "stems.csv").iloc[0]["path"] == path
+    # Released SPDMX.csv points at audio/
+    released = pd.read_csv(media / f"{SPDMX_FILE_NAME}.csv")
+    assert released.iloc[0]["path"] == f"./audio/{song_rel}"
 
 
 def test_parse_args_accepts_verify():
@@ -194,7 +327,7 @@ def test_layout_pass_creates_song_dirs(tmp_path: Path):
     dataset = run_layout_pass(args, tables, media_dir=dest)
     song_dir = Path(dataset.iloc[0]["path_output"])
     assert song_dir.is_dir()
-    assert song_dir == Path(dest) / "audio" / "1" / "11" / "QmTestSong"
+    assert song_dir == Path(dest) / "raw" / "1" / "11" / "QmTestSong"
     assert (Path(dest) / "mid" / "1" / "11").is_dir()
     assert not (Path(dest) / f"{DATA_DIR_NAME}.csv").is_file()
     assert (Path(tables) / f"{DATA_DIR_NAME}.csv").is_file()
@@ -242,8 +375,8 @@ def test_layout_pass_restricts_to_spdmx_csv(tmp_path: Path):
     dataset = run_layout_pass(args, production_tables_dir(str(out)), media_dir=str(dest))
     assert len(dataset) == 1
     assert Path(dataset.iloc[0]["path_output"]).name == "QmKeep"
-    assert (Path(dest) / "audio" / "1" / "11" / "QmKeep").is_dir()
-    assert not (Path(dest) / "audio" / "1" / "11" / "QmDrop").is_dir()
+    assert (Path(dest) / "raw" / "1" / "11" / "QmKeep").is_dir()
+    assert not (Path(dest) / "raw" / "1" / "11" / "QmDrop").is_dir()
     index_path = Path(production_tables_dir(str(out))) / MIDI_INDEX_FILE_NAME
     assert index_path.is_file()
     index = pd.read_csv(index_path)

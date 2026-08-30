@@ -82,7 +82,7 @@ uv run python -m synthesis.final --only-pass mix
 `fluidsynth`, `ddsp_piano`, `midi_ddsp`, or `realify` (one unique index per
 machine). See [`synthesis/FINAL_SETUP.md`](synthesis/FINAL_SETUP.md).
 
-Writes FLAC stems to `{OUTPUT_DIR}/SPDMX/audio/` (PDMX `data/*.json` → a directory of `0.flac`, `1.flac`, …). Sanitized MIDIs, `SPDMX.csv`, `LICENSE`, and `README.md` come from `prepare_synthesis` / layout. Mix is `sum(stems)` (no `mixture.*`). Pipeline tables live under `{OUTPUT_DIR}/dev/final/` (`stems.fluidsynth.csv` etc. during render; `stems.csv` / `data.csv` after mix or `--only-pass merge`).
+Writes raw FLAC stems to `{OUTPUT_DIR}/SPDMX/raw/` (mix writes summable stems to `audio/`). Sanitized MIDIs, `SPDMX.csv`, `LICENSE`, and `README.md` come from `prepare_synthesis` / layout. Mix is `sum(stems)` (no `mixture.*`). Pipeline tables live under `{OUTPUT_DIR}/dev/final/` (`stems.fluidsynth.csv` etc. during render; `stems.csv` / `data.csv` after mix or `--only-pass merge`).
 
 ### Per-song layout
 
@@ -91,7 +91,10 @@ Writes FLAC stems to `{OUTPUT_DIR}/SPDMX/audio/` (PDMX `data/*.json` → a direc
 ├── LICENSE
 ├── README.md
 ├── SPDMX.csv                     # join to PDMX.csv on song_id; row key (song_id, track)
-├── audio/<song_id>/
+├── raw/<song_id>/                # pre-mix hybrid stems
+│   ├── 0.flac
+│   └── …
+├── audio/<song_id>/              # mixable stems (after --only-pass mix)
 │   ├── 0.flac
 │   └── …
 └── mid/<song_id>.mid

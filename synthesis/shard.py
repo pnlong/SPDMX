@@ -6,18 +6,19 @@ import random
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from shared.config import DATA_DIR_NAME, SPDMX_AUDIO_DIR_NAME
+from shared.config import DATA_DIR_NAME, SPDMX_AUDIO_DIR_NAME, SPDMX_RAW_DIR_NAME
 
 
 def song_id_from_synthesis_path(path: str | Path) -> str:
     """Extract song id from a synthesis output directory path."""
     parts = Path(path).parts
-    for marker in (SPDMX_AUDIO_DIR_NAME, DATA_DIR_NAME):
+    for marker in (SPDMX_RAW_DIR_NAME, SPDMX_AUDIO_DIR_NAME, DATA_DIR_NAME):
         if marker in parts:
             idx = parts.index(marker)
             return str(Path(*parts[idx + 1:]))
     raise ValueError(
-        f"Song path missing {SPDMX_AUDIO_DIR_NAME}/ or {DATA_DIR_NAME}/ segment: {path}"
+        f"Song path missing {SPDMX_RAW_DIR_NAME}/, "
+        f"{SPDMX_AUDIO_DIR_NAME}/, or {DATA_DIR_NAME}/ segment: {path}"
     )
 
 

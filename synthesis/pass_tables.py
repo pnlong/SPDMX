@@ -56,9 +56,9 @@ def pass_routing_csv(tables_dir: str | Path, pass_name: str) -> Path:
 
 def _song_id_from_audio_dir(path: str) -> str:
     text = str(path).replace("\\", "/")
-    marker = "/audio/"
-    if marker in text:
-        return text.split(marker, 1)[1].strip("/")
+    for marker in ("/raw/", "/audio/", "/audio_summable/"):
+        if marker in text:
+            return text.split(marker, 1)[1].strip("/")
     return Path(path).name
 
 

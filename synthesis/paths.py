@@ -14,6 +14,7 @@ from shared.config import (
     SPDMX_AUDIO_DIR_NAME,
     SPDMX_DATASET_DIR_NAME,
     SPDMX_MID_DIR_NAME,
+    SPDMX_RAW_DIR_NAME,
     STEMS_DIR_NAME,
     STEMS_REALIFY_DIR_NAME,
     TRACK_NAMES_DIR_NAME,
@@ -98,11 +99,34 @@ def spdmx_dataset_dir(output_dir: str) -> str:
 
 
 def spdmx_audio_dir(output_dir: str) -> str:
+    """Released / mixable stem tree: ``{OUTPUT}/SPDMX/audio/``."""
     return f"{spdmx_dataset_dir(output_dir)}/{SPDMX_AUDIO_DIR_NAME}"
+
+
+def spdmx_raw_dir(output_dir: str) -> str:
+    """Pre-mix hybrid stem tree: ``{OUTPUT}/SPDMX/raw/``."""
+    return f"{spdmx_dataset_dir(output_dir)}/{SPDMX_RAW_DIR_NAME}"
 
 
 def spdmx_mid_dir(output_dir: str) -> str:
     return f"{spdmx_dataset_dir(output_dir)}/{SPDMX_MID_DIR_NAME}"
+
+
+def raw_path_to_audio(path: str) -> str:
+    """Map ``…/raw/…`` or ``./raw/…`` to the sibling released ``audio/`` tree."""
+    text = str(path)
+    rel_src = f"./{SPDMX_RAW_DIR_NAME}/"
+    rel_dst = f"./{SPDMX_AUDIO_DIR_NAME}/"
+    if text.startswith(rel_src):
+        return rel_dst + text[len(rel_src):]
+    abs_src = f"/{SPDMX_RAW_DIR_NAME}/"
+    abs_dst = f"/{SPDMX_AUDIO_DIR_NAME}/"
+    if abs_src in text:
+        return text.replace(abs_src, abs_dst, 1)
+    raise ValueError(
+        f"Cannot map to {SPDMX_AUDIO_DIR_NAME}: path has no "
+        f"{SPDMX_RAW_DIR_NAME!r} segment: {path}"
+    )
 
 
 def remap_path_prefix(value: str, source_dir: Path, output_dir: Path) -> str:

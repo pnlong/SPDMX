@@ -63,7 +63,9 @@ PRESET_SWEEP_DIR_NAME = "preset_sweep"
 PATCH_SWEEP_DIR_NAME = "patch_sweep"
 
 # {OUTPUT_DIR}/SPDMX/ — released dataset: LICENSE, README, SPDMX.csv, audio/, mid/
+# Raw hybrid stems live under raw/; mix writes the released summable tree to audio/.
 SPDMX_DATASET_DIR_NAME = "SPDMX"
+SPDMX_RAW_DIR_NAME = "raw"
 SPDMX_AUDIO_DIR_NAME = "audio"
 SPDMX_MID_DIR_NAME = "mid"
 

@@ -28,9 +28,9 @@ from shared.config import (
     REALIFY_SILENCE_ENFORCE,
     SONGS_TABLE_COLUMNS,
     SOUNDFONT_DIR,
-    SPDMX_AUDIO_DIR_NAME,
     SPDMX_FILE_NAME,
     SPDMX_MID_DIR_NAME,
+    SPDMX_RAW_DIR_NAME,
     STEMS_FILE_NAME,
     STEMS_TABLE_COLUMNS,
 )
@@ -208,8 +208,8 @@ def song_output_dir(
 ) -> str:
     """Map a PDMX ``data/…/Qm.json`` path to a stem directory under ``output_dir``.
 
-    Hybrid production uses ``tree_dir_name="audio"`` so the dataset is
-    ``{SPDMX}/audio/…`` instead of ``data/``.
+    Hybrid production uses ``tree_dir_name="raw"`` so pre-mix stems are
+    ``{SPDMX}/raw/…`` (mix writes the released tree under ``audio/``).
     """
     rel = json_path[len(original_dataset_dir):]
     rel_no_ext = ".".join(rel.split(".")[:-1])
@@ -222,7 +222,7 @@ def song_output_dir(
 
 
 def render_tree_dir_name(args) -> str:
-    return SPDMX_AUDIO_DIR_NAME if _hybrid_recipe(args) is not None else DATA_DIR_NAME
+    return SPDMX_RAW_DIR_NAME if _hybrid_recipe(args) is not None else DATA_DIR_NAME
 
 
 def songs_missing_routing(songs: pd.DataFrame, routing: pd.DataFrame) -> set[str]:
@@ -1644,14 +1644,14 @@ def run_layout_pass(
         print(f"Reset: clearing tables under {output_dir} ...", flush=True)
         reset_synthesis_output(output_dir)
         if Path(media_dir).resolve() != Path(output_dir).resolve():
-            audio_root = Path(media_dir) / SPDMX_AUDIO_DIR_NAME
+            audio_root = Path(media_dir) / SPDMX_RAW_DIR_NAME
             if audio_root.exists():
                 print(
                     f"Reset: deleting {audio_root} (can take several minutes on NFS) ...",
                     flush=True,
                 )
                 shutil.rmtree(audio_root)
-                print("Reset: audio tree removed.", flush=True)
+                print("Reset: raw stem tree removed.", flush=True)
     else:
         makedirs(output_dir, exist_ok=True)
         makedirs(media_dir, exist_ok=True)
@@ -1798,7 +1798,7 @@ def run_synthesis(args, output_dir: str, *, media_dir: str | None = None):
     if args.reset and not getattr(args, "skip_output_reset", False):
         reset_synthesis_output(output_dir)
         if Path(media_dir).resolve() != Path(output_dir).resolve():
-            audio_root = Path(media_dir) / SPDMX_AUDIO_DIR_NAME
+            audio_root = Path(media_dir) / SPDMX_RAW_DIR_NAME
             if audio_root.exists():
                 shutil.rmtree(audio_root)
     else:
@@ -2018,24 +2018,132 @@ def run_synthesis(args, output_dir: str, *, media_dir: str | None = None):
     )
 
 
+def _render_passes_for_recipe(recipe) -> tuple[str, ...]:
+    """Hybrid render engines that should be complete before verify/mix."""
+    from synthesis.pass_tables import RENDER_PASSES
+
+    if recipe is None:
+        return RENDER_PASSES
+    passes = ["fluidsynth"]
+    if recipe.uses_ddsp_piano():
+        passes.append("ddsp_piano")
+    if recipe.uses_ddsp():
+        passes.append("midi_ddsp")
+    return tuple(passes)
+
+
+def count_pass_remaining(
+    tables_dir: str | Path,
+    *,
+    recipe=None,
+    sample_limit: int = 25,
+) -> list[dict]:
+    """Per-pass assigned / done / remaining track counts from midi_index + recipes.
+
+    ``remaining`` matches ``_work_for_pass`` resume logic (assigned tracks not yet
+    recorded in ``stem_recipe.<pass>.csv``). Each row includes ``examples``:
+    ``[{song_id, remaining}, ...]`` (up to ``sample_limit``) for incomplete songs.
+    """
+    from synthesis.pass_tables import _song_id_from_audio_dir, pass_recipe_csv
+    from synthesis.recipe import load_stem_recipe_index
+
+    root = Path(tables_dir)
+    index_path = root / MIDI_INDEX_FILE_NAME
+    if not index_path.is_file():
+        return []
+    index = pd.read_csv(index_path)
+    if index.empty or "song_id" not in index.columns:
+        return []
+
+    rows: list[dict] = []
+    for pass_name in _render_passes_for_recipe(recipe):
+        col = PASS_TRACK_COLUMNS.get(pass_name)
+        if col is None or col not in index.columns:
+            continue
+        recipe_path = pass_recipe_csv(root, pass_name)
+        stem_index = load_stem_recipe_index(root, filename=recipe_path.name)
+        done_by_sid: dict[str, int] = {}
+        for (path, _track), rec in stem_index.items():
+            if not rec:
+                continue
+            sid = _song_id_from_audio_dir(str(path))
+            done_by_sid[sid] = done_by_sid.get(sid, 0) + 1
+        assigned = 0
+        remaining = 0
+        songs_left = 0
+        examples: list[dict] = []
+        for _, row in index.iterrows():
+            n = int(row[col])
+            if n <= 0:
+                continue
+            sid = str(row["song_id"])
+            assigned += n
+            rem = max(0, n - int(done_by_sid.get(sid, 0)))
+            if rem > 0:
+                remaining += rem
+                songs_left += 1
+                if len(examples) < sample_limit:
+                    examples.append({"song_id": sid, "remaining": rem})
+        rows.append({
+            "pass": pass_name,
+            "assigned": assigned,
+            "done": assigned - remaining,
+            "remaining": remaining,
+            "songs_left": songs_left,
+            "examples": examples,
+        })
+    return rows
+
+
 def find_missing_claimed_stems(
     tables_dir: str | Path,
     audio_format: str,
     *,
     limit: int | None = None,
-) -> list[str]:
+    by_pass: bool = False,
+) -> list[str] | dict[str, list[str]]:
     """Paths claimed in ``stems.csv`` (or per-pass shards) that lack a valid FLAC.
 
     Used as the mix-time verify so CSV-only resume cannot ship missing audio.
+    When ``by_pass`` is True, return ``{pass_name: [paths...]}`` (canonical
+    ``stems.csv`` is checked under the key ``\"merged\"``).
     """
+    from synthesis.pass_tables import RENDER_PASSES, pass_stems_csv
+
     root = Path(tables_dir)
+
+    def _missing_from_frame(frame: pd.DataFrame) -> list[str]:
+        if frame is None or frame.empty:
+            return []
+        missing: list[str] = []
+        for _, row in frame.drop_duplicates(["path", "track"]).iterrows():
+            out = stem_path(Path(str(row["path"])), int(row["track"]), audio_format)
+            if not stem_is_valid(out):
+                missing.append(str(out))
+                if limit is not None and len(missing) >= limit:
+                    break
+        return missing
+
+    if by_pass:
+        out: dict[str, list[str]] = {}
+        stems_csv = root / f"{STEMS_FILE_NAME}.csv"
+        if stems_csv.is_file() and stems_csv.stat().st_size > 0:
+            out["merged"] = _missing_from_frame(
+                pd.read_csv(stems_csv, usecols=["path", "track"]),
+            )
+        for name in RENDER_PASSES:
+            path = pass_stems_csv(root, name)
+            if path.is_file() and path.stat().st_size > 0:
+                out[name] = _missing_from_frame(
+                    pd.read_csv(path, usecols=["path", "track"]),
+                )
+        return out
+
     stems_csv = root / f"{STEMS_FILE_NAME}.csv"
     frames = []
     if stems_csv.is_file():
         frames.append(pd.read_csv(stems_csv, usecols=["path", "track"]))
     else:
-        from synthesis.pass_tables import RENDER_PASSES, pass_stems_csv
-
         for name in RENDER_PASSES:
             path = pass_stems_csv(root, name)
             if path.is_file() and path.stat().st_size > 0:
@@ -2043,16 +2151,17 @@ def find_missing_claimed_stems(
     if not frames:
         return []
     stems = pd.concat(frames, ignore_index=True).drop_duplicates(["path", "track"])
-    missing: list[str] = []
-    for _, row in stems.iterrows():
-        song_dir = Path(str(row["path"]))
-        track = int(row["track"])
-        out = stem_path(song_dir, track, audio_format)
-        if not stem_is_valid(out):
-            missing.append(str(out))
-            if limit is not None and len(missing) >= limit:
-                break
-    return missing
+    return _missing_from_frame(stems)
+
+
+def _format_verify_examples(label: str, items: list[str], *, total: int, limit: int) -> str:
+    if not items and total <= 0:
+        return f"{label}: (none shown)"
+    shown = items[:limit]
+    body = "\n".join(f"    {item}" for item in shown)
+    leftover = total - len(shown)
+    suffix = f"\n    ... and {leftover} more" if leftover > 0 else ""
+    return f"{label}:\n{body}{suffix}"
 
 
 def verify_claimed_stems_on_disk(
@@ -2060,27 +2169,139 @@ def verify_claimed_stems_on_disk(
     audio_format: str,
     *,
     sample_limit: int = 25,
+    recipe=None,
 ) -> None:
-    """Raise if any stem claimed in tables is missing or invalid on disk."""
-    missing = find_missing_claimed_stems(
-        tables_dir, audio_format, limit=sample_limit + 1,
+    """Raise if render work remains or claimed stems are missing/invalid on disk.
+
+    Always prints a per-pass summary. On failure the exception lists counts and
+    concrete examples (incomplete ``song_id``s and missing file paths).
+    """
+    root = Path(tables_dir)
+    remaining_rows = count_pass_remaining(
+        root, recipe=recipe, sample_limit=sample_limit,
     )
-    if not missing:
-        print(
-            f"Verified claimed stems on disk under {tables_dir} "
-            f"({audio_format}).",
-            flush=True,
+    summary_lines: list[str] = []
+
+    if remaining_rows:
+        summary_lines.append("Pass remaining (assigned − stem_recipe):")
+        for row in remaining_rows:
+            summary_lines.append(
+                f"  {row['pass']}: {row['remaining']} tracks left "
+                f"({row['songs_left']} songs; "
+                f"{row['done']}/{row['assigned']} recorded)"
+            )
+            if row["remaining"] and row["examples"]:
+                summary_lines.append(
+                    _format_verify_examples(
+                        f"  examples ({row['pass']})",
+                        [
+                            f"{ex['song_id']} ({ex['remaining']} tracks)"
+                            for ex in row["examples"]
+                        ],
+                        total=int(row["songs_left"]),
+                        limit=sample_limit,
+                    )
+                )
+    elif not (root / MIDI_INDEX_FILE_NAME).is_file():
+        summary_lines.append(
+            f"No {MIDI_INDEX_FILE_NAME} under {root}; "
+            "skipping per-pass remaining counts."
         )
-        return
-    more = len(missing) > sample_limit
-    shown = missing[:sample_limit]
-    lines = "\n  ".join(shown)
-    suffix = "\n  ..." if more else ""
-    raise RuntimeError(
-        f"Stem tables claim files that are missing or invalid on disk "
-        f"({len(missing)}{'+' if more else ''} shown):\n  {lines}{suffix}\n"
-        "Finish copying audio (rsync) or re-render missing stems before mix."
+
+    missing_by_pass = find_missing_claimed_stems(
+        root, audio_format, by_pass=True,
     )
+    assert isinstance(missing_by_pass, dict)
+    report_passes = [
+        name for name in _render_passes_for_recipe(recipe)
+        if name in missing_by_pass
+    ]
+    if not report_passes and "merged" in missing_by_pass:
+        report_passes = ["merged"]
+
+    missing_total = 0
+    if report_passes:
+        summary_lines.append("Claimed stems missing or invalid on disk:")
+        for name in report_passes:
+            paths = missing_by_pass.get(name) or []
+            n = len(paths)
+            missing_total += n
+            summary_lines.append(f"  {name}: {n} missing")
+            if n:
+                summary_lines.append(
+                    _format_verify_examples(
+                        f"  examples ({name})",
+                        paths,
+                        total=n,
+                        limit=sample_limit,
+                    )
+                )
+    else:
+        summary_lines.append(f"No stem tables under {root} to check on disk.")
+
+    report = "\n".join(summary_lines)
+    print(report, flush=True)
+
+    unfinished = [r for r in remaining_rows if int(r["remaining"]) > 0]
+    problems: list[str] = []
+    if unfinished:
+        cmds = "\n".join(
+            f"  uv run python -m synthesis.final --only-pass {r['pass']}"
+            for r in unfinished
+        )
+        detail = []
+        for r in unfinished:
+            detail.append(
+                f"  {r['pass']}: {r['remaining']} tracks "
+                f"({r['songs_left']} songs)"
+            )
+            if r["examples"]:
+                detail.append(
+                    _format_verify_examples(
+                        f"  missing song_ids ({r['pass']})",
+                        [
+                            f"{ex['song_id']} ({ex['remaining']} tracks)"
+                            for ex in r["examples"]
+                        ],
+                        total=int(r["songs_left"]),
+                        limit=sample_limit,
+                    )
+                )
+        problems.append(
+            "Render passes still have stems left to do:\n"
+            + "\n".join(detail)
+            + f"\nRe-run:\n{cmds}"
+        )
+    if missing_total:
+        detail = []
+        for name in report_passes:
+            paths = missing_by_pass.get(name) or []
+            if not paths:
+                continue
+            detail.append(f"  {name}: {len(paths)} missing")
+            detail.append(
+                _format_verify_examples(
+                    f"  missing files ({name})",
+                    paths,
+                    total=len(paths),
+                    limit=sample_limit,
+                )
+            )
+        problems.append(
+            f"Stem tables claim files that are missing or invalid on disk "
+            f"({missing_total} total):\n"
+            + "\n".join(detail)
+            + "\nFinish copying audio (rsync) or re-render missing stems before mix."
+        )
+
+    if problems:
+        raise RuntimeError("\n\n".join(problems))
+    print(
+        f"Verified: assigned stems recorded and present on disk "
+        f"under {root} ({audio_format}).",
+        flush=True,
+    )
+
 
 
 def synthesis_is_complete(

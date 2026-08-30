@@ -72,11 +72,11 @@ Weights should already be on Deep Freeze. If missing:
 ```bash
 OUTPUT=/deepfreeze/share/SPDMX
 touch "$OUTPUT/dev/final/.write_test" && rm "$OUTPUT/dev/final/.write_test"
-mkdir -p "$OUTPUT/SPDMX/audio/.write_test" && rmdir "$OUTPUT/SPDMX/audio/.write_test"
+mkdir -p "$OUTPUT/SPDMX/raw/.write_test" && rmdir "$OUTPUT/SPDMX/raw/.write_test"
 echo "write access ok"
 ```
 
-If that fails, ping me — you need write access to `dev/final/` and `SPDMX/audio/`.
+If that fails, ping me — you need write access to `dev/final/` and `SPDMX/raw/`.
 
 ---
 

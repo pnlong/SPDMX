@@ -136,12 +136,16 @@ def build_mixture_tasks(
     pdmx_root: Path | None = None,
     spdmx_output_dir: str = OUTPUT_DIR,
     use_velocity_dynamics: bool = True,
+    dest_song_dir_fn=None,
 ) -> list[dict]:
     tasks = []
     root = Path(pdmx_root) if pdmx_root is not None else Path(PDMX_FILEPATH).parent
     for song_path, group in stems.groupby("path"):
         src_song_dir = Path(song_path)
-        out_song_dir = resolve_output_song_dir(src_song_dir, source_dir, output_dir)
+        if dest_song_dir_fn is not None:
+            out_song_dir = Path(dest_song_dir_fn(str(src_song_dir)))
+        else:
+            out_song_dir = resolve_output_song_dir(src_song_dir, source_dir, output_dir)
         tracks = sorted(int(t) for t in group["track"])
         try:
             scales = velocity_scales_for_song(
@@ -217,12 +221,14 @@ def normalize_stems_for_dataset(
     pdmx_root: Path | None = None,
     spdmx_output_dir: str = OUTPUT_DIR,
     use_velocity_dynamics: bool = True,
+    dest_song_dir_fn=None,
 ):
     """Peak-normalize stems so they remain linearly summable.
 
     Loads stems from ``source_dir`` (via stems.csv paths) and writes to the
     mirrored tree under ``output_dir``. When ``source_dir == output_dir``, stems
-    are overwritten in place.
+    are overwritten in place unless ``dest_song_dir_fn`` remaps each song path
+    (hybrid ``raw`` → ``audio``).
     """
     stems_csv = source_dir / f"{STEMS_FILE_NAME}.csv"
     if not stems_csv.exists():
@@ -230,7 +236,10 @@ def normalize_stems_for_dataset(
     if not stems_csv.exists():
         return
 
-    if source_dir.resolve() != output_dir.resolve():
+    if (
+        dest_song_dir_fn is None
+        and source_dir.resolve() != output_dir.resolve()
+    ):
         copy_metadata_tables(source_dir, output_dir)
 
     stems = pd.read_csv(stems_csv)
@@ -243,6 +252,7 @@ def normalize_stems_for_dataset(
         pdmx_root=pdmx_root,
         spdmx_output_dir=spdmx_output_dir,
         use_velocity_dynamics=use_velocity_dynamics,
+        dest_song_dir_fn=dest_song_dir_fn,
     )
     if not tasks:
         return

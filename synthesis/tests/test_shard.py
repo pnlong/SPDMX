@@ -80,7 +80,7 @@ def test_filter_work_indices_noop_when_single_shard():
 
 def test_song_id_from_synthesis_path_audio_and_data():
     assert song_id_from_synthesis_path(
-        "/deepfreeze/share/SPDMX/SPDMX/audio/1/44/QmTest"
+        "/deepfreeze/share/SPDMX/SPDMX/raw/1/44/QmTest"
     ) == "1/44/QmTest"
     assert song_id_from_synthesis_path(
         "/tmp/dev/ablations/basic/data/7/19/QmAblation"

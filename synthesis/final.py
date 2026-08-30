@@ -87,7 +87,8 @@ def parse_args(args=None, namespace=None):
         prog="synthesis.final",
         description=(
             "Synthesize the sPDMX dataset using a per-category recipe. "
-            f"Writes FLAC stems under {OUTPUT_DIR}/{SPDMX_DATASET_DIR_NAME}/audio/ "
+            f"Writes raw FLAC stems under {OUTPUT_DIR}/{SPDMX_DATASET_DIR_NAME}/raw/ "
+            f"(mix writes summable stems to audio/) "
             "and sanitized MIDI under mid/. Join SPDMX.csv to PDMX.csv on song_id. "
             "Audio format is always FLAC. "
             "Run one pass at a time with --only-pass "
@@ -251,19 +252,29 @@ def log_next_pass(recipe, only: str) -> None:
         )
     if only == "verify":
         print(
-            "Verify checks every stem claimed in tables exists on disk "
-            "(run after rsync finishes, before mix).",
+            "Verify reports remaining stems per pass and checks claimed "
+            "audio exists on disk (run after rsync, before mix).",
             flush=True,
         )
     print(f"Next: uv run python -m synthesis.final --only-pass {nxt}{extra}", flush=True)
 
 
-def run_summable_mix(args, stems_dir: str) -> None:
+def run_summable_mix(args, stems_dir: str, *, media_dir: str) -> None:
+    from shared.config import (
+        SPDMX_AUDIO_DIR_NAME,
+        SPDMX_FILE_NAME,
+        SPDMX_RAW_DIR_NAME,
+    )
     from synthesis.mix import normalize_stems_for_dataset
+    from synthesis.paths import raw_path_to_audio
 
+    media = Path(media_dir)
+    raw_root = media / SPDMX_RAW_DIR_NAME
+    audio_root = media / SPDMX_AUDIO_DIR_NAME
     print(
-        "Normalizing stems in place "
-        f"(LUFS + velocity + peak; {FLAC_AUDIO_FORMAT}; mix = sum of stems, no mixture file).",
+        f"Writing mixable stems to {audio_root}/ "
+        f"(raw {raw_root}/ untouched; LUFS + velocity + peak; "
+        f"{FLAC_AUDIO_FORMAT}; mix = sum of stems, no mixture file).",
         flush=True,
     )
     normalize_stems_for_dataset(
@@ -274,7 +285,27 @@ def run_summable_mix(args, stems_dir: str) -> None:
         write_mixture=False,
         pdmx_root=Path(args.dataset_filepath).parent,
         spdmx_output_dir=args.output_dir,
+        dest_song_dir_fn=raw_path_to_audio,
     )
+    spdmx_csv = media / f"{SPDMX_FILE_NAME}.csv"
+    if spdmx_csv.is_file():
+        table = pd.read_csv(spdmx_csv)
+        if "path" in table.columns:
+            def _to_audio(p: str) -> str:
+                text = str(p).replace("\\", "/")
+                if (
+                    f"/{SPDMX_RAW_DIR_NAME}/" in text
+                    or text.startswith(f"./{SPDMX_RAW_DIR_NAME}/")
+                ):
+                    return raw_path_to_audio(str(p))
+                return p
+
+            table["path"] = table["path"].map(_to_audio)
+            table.to_csv(spdmx_csv, index=False)
+            print(
+                f"Updated {spdmx_csv} paths → ./{SPDMX_AUDIO_DIR_NAME}/…",
+                flush=True,
+            )
 
 
 def main(argv=None):
@@ -323,13 +354,15 @@ def main(argv=None):
             run_realify_pass(args, tables_dir, tables_dir, allowed_song_ids=allowed)
     elif only == "verify":
         merge_pass_tables(tables_dir)
+        # Report remaining-per-pass and missing FLACs first (actionable), then
+        # the stricter data.csv completeness check.
+        verify_claimed_stems_on_disk(tables_dir, audio_format, recipe=recipe)
         require_raw_synthesis(
             tables_dir,
             run_command=raw_upstream_command(recipe),
             audio_format=audio_format,
             expected_n_songs=expected_song_count(args, media_dir),
         )
-        verify_claimed_stems_on_disk(tables_dir, audio_format)
     elif only == "mix":
         merge_pass_tables(tables_dir)
         require_raw_synthesis(
@@ -338,7 +371,7 @@ def main(argv=None):
             audio_format=audio_format,
             expected_n_songs=expected_song_count(args, media_dir),
         )
-        run_summable_mix(args, tables_dir)
+        run_summable_mix(args, tables_dir, media_dir=media_dir)
 
     log_next_pass(recipe, only)
     link_ablations_in_repo(args.output_dir)
