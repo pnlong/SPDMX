@@ -952,10 +952,9 @@ def _work_for_pass(
 ):
     """Songs and remaining tracks to *render* for one hybrid engine pass.
 
-    DDSP passes skip songs with no tracks for that engine. Fluidsynth still
-    visits every queued song so neural fallbacks can be filled. The bar total
-    is assigned tracks minus stems already in ``stem_recipe.csv`` for that
-    backend.
+    Skips songs with no assigned tracks for this engine, and songs whose
+    ``stem_recipe.<pass>.csv`` already covers those tracks (CSV resume).
+    Bar total is assigned tracks minus stems already recorded for that backend.
     """
     col = PASS_TRACK_COLUMNS.get(pass_name)
     if col is None or col not in dataset.columns:
@@ -963,14 +962,13 @@ def _work_for_pass(
     done = _recipe_done_by_path(stem_recipe_index, pass_name)
     kept: list = []
     total = 0
-    skip_empty = pass_name != "fluidsynth"
     for i in work_indices:
         n = int(dataset.at[i, col])
-        if skip_empty and n <= 0:
+        if n <= 0:
             continue
         path = str(dataset.at[i, "path_output"]) if "path_output" in dataset.columns else ""
         remaining = max(0, n - int(done.get(path, 0)))
-        if skip_empty and remaining <= 0:
+        if remaining <= 0:
             continue
         kept.append(i)
         total += remaining
@@ -1086,9 +1084,8 @@ def _run_song_pool(
 
     write_row = append_rows if append_only else append_rows_deduped
     write_kw = {} if append_only else {"key_cols": ["path", "track"]}
-    # track_total==0 (all assigned stems already in recipe) still leaves Fluidsynth
-    # visiting songs for neural fallbacks — use song counts so tqdm has a real total.
-    use_tracks = track_total is not None and int(track_total) > 0
+    # track_total is None for non-hybrid pools; otherwise it is remaining stems.
+    use_tracks = track_total is not None
     pbar = tqdm(
         total=int(track_total) if use_tracks else len(work_indices),
         desc=desc,
@@ -1742,13 +1739,7 @@ def _run_hybrid_synthesis(
         )
         extra = ""
         if track_total is not None:
-            if int(track_total) > 0:
-                extra = f", {track_total} tracks left, {len(indices)} songs"
-            else:
-                extra = (
-                    f", 0 tracks left, {len(indices)} songs "
-                    "(scanning for neural fallbacks)"
-                )
+            extra = f", {track_total} tracks left, {len(indices)} songs"
         workers = (
             f"{pass_jobs} GPUs across songs" if use_threads else f"-j {pass_jobs}"
         )

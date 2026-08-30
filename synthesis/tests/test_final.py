@@ -294,7 +294,7 @@ def test_work_for_pass_counts_remaining_renders():
         "n_midi_ddsp": [0, 4],
     })
     fs, fs_n = _work_for_pass(df, [0, 1], "fluidsynth")
-    assert fs == [0, 1] and fs_n == 3
+    assert fs == [0] and fs_n == 3
     piano, pn = _work_for_pass(df, [0, 1], "ddsp_piano")
     assert piano == [1] and pn == 1
     midi, mn = _work_for_pass(df, [0, 1], "midi_ddsp")
@@ -307,6 +307,16 @@ def test_work_for_pass_counts_remaining_renders():
         df, [0, 1], "midi_ddsp", stem_recipe_index=recipe_index,
     )
     assert remaining == 2
+    # Fluidsynth resume: skip songs already covered by stem_recipe.fluidsynth.csv
+    fs_done = {
+        ("/a", 0): {"backend": "fluidsynth"},
+        ("/a", 1): {"backend": "fluidsynth"},
+        ("/a", 2): {"backend": "fluidsynth"},
+    }
+    fs2, fs2_n = _work_for_pass(
+        df, [0, 1], "fluidsynth", stem_recipe_index=fs_done,
+    )
+    assert fs2 == [] and fs2_n == 0
 
 
 def test_song_index_needs_work_hybrid_midi_ddsp():
