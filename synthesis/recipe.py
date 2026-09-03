@@ -405,13 +405,14 @@ def load_stem_recipe_index(
     filename: str = STEM_RECIPE_FILE_NAME,
 ) -> dict[tuple[str, int], dict]:
     """Map (song path, track) → sidecar row (last row wins)."""
+    from shared.csv_tables import read_csv_flexible
+
     path = Path(stems_dir) / filename
     if not path.is_file() or path.stat().st_size == 0:
         return {}
     try:
-        df = pd.read_csv(path)
-    except (pd.errors.EmptyDataError, pd.errors.ParserError):
-        # Concurrent rewrite / NFS can briefly expose an empty or truncated file.
+        df = read_csv_flexible(path, columns=STEM_RECIPE_COLUMNS)
+    except OSError:
         return {}
     if df.empty or "path" not in df.columns or "track" not in df.columns:
         return {}

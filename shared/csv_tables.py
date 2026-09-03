@@ -35,11 +35,83 @@ def _csv_exclusive_lock(csv_path: str):
             fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
 
 
+def read_csv_flexible(
+    csv_path: str | Path,
+    *,
+    columns: list[str] | None = None,
+) -> pd.DataFrame:
+    """Read a CSV, tolerating schema drift (extra/missing trailing fields).
+
+    When writers append a new column (e.g. ``reason``) without rewriting the
+    header, pandas raises ``ParserError``. This reader extends the header with
+    any missing ``columns``, then pads/truncates each data row to match.
+    """
+    path = Path(csv_path)
+    if not path.is_file() or path.stat().st_size == 0:
+        return pd.DataFrame(columns=list(columns) if columns else [])
+    with open(path, newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle)
+        try:
+            header = next(reader)
+        except StopIteration:
+            return pd.DataFrame(columns=list(columns) if columns else [])
+        header = [h.strip() for h in header]
+        if not header or not any(header):
+            return pd.DataFrame(columns=list(columns) if columns else [])
+        if columns:
+            for col in columns:
+                if col not in header:
+                    header.append(col)
+        rows: list[dict] = []
+        width = len(header)
+        for raw in reader:
+            if not raw or all(not c for c in raw):
+                continue
+            if len(raw) < width:
+                raw = raw + [""] * (width - len(raw))
+            elif len(raw) > width:
+                raw = raw[:width]
+            rows.append({header[i]: raw[i] for i in range(width)})
+    df = pd.DataFrame(rows, columns=header)
+    if columns:
+        for col in columns:
+            if col not in df.columns:
+                df[col] = pd.NA
+        df = df[list(columns)]
+    return df
+
+
+def _rewrite_csv_with_columns(
+    path: Path,
+    columns: list[str],
+    existing_rows: list[dict],
+    new_rows: list[dict],
+) -> None:
+    """Atomically rewrite ``path`` with a unified header and all rows."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=columns,
+            extrasaction="ignore",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        for row in existing_rows + new_rows:
+            writer.writerow({
+                col: NA_STRING if row.get(col) in (None, "") else row.get(col)
+                for col in columns
+            })
+    tmp.replace(path)
+
+
 def append_rows(csv_path: str, columns: list[str], new_rows: list[dict]) -> None:
     """Append rows without reading the existing file (O(rows added)).
 
-    Creates a header when the file is missing or empty. Duplicate keys are
-    allowed; callers that need a unique table should merge/dedup later.
+    Creates a header when the file is missing or empty. If the on-disk header
+    does not match ``columns`` (schema drift), rewrites the file once so old
+    and new rows share one header. Duplicate keys are allowed; callers that
+    need a unique table should merge/dedup later.
     """
     if not new_rows:
         return
@@ -47,6 +119,22 @@ def append_rows(csv_path: str, columns: list[str], new_rows: list[dict]) -> None
     path.parent.mkdir(parents=True, exist_ok=True)
     with _csv_exclusive_lock(str(path)):
         new_file = not path.is_file() or path.stat().st_size == 0
+        if not new_file:
+            with open(path, newline="", encoding="utf-8") as handle:
+                reader = csv.reader(handle)
+                try:
+                    header = next(reader)
+                except StopIteration:
+                    header = []
+            if list(header) != list(columns):
+                existing = read_csv_flexible(path, columns=columns)
+                _rewrite_csv_with_columns(
+                    path,
+                    columns,
+                    existing.to_dict("records"),
+                    new_rows,
+                )
+                return
         with open(path, "a", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(
                 handle,
@@ -79,10 +167,7 @@ def append_rows_deduped(
     with _csv_exclusive_lock(csv_path):
         new_df = pd.DataFrame(new_rows, columns=columns)
         if exists(csv_path) and Path(csv_path).stat().st_size > 0:
-            try:
-                existing = pd.read_csv(csv_path, sep=",", header=0, index_col=False)
-            except (pd.errors.EmptyDataError, pd.errors.ParserError):
-                existing = pd.DataFrame()
+            existing = read_csv_flexible(csv_path, columns=columns)
             if len(existing) > 0:
                 new_keys = _row_key_set(new_df, cols)
                 keep = [

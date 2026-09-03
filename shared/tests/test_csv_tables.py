@@ -151,3 +151,32 @@ def test_append_rows_deduped_parallel_writers(tmp_path):
     stems = pd.read_csv(csv_path)
     assert len(stems) == 20
     assert set(stems["track"].astype(int)) == set(range(20))
+
+
+def test_read_csv_flexible_and_append_migrates_new_column(tmp_path):
+    from shared.csv_tables import append_rows, read_csv_flexible
+
+    csv_path = tmp_path / "stem_recipe.midi_ddsp.csv"
+    old_cols = [
+        "path", "track", "category", "ablation", "method", "fallback", "backend", "realify",
+    ]
+    new_cols = old_cols + ["reason"]
+    csv_path.write_text(
+        ",".join(old_cols) + "\n"
+        + "/song,0,strings,ddsp_basic,midi-ddsp,basic,midi_ddsp,False\n"
+        + "/song,1,wind,ddsp_slakh,midi-ddsp,slakh,midi_ddsp,False,midi_ddsp_eligible\n",
+        encoding="utf-8",
+    )
+    df = read_csv_flexible(csv_path, columns=new_cols)
+    assert len(df) == 2
+    assert list(df.columns) == new_cols
+    assert str(df.loc[df.track.astype(str) == "1", "reason"].iloc[0]) == "midi_ddsp_eligible"
+
+    append_rows(str(csv_path), new_cols, [{
+        "path": "/song", "track": 2, "category": "brass", "ablation": "ddsp_basic",
+        "method": "midi-ddsp", "fallback": "basic", "backend": "midi_ddsp",
+        "realify": False, "reason": "midi_ddsp_eligible",
+    }])
+    rewritten = pd.read_csv(csv_path)
+    assert list(rewritten.columns) == new_cols
+    assert len(rewritten) == 3

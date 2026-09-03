@@ -334,3 +334,18 @@ def test_load_stem_recipe_index_tolerates_empty_file(tmp_path: Path):
     assert load_stem_recipe_index(tmp_path, filename=empty.name) == {}
     missing = tmp_path / "missing.csv"
     assert load_stem_recipe_index(tmp_path, filename=missing.name) == {}
+
+
+def test_load_stem_recipe_index_tolerates_reason_schema_drift(tmp_path: Path):
+    """8-col header + 9-col data rows must not wipe the resume index."""
+    path = tmp_path / "stem_recipe.midi_ddsp.csv"
+    path.write_text(
+        "path,track,category,ablation,method,fallback,backend,realify\n"
+        "/song,0,strings,ddsp_basic,midi-ddsp,basic,midi_ddsp,False\n"
+        "/song,1,wind,ddsp_slakh,midi-ddsp,slakh,midi_ddsp,False,midi_ddsp_eligible\n",
+        encoding="utf-8",
+    )
+    idx = load_stem_recipe_index(tmp_path, filename=path.name)
+    assert len(idx) == 2
+    assert idx[("/song", 1)]["backend"] == "midi_ddsp"
+    assert idx[("/song", 1)].get("reason") == "midi_ddsp_eligible"
