@@ -406,9 +406,13 @@ def load_stem_recipe_index(
 ) -> dict[tuple[str, int], dict]:
     """Map (song path, track) → sidecar row (last row wins)."""
     path = Path(stems_dir) / filename
-    if not path.is_file():
+    if not path.is_file() or path.stat().st_size == 0:
         return {}
-    df = pd.read_csv(path)
+    try:
+        df = pd.read_csv(path)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError):
+        # Concurrent rewrite / NFS can briefly expose an empty or truncated file.
+        return {}
     if df.empty or "path" not in df.columns or "track" not in df.columns:
         return {}
     index: dict[tuple[str, int], dict] = {}

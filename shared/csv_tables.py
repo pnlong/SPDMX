@@ -78,8 +78,11 @@ def append_rows_deduped(
     cols = list(key_cols) if key_cols else [key_col]
     with _csv_exclusive_lock(csv_path):
         new_df = pd.DataFrame(new_rows, columns=columns)
-        if exists(csv_path):
-            existing = pd.read_csv(csv_path, sep=",", header=0, index_col=False)
+        if exists(csv_path) and Path(csv_path).stat().st_size > 0:
+            try:
+                existing = pd.read_csv(csv_path, sep=",", header=0, index_col=False)
+            except (pd.errors.EmptyDataError, pd.errors.ParserError):
+                existing = pd.DataFrame()
             if len(existing) > 0:
                 new_keys = _row_key_set(new_df, cols)
                 keep = [

@@ -24,6 +24,7 @@ from synthesis.recipe import (
     confirm_recipe_conflicts,
     hybrid_pass_for_track,
     load_recipe,
+    load_stem_recipe_index,
     parse_ablation_id,
     parse_category_spec,
     require_recipe_conflicts_ok,
@@ -323,3 +324,13 @@ def test_require_recipe_conflicts_ok_aborts():
             yes=False,
             input_fn=lambda _: "n",
         )
+
+
+def test_load_stem_recipe_index_tolerates_empty_file(tmp_path: Path):
+    empty = tmp_path / "stem_recipe.midi_ddsp.csv"
+    empty.write_text("")
+    assert load_stem_recipe_index(tmp_path, filename=empty.name) == {}
+    empty.write_bytes(b"")
+    assert load_stem_recipe_index(tmp_path, filename=empty.name) == {}
+    missing = tmp_path / "missing.csv"
+    assert load_stem_recipe_index(tmp_path, filename=missing.name) == {}
