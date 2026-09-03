@@ -33,6 +33,9 @@ STEM_RECIPE_COLUMNS = [
     "fallback",
     "backend",
     "realify",
+    # Why this backend was chosen (e.g. midi_ddsp_eligible, soundfont_polyphonic).
+    # Empty/NA on older rows written before this column existed.
+    "reason",
 ]
 
 METHOD_BASIC = "basic"
@@ -84,6 +87,7 @@ class TrackPlan:
         track: int,
         backend: str,
         realify: bool | None = None,
+        reason: str | None = None,
     ) -> dict[str, Any]:
         applied = self.realify if realify is None else bool(realify)
         return {
@@ -95,6 +99,7 @@ class TrackPlan:
             "fallback": self.fallback,
             "backend": backend,
             "realify": applied,
+            "reason": reason,
         }
 
 

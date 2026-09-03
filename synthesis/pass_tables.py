@@ -103,7 +103,10 @@ def merge_pass_tables(tables_dir: str | Path) -> dict[str, int]:
     recipes = _concat_dedup(recipe_paths, ["path", "track"])
     if not len(recipes):
         recipes = pd.DataFrame(columns=STEM_RECIPE_COLUMNS)
-    elif set(STEM_RECIPE_COLUMNS) <= set(recipes.columns):
+    else:
+        for col in STEM_RECIPE_COLUMNS:
+            if col not in recipes.columns:
+                recipes[col] = pd.NA
         recipes = recipes[STEM_RECIPE_COLUMNS]
     recipes.to_csv(canonical_recipe_csv(root), index=False, na_rep=NA_STRING)
 

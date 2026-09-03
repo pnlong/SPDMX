@@ -21,6 +21,58 @@ from synthesis.progress import (
 )
 
 
+def test_count_pass_progress_credits_polyphony_fallbacks(tmp_path: Path, capsys):
+    from synthesis.progress import count_pass_progress_fast
+    from synthesis.recipe import DEFAULT_RECIPE_PATH, load_recipe
+
+    out = tmp_path / "out"
+    tables = out / "dev" / "final"
+    media = out / "SPDMX"
+    tables.mkdir(parents=True)
+    (media / "raw").mkdir(parents=True)
+    song_a = str(media / "raw" / "1" / "11" / "QmA")
+    song_b = str(media / "raw" / "2" / "22" / "QmB")
+    pd.DataFrame({
+        "song_id": ["1/11/QmA", "2/22/QmB"],
+        "mid": ["x.mid", "y.mid"],
+        "n_tracks": [2, 2],
+        "n_fluidsynth": [1, 0],
+        "n_ddsp_piano": [0, 0],
+        "n_midi_ddsp": [1, 2],
+    }).to_csv(tables / MIDI_INDEX_FILE_NAME, index=False)
+    pd.DataFrame([{
+        "path": song_a, "track": 0, "category": "piano", "ablation": "basic",
+        "method": "basic", "fallback": "basic", "backend": "fluidsynth",
+        "realify": False, "reason": None,
+    }, {
+        "path": song_b, "track": 1, "category": "strings", "ablation": "ddsp_basic",
+        "method": "midi-ddsp", "fallback": "basic", "backend": "fluidsynth",
+        "realify": False, "reason": "soundfont_polyphonic",
+    }]).to_csv(pass_recipe_csv(tables, "fluidsynth"), index=False)
+    pd.DataFrame([{
+        "path": song_b, "track": 0, "category": "strings", "ablation": "ddsp_basic",
+        "method": "midi-ddsp", "fallback": "basic", "backend": "midi_ddsp",
+        "realify": False, "reason": "midi_ddsp_eligible",
+    }]).to_csv(pass_recipe_csv(tables, "midi_ddsp"), index=False)
+
+    rows = count_pass_progress_fast(tables, load_recipe(DEFAULT_RECIPE_PATH))
+    by_pass = {r["pass"]: r for r in rows}
+    md = by_pass["midi_ddsp"]
+    assert md["neural_done"] == 1
+    assert md["fallback_done"] == 1
+    assert md["remaining"] == 1  # song A still needs its 1 midi_ddsp track
+    assert md["assigned"] == 2  # renderable denominator, not layout 3
+
+    report_pre_realify_progress(
+        output_dir=str(out),
+        recipe_path=DEFAULT_RECIPE_PATH,
+        check_disk=False,
+    )
+    text = capsys.readouterr().out
+    assert "soundfont_polyphonic" in text
+    assert "Polyphony fallbacks" in text
+
+
 def test_report_pre_realify_progress_csv_only(tmp_path: Path, capsys):
     out = tmp_path / "out"
     tables = out / "dev" / "final"

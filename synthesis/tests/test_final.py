@@ -417,7 +417,7 @@ def test_attach_corrected_midi_uses_index_without_stat(tmp_path: Path):
     assert int(out.iloc[1]["n_fluidsynth"]) == 1
 
 
-def test_work_for_pass_counts_remaining_renders():
+def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
     from synthesis.synthesize import _work_for_pass
 
     df = pd.DataFrame({
@@ -450,6 +450,27 @@ def test_work_for_pass_counts_remaining_renders():
         df, [0, 1], "fluidsynth", stem_recipe_index=fs_done,
     )
     assert fs2 == [] and fs2_n == 0
+
+    # MIDI-DDSP credits Fluidsynth method=midi-ddsp polyphony fallbacks.
+    tables = tmp_path / "final"
+    tables.mkdir()
+    pd.DataFrame({
+        "path": ["/b", "/b"],
+        "track": [2, 3],
+        "category": ["strings", "strings"],
+        "ablation": ["ddsp_basic", "ddsp_basic"],
+        "method": ["midi-ddsp", "midi-ddsp"],
+        "fallback": ["basic", "basic"],
+        "backend": ["fluidsynth", "fluidsynth"],
+        "realify": [False, False],
+        "reason": ["soundfont_polyphonic", "soundfont_polyphonic"],
+    }).to_csv(tables / "stem_recipe.fluidsynth.csv", index=False)
+    _, rem_fb = _work_for_pass(
+        df, [0, 1], "midi_ddsp",
+        stem_recipe_index=recipe_index,
+        tables_dir=tables,
+    )
+    assert rem_fb == 0
 
 
 def test_song_index_needs_work_hybrid_midi_ddsp():

@@ -243,6 +243,7 @@ def _write_stem_tree(root: Path, *, method: str = "basic", backend: str = "fluid
         "fallback": "basic" if method != "slakh" else "slakh",
         "backend": backend,
         "realify": False,
+        "reason": None,
     }
     append_rows_deduped(
         str(root / "stem_recipe.csv"),
@@ -295,6 +296,7 @@ def test_recipe_sidecar_upsert_clears_method_conflict(tmp_path: Path):
             "fallback": spec.fallback,
             "backend": "fluidsynth",
             "realify": False,
+            "reason": None,
         }],
         key_cols=["path", "track"],
     )

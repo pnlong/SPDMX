@@ -58,23 +58,31 @@ def _pct(done: int, total: int) -> float:
     return 100.0 * float(done) / float(total)
 
 
-def _recipe_done_by_song_id(recipe_csv: Path) -> pd.Series:
-    """song_id → row count from a pass ``stem_recipe`` CSV."""
-    if not recipe_csv.is_file() or recipe_csv.stat().st_size == 0:
-        return pd.Series(dtype=int)
-    df = pd.read_csv(recipe_csv, usecols=["path"])
-    if df.empty:
-        return pd.Series(dtype=int)
-    sids = df["path"].astype(str).map(_song_id_from_audio_dir)
-    return sids.value_counts()
-
-
 def count_pass_progress_fast(tables_dir: Path, recipe) -> list[dict]:
-    """Vectorized assigned / recipe-done / remaining per render pass."""
+    """Vectorized assigned / recipe-done / remaining per render pass.
+
+    For ``midi_ddsp``, Fluidsynth rows with ``method=midi-ddsp`` (polyphony /
+    unsupported soundfont fallbacks) count as done for resume, and the
+    progress denominator is only tracks that MIDI-DDSP itself still renders.
+    """
+    from synthesis.synthesize import (
+        _fluidsynth_midi_ddsp_fallback_counts_by_path,
+        _recipe_done_by_path,
+        neural_fluidsynth_fallback_reason_counts,
+    )
+    from synthesis.recipe import load_stem_recipe_index
+
     index_path = tables_dir / MIDI_INDEX_FILE_NAME
     index = pd.read_csv(index_path)
     if index.empty or "song_id" not in index.columns:
         return []
+
+    fs_fb_by_path = _fluidsynth_midi_ddsp_fallback_counts_by_path(tables_dir)
+    fs_fb_by_sid: dict[str, int] = {}
+    for path, n in fs_fb_by_path.items():
+        sid = _song_id_from_audio_dir(str(path))
+        fs_fb_by_sid[sid] = fs_fb_by_sid.get(sid, 0) + int(n)
+    fallback_reasons = neural_fluidsynth_fallback_reason_counts(tables_dir)
 
     rows: list[dict] = []
     for pass_name in _render_passes_for_recipe(recipe):
@@ -83,32 +91,81 @@ def count_pass_progress_fast(tables_dir: Path, recipe) -> list[dict]:
             continue
         assigned_col = index[col].fillna(0).astype(int)
         mask = assigned_col > 0
-        assigned = int(assigned_col.sum())
-        if assigned == 0:
+        layout_assigned = int(assigned_col.sum())
+        if layout_assigned == 0:
             rows.append({
                 "pass": pass_name,
                 "assigned": 0,
                 "recipe_done": 0,
                 "remaining": 0,
                 "songs_left": 0,
+                "layout_assigned": 0,
+                "neural_done": 0,
+                "fallback_done": 0,
+                "fallback_reasons": {},
             })
             continue
-        done_counts = _recipe_done_by_song_id(pass_recipe_csv(tables_dir, pass_name))
+
+        recipe_csv = pass_recipe_csv(tables_dir, pass_name)
+        stem_index = load_stem_recipe_index(tables_dir, filename=recipe_csv.name)
+        neural_by_path = _recipe_done_by_path(stem_index, pass_name)
+        neural_by_sid: dict[str, int] = {}
+        for path, n in neural_by_path.items():
+            sid = _song_id_from_audio_dir(str(path))
+            neural_by_sid[sid] = neural_by_sid.get(sid, 0) + int(n)
+
         songs = index.loc[mask, ["song_id"]].copy()
         songs["assigned"] = assigned_col.loc[mask].to_numpy()
         songs["song_id"] = songs["song_id"].astype(str)
-        songs["done"] = songs["song_id"].map(done_counts).fillna(0).astype(int)
-        songs["remaining"] = (songs["assigned"] - songs["done"]).clip(lower=0)
+        songs["neural"] = songs["song_id"].map(neural_by_sid).fillna(0).astype(int)
+        if pass_name == "midi_ddsp":
+            songs["fallback"] = songs["song_id"].map(fs_fb_by_sid).fillna(0).astype(int)
+        else:
+            songs["fallback"] = 0
+        # Cap credits so Fluidsynth method=midi-ddsp rows on non-layout tracks
+        # cannot erase real remaining MIDI-DDSP work.
+        songs["neural"] = songs[["neural", "assigned"]].min(axis=1)
+        room = (songs["assigned"] - songs["neural"]).clip(lower=0)
+        songs["fallback_credit"] = pd.concat(
+            [songs["fallback"], room], axis=1,
+        ).min(axis=1)
+        songs["remaining"] = (
+            songs["assigned"] - songs["neural"] - songs["fallback_credit"]
+        ).clip(lower=0)
+        # Denominator: tracks MIDI-DDSP actually renders (exclude SF fallbacks).
+        songs["renderable"] = songs["neural"] + songs["remaining"]
+
         remaining = int(songs["remaining"].sum())
         songs_left = int((songs["remaining"] > 0).sum())
+        neural_done = int(songs["neural"].sum())
+        fallback_done = int(songs["fallback_credit"].sum())
+        renderable = int(songs["renderable"].sum())
         rows.append({
             "pass": pass_name,
-            "assigned": assigned,
-            "recipe_done": assigned - remaining,
+            "assigned": renderable if pass_name == "midi_ddsp" else layout_assigned,
+            "recipe_done": neural_done if pass_name == "midi_ddsp" else (
+                layout_assigned - remaining
+            ),
             "remaining": remaining,
             "songs_left": songs_left,
+            "layout_assigned": layout_assigned,
+            "neural_done": neural_done,
+            "fallback_done": fallback_done,
+            "fallback_reasons": fallback_reasons if pass_name == "midi_ddsp" else {},
         })
     return rows
+
+
+def count_raw_flac_files(raw_root: Path) -> int:
+    """Count ``*.flac`` files under ``SPDMX/raw`` (can be slow on NFS)."""
+    if not raw_root.is_dir():
+        return 0
+    n = 0
+    for dirpath, _dirnames, filenames in os.walk(raw_root):
+        for name in filenames:
+            if name.endswith(".flac"):
+                n += 1
+    return n
 
 
 def _claimed_stem_rows(tables_dir: Path, pass_name: str) -> pd.DataFrame:
@@ -395,18 +452,6 @@ def handle_missing_claimed_stems(
     print(format_remove_missing_commands(tables_dir, missing), end="", flush=True)
 
 
-def count_raw_flac_files(raw_root: Path) -> int:
-    """Count ``*.flac`` files under ``SPDMX/raw`` (can be slow on NFS)."""
-    if not raw_root.is_dir():
-        return 0
-    n = 0
-    for dirpath, _dirnames, filenames in os.walk(raw_root):
-        for name in filenames:
-            if name.endswith(".flac"):
-                n += 1
-    return n
-
-
 def report_pre_realify_progress(
     *,
     output_dir: str,
@@ -531,6 +576,39 @@ def report_pre_realify_progress(
         f"({recipe_done_total:,} / {assigned_total:,} stems recorded in stem_recipe).",
         flush=True,
     )
+    for row in remaining_rows:
+        if row["pass"] != "midi_ddsp":
+            continue
+        layout = int(row.get("layout_assigned") or 0)
+        neural = int(row.get("neural_done") or 0)
+        fallback = int(row.get("fallback_done") or 0)
+        reasons = row.get("fallback_reasons") or {}
+        poly = int(reasons.get("soundfont_polyphonic") or 0)
+        print(
+            f"MIDI-DDSP: {neural:,} neural renders / {int(row['assigned']):,} "
+            f"renderable "
+            f"(layout intended {layout:,}; "
+            f"{fallback:,} already Fluidsynth-fallbacked).",
+            flush=True,
+        )
+        if reasons:
+            print(
+                "  Fluidsynth fallbacks of MIDI-DDSP-intended stems "
+                f"(stem_recipe.fluidsynth method=midi-ddsp; "
+                f"reason from recipe/routing):",
+                flush=True,
+            )
+            for reason, n in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0])):
+                note = "  ← polyphony" if reason == "soundfont_polyphonic" else ""
+                print(f"    {reason}: {int(n):,}{note}", flush=True)
+            if poly:
+                print(
+                    f"  Polyphony fallbacks: {poly:,} "
+                    f"(paper: method=midi-ddsp, backend=fluidsynth, "
+                    f"reason=soundfont_polyphonic).",
+                    flush=True,
+                )
+        break
     if check_disk and claimed_total:
         print(
             f"Claimed stems present on disk: "

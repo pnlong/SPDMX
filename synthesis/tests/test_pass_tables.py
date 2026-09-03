@@ -22,6 +22,7 @@ def _recipe(path: str, track: int, backend: str) -> dict:
     return {
         "path": path, "track": track, "category": "piano", "ablation": "basic",
         "method": "basic", "fallback": "basic", "backend": backend, "realify": False,
+        "reason": None,
     }
 
 
