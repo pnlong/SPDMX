@@ -895,12 +895,14 @@ def _recipe_done_by_path(stem_recipe_index: dict | None, pass_name: str) -> dict
 
 
 def _fluidsynth_recipe_frame(tables_dir: str | Path) -> pd.DataFrame:
+    from shared.csv_tables import read_csv_flexible
     from synthesis.pass_tables import pass_recipe_csv
+    from synthesis.recipe import STEM_RECIPE_COLUMNS
 
-    path = pass_recipe_csv(tables_dir, "fluidsynth")
-    if not path.is_file() or path.stat().st_size == 0:
-        return pd.DataFrame()
-    return pd.read_csv(path)
+    return read_csv_flexible(
+        pass_recipe_csv(tables_dir, "fluidsynth"),
+        columns=STEM_RECIPE_COLUMNS,
+    )
 
 
 def _is_fluidsynth_midi_ddsp_fallback_row(method, backend) -> bool:
