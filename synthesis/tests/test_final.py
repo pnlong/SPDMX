@@ -431,9 +431,10 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
         "n_ddsp_piano": [0, 1],
         "n_midi_ddsp": [0, 4],
     })
-    # Fluidsynth also visits pure-MIDI-DDSP songs to claim soundfont fallbacks.
+    # Fluidsynth visits pure-MIDI-DDSP songs to claim soundfont fallbacks,
+    # but bar total only counts native SF tracks (not neural deferrals).
     fs, fs_n = _work_for_pass(df, [0, 1], "fluidsynth")
-    assert fs == [0, 1] and fs_n == 7
+    assert fs == [0, 1] and fs_n == 3
     piano, pn = _work_for_pass(df, [0, 1], "ddsp_piano")
     assert piano == [1] and pn == 1
     midi, mn = _work_for_pass(df, [0, 1], "midi_ddsp")
@@ -455,8 +456,8 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
     fs2, fs2_n = _work_for_pass(
         df, [0, 1], "fluidsynth", stem_recipe_index=fs_done,
     )
-    # /a native done; /b still has 4 unclaimed layout-MIDI-DDSP tracks
-    assert fs2 == [1] and fs2_n == 4
+    # /a native done; /b still has 4 unclaimed layout-MIDI-DDSP tracks (bar=0 native)
+    assert fs2 == [1] and fs2_n == 0
 
     # MIDI-DDSP credits Fluidsynth method=midi-ddsp polyphony fallbacks.
     tables = tmp_path / "final"
@@ -493,7 +494,8 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
         stem_recipe_index=fs_partial,
         tables_dir=tables,
     )
-    assert fs3 == [1] and fs3_n == 1
+    # 1 neural track unclaimed → song kept, but bar total=0 (native only)
+    assert fs3 == [1] and fs3_n == 0
 
     # Pending (deferred-to-neural) rows clear Fluidsynth work without counting as SF fallbacks.
     fs_pending = {

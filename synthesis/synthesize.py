@@ -1188,11 +1188,13 @@ def _work_for_pass(
                 - int(md_done.get(path, 0))
                 - int(neural_handled.get(path, 0)),
             )
-            rem = native_rem + neural_rem
-            if rem <= 0:
+            if native_rem + neural_rem <= 0:
                 continue
             kept.append(i)
-            total += rem
+            # Bar denominator: only native SF renders. Layout-MIDI-DDSP tracks
+            # are mostly deferred (pending_midi_ddsp, no audio); the few that
+            # become real SF fallbacks (drums, polyphony) tick past 100%.
+            total += native_rem
         return kept, total
 
     done = _work_done_by_path(
