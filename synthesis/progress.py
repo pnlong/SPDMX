@@ -61,9 +61,10 @@ def _pct(done: int, total: int) -> float:
 def count_pass_progress_fast(tables_dir: Path, recipe) -> list[dict]:
     """Vectorized assigned / recipe-done / remaining per render pass.
 
-    For ``midi_ddsp``, Fluidsynth rows with ``method=midi-ddsp`` (polyphony /
-    unsupported soundfont fallbacks) count as done for resume, and the
-    progress denominator is only tracks that MIDI-DDSP itself still renders.
+    For ``midi_ddsp``, Fluidsynth rows with ``method=midi-ddsp`` and
+    ``backend=fluidsynth`` (polyphony / unsupported soundfont fallbacks) count
+    as done for resume; ``pending_midi_ddsp`` bookkeeping rows do not.
+    The progress denominator is only tracks that MIDI-DDSP itself still renders.
     """
     from synthesis.synthesize import (
         _fluidsynth_midi_ddsp_fallback_counts_by_path,

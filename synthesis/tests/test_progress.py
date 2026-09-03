@@ -73,6 +73,41 @@ def test_count_pass_progress_credits_polyphony_fallbacks(tmp_path: Path, capsys)
     assert "Polyphony fallbacks" in text
 
 
+def test_count_pass_progress_ignores_pending_midi_ddsp(tmp_path: Path):
+    from synthesis.progress import count_pass_progress_fast
+    from synthesis.recipe import DEFAULT_RECIPE_PATH, load_recipe
+
+    out = tmp_path / "out"
+    tables = out / "dev" / "final"
+    media = out / "SPDMX"
+    tables.mkdir(parents=True)
+    (media / "raw").mkdir(parents=True)
+    song = str(media / "raw" / "1" / "11" / "QmA")
+    pd.DataFrame({
+        "song_id": ["1/11/QmA"],
+        "mid": ["x.mid"],
+        "n_tracks": [2],
+        "n_fluidsynth": [0],
+        "n_ddsp_piano": [0],
+        "n_midi_ddsp": [2],
+    }).to_csv(tables / MIDI_INDEX_FILE_NAME, index=False)
+    pd.DataFrame([{
+        "path": song, "track": 0, "category": "strings", "ablation": "ddsp_basic",
+        "method": "midi-ddsp", "fallback": "basic", "backend": "pending_midi_ddsp",
+        "realify": False, "reason": "midi_ddsp_eligible",
+    }, {
+        "path": song, "track": 1, "category": "strings", "ablation": "ddsp_basic",
+        "method": "midi-ddsp", "fallback": "basic", "backend": "fluidsynth",
+        "realify": False, "reason": "soundfont_polyphonic",
+    }]).to_csv(pass_recipe_csv(tables, "fluidsynth"), index=False)
+
+    rows = count_pass_progress_fast(tables, load_recipe(DEFAULT_RECIPE_PATH))
+    md = {r["pass"]: r for r in rows}["midi_ddsp"]
+    assert md["fallback_done"] == 1
+    assert md["remaining"] == 1
+    assert md["neural_done"] == 0
+
+
 def test_report_pre_realify_progress_csv_only(tmp_path: Path, capsys):
     out = tmp_path / "out"
     tables = out / "dev" / "final"

@@ -48,6 +48,9 @@ FALLBACK_SLAKH = "slakh"
 FALLBACKS = (FALLBACK_BASIC, FALLBACK_SLAKH)
 
 BACKEND_FLUIDSYNTH = "fluidsynth"
+# Fluidsynth inspected a layout-MIDI-DDSP track, left it for the neural pass (no audio).
+# Filtered out of merged canonical stem_recipe.csv.
+BACKEND_PENDING_MIDI_DDSP = "pending_midi_ddsp"
 
 _ABLATION_IDS = frozenset(CONDITION_ORDER)
 _METHOD_ALIASES = {

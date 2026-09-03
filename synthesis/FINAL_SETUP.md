@@ -125,9 +125,10 @@ uv run python -m synthesis.final --only-pass midi_ddsp \
 
 Progress log: `/deepfreeze/share/SPDMX/dev/final/synthesis.midi_ddsp.log`
 
-Resume is automatic — stems already in `stem_recipe.midi_ddsp.csv` are skipped
-(CSV-only by default). After all shards finish and rsync completes, one machine
-runs `verify` then `mix`.
+Resume is automatic — stems already in `stem_recipe.midi_ddsp.csv` with a valid
+on-disk FLAC are skipped (CSV+disk by default; `--no-resume-check-disk` for
+CSV-only). After all shards finish and rsync completes, one machine runs
+`verify` then `mix`.
 
 ---
 

@@ -208,10 +208,11 @@ def add_synthesis_args(
     )
     parser.add_argument(
         "--resume-check-disk",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
-            "Hybrid final: also require a valid on-disk FLAC before skipping a "
-            "stem (default: resume from stem_recipe CSV only, so concurrent "
-            "rsync of audio does not re-trigger renders)."
+            "Hybrid final: require a matching stem_recipe row AND a valid on-disk "
+            "FLAC before skipping a stem (default). Use --no-resume-check-disk for "
+            "CSV-only resume (e.g. while audio is still rsyncing)."
         ),
     )

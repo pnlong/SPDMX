@@ -206,7 +206,7 @@ After the ablation listening test, edit [`recipe.yaml`](recipe.yaml) with the wi
 5. **SA3 realify** — only if the recipe sets `*_realify`; overwrites those stems in place. **After Fluidsynth, DDSP-Piano, and MIDI-DDSP have all finished.** Locked preset bypasses (`realify: false`) still apply.
 6. **mix** — merge tables, then LUFS + velocity + peak in place. No `mixture.*`; mix = sum(stems). Same gate: all raw stems must be on disk first.
 
-Without `--reset`, each method pass **resumes** from its own `stem_recipe.<pass>.csv` only. Canonical `stems.csv` / `stem_recipe.csv` / `data.csv` are merge outputs (rebuilt at mix) and are deleted when a render pass starts; the per-pass shards are not. Valid stems whose pass sidecar matches the current recipe are skipped. Pass `-y` / `--yes` after a recipe change to regenerate mismatches without a prompt.
+Without `--reset`, each method pass **resumes** from its own `stem_recipe.<pass>.csv` plus a valid on-disk FLAC (default; `--no-resume-check-disk` for CSV-only). Canonical `stems.csv` / `stem_recipe.csv` / `data.csv` are merge outputs (rebuilt at mix) and are deleted when a render pass starts; the per-pass shards are not. Valid stems whose pass sidecar matches the current recipe are skipped. Pass `-y` / `--yes` after a recipe change to regenerate mismatches without a prompt.
 
 ```bash
 # Edit synthesis/recipe.yaml, then one pass per job (FLAC default):

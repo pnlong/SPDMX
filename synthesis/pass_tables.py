@@ -104,6 +104,13 @@ def merge_pass_tables(tables_dir: str | Path) -> dict[str, int]:
     if not len(recipes):
         recipes = pd.DataFrame(columns=STEM_RECIPE_COLUMNS)
     else:
+        from synthesis.recipe import BACKEND_PENDING_MIDI_DDSP
+
+        # Bookkeeping-only rows: Fluidsynth deferred true MIDI-DDSP stems (no audio).
+        if "backend" in recipes.columns:
+            recipes = recipes[
+                recipes["backend"].astype(str) != BACKEND_PENDING_MIDI_DDSP
+            ]
         for col in STEM_RECIPE_COLUMNS:
             if col not in recipes.columns:
                 recipes[col] = pd.NA

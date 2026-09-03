@@ -29,11 +29,13 @@ from synthesis.recipe import (
 from synthesis.synthesize import attach_corrected_midi, run_layout_pass
 
 
-def test_parse_args_accepts_resume_check_disk():
-    args = parse_args(["--only-pass", "midi_ddsp", "--resume-check-disk"])
-    assert args.resume_check_disk is True
+def test_parse_args_resume_check_disk_default():
     default = parse_args(["--only-pass", "midi_ddsp"])
-    assert default.resume_check_disk is False
+    assert default.resume_check_disk is True
+    off = parse_args(["--only-pass", "midi_ddsp", "--no-resume-check-disk"])
+    assert off.resume_check_disk is False
+    on = parse_args(["--only-pass", "midi_ddsp", "--resume-check-disk"])
+    assert on.resume_check_disk is True
 
 
 def test_hybrid_raw_current_csv_only_skips_without_disk(tmp_path: Path):
@@ -50,7 +52,9 @@ def test_hybrid_raw_current_csv_only_skips_without_disk(tmp_path: Path):
         ablation="ddsp_basic",
     )
     missing = tmp_path / "nope.flac"
-    args = parse_args(["--only-pass", "midi_ddsp", "-o", str(tmp_path)])
+    args = parse_args([
+        "--only-pass", "midi_ddsp", "-o", str(tmp_path), "--no-resume-check-disk",
+    ])
     args.reset = False
     args.stem_recipe_index = {
         ("/song", 0): {
@@ -59,6 +63,7 @@ def test_hybrid_raw_current_csv_only_skips_without_disk(tmp_path: Path):
             "backend": "midi_ddsp",
         },
     }
+    assert args.resume_check_disk is False
     assert _hybrid_raw_current(args, "/song", 0, missing, plan, "midi_ddsp")
 
     args.resume_check_disk = True
@@ -426,8 +431,9 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
         "n_ddsp_piano": [0, 1],
         "n_midi_ddsp": [0, 4],
     })
+    # Fluidsynth also visits pure-MIDI-DDSP songs to claim soundfont fallbacks.
     fs, fs_n = _work_for_pass(df, [0, 1], "fluidsynth")
-    assert fs == [0] and fs_n == 3
+    assert fs == [0, 1] and fs_n == 7
     piano, pn = _work_for_pass(df, [0, 1], "ddsp_piano")
     assert piano == [1] and pn == 1
     midi, mn = _work_for_pass(df, [0, 1], "midi_ddsp")
@@ -442,14 +448,15 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
     assert remaining == 2
     # Fluidsynth resume: skip songs already covered by stem_recipe.fluidsynth.csv
     fs_done = {
-        ("/a", 0): {"backend": "fluidsynth"},
-        ("/a", 1): {"backend": "fluidsynth"},
-        ("/a", 2): {"backend": "fluidsynth"},
+        ("/a", 0): {"method": "basic", "backend": "fluidsynth"},
+        ("/a", 1): {"method": "basic", "backend": "fluidsynth"},
+        ("/a", 2): {"method": "basic", "backend": "fluidsynth"},
     }
     fs2, fs2_n = _work_for_pass(
         df, [0, 1], "fluidsynth", stem_recipe_index=fs_done,
     )
-    assert fs2 == [] and fs2_n == 0
+    # /a native done; /b still has 4 unclaimed layout-MIDI-DDSP tracks
+    assert fs2 == [1] and fs2_n == 4
 
     # MIDI-DDSP credits Fluidsynth method=midi-ddsp polyphony fallbacks.
     tables = tmp_path / "final"
@@ -471,6 +478,91 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
         tables_dir=tables,
     )
     assert rem_fb == 0
+
+    # Fluidsynth picks up leftover layout-MIDI-DDSP soundfont fallbacks (orphan case).
+    fs_partial = {
+        ("/a", 0): {"method": "basic", "backend": "fluidsynth"},
+        ("/a", 1): {"method": "basic", "backend": "fluidsynth"},
+        ("/a", 2): {"method": "basic", "backend": "fluidsynth"},
+        ("/b", 1): {"method": "midi-ddsp", "backend": "fluidsynth"},
+        ("/b", 2): {"method": "midi-ddsp", "backend": "fluidsynth"},
+        ("/b", 3): {"method": "midi-ddsp", "backend": "fluidsynth"},
+    }
+    fs3, fs3_n = _work_for_pass(
+        df, [0, 1], "fluidsynth",
+        stem_recipe_index=fs_partial,
+        tables_dir=tables,
+    )
+    assert fs3 == [1] and fs3_n == 1
+
+    # Pending (deferred-to-neural) rows clear Fluidsynth work without counting as SF fallbacks.
+    fs_pending = {
+        ("/a", 0): {"method": "basic", "backend": "fluidsynth"},
+        ("/a", 1): {"method": "basic", "backend": "fluidsynth"},
+        ("/a", 2): {"method": "basic", "backend": "fluidsynth"},
+        ("/b", 0): {"method": "midi-ddsp", "backend": "pending_midi_ddsp"},
+        ("/b", 1): {"method": "midi-ddsp", "backend": "pending_midi_ddsp"},
+        ("/b", 2): {"method": "midi-ddsp", "backend": "pending_midi_ddsp"},
+        ("/b", 3): {"method": "midi-ddsp", "backend": "pending_midi_ddsp"},
+    }
+    fs4, fs4_n = _work_for_pass(
+        df, [0, 1], "fluidsynth", stem_recipe_index=fs_pending,
+    )
+    assert fs4 == [] and fs4_n == 0
+    _, rem_pending = _work_for_pass(
+        df, [0, 1], "midi_ddsp",
+        stem_recipe_index={},
+        tables_dir=tables,  # still has 2 real SF fallbacks for tracks 2,3
+    )
+    # 4 layout − 2 SF fallbacks = 2 neural remaining (pending does not credit midi_ddsp)
+    assert rem_pending == 2
+
+
+def test_merge_filters_pending_midi_ddsp(tmp_path: Path):
+    from synthesis.pass_tables import merge_pass_tables, pass_recipe_csv, pass_stems_csv
+    from synthesis.recipe import STEM_RECIPE_FILE_NAME
+
+    tables = tmp_path / "final"
+    tables.mkdir()
+    song = "/out/SPDMX/raw/7/19/QmSong"
+    pd.DataFrame({
+        "song_id": ["7/19/QmSong"],
+        "n_tracks": [2],
+    }).to_csv(tables / MIDI_INDEX_FILE_NAME, index=False)
+    pd.DataFrame([
+        {
+            "path": song, "track": 0, "category": "piano", "ablation": "basic",
+            "method": "basic", "fallback": "basic", "backend": "fluidsynth",
+            "realify": False, "reason": None,
+        },
+        {
+            "path": song, "track": 1, "category": "strings", "ablation": "ddsp_basic",
+            "method": "midi-ddsp", "fallback": "basic", "backend": "pending_midi_ddsp",
+            "realify": False, "reason": "midi_ddsp_eligible",
+        },
+    ]).to_csv(pass_recipe_csv(tables, "fluidsynth"), index=False)
+    pd.DataFrame([{
+        "path": song, "track": 1, "category": "strings", "ablation": "ddsp_basic",
+        "method": "midi-ddsp", "fallback": "basic", "backend": "midi_ddsp",
+        "realify": False, "reason": "midi_ddsp_eligible",
+    }]).to_csv(pass_recipe_csv(tables, "midi_ddsp"), index=False)
+    pd.DataFrame([
+        {
+            "path": song, "track": 0, "original_track": 0, "program": 0,
+            "is_drum": False, "name": "fs", "has_lyrics": False,
+            "max_velocity": 64, "velocity_scale": 0.5,
+        },
+        {
+            "path": song, "track": 1, "original_track": 1, "program": 1,
+            "is_drum": False, "name": "md", "has_lyrics": False,
+            "max_velocity": 64, "velocity_scale": 0.5,
+        },
+    ]).to_csv(pass_stems_csv(tables, "fluidsynth"), index=False)
+
+    merge_pass_tables(tables)
+    recipes = pd.read_csv(tables / STEM_RECIPE_FILE_NAME)
+    assert set(recipes["backend"]) == {"fluidsynth", "midi_ddsp"}
+    assert "pending_midi_ddsp" not in set(recipes["backend"].astype(str))
 
 
 def test_song_index_needs_work_hybrid_midi_ddsp():
