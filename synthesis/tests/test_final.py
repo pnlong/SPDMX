@@ -528,13 +528,45 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
         "n_midi_ddsp": [0],
     })
     fs_guitar = {
-        ("/g", 0): {"method": "midi-ddsp", "backend": "fluidsynth"},
-        ("/g", 1): {"method": "midi-ddsp", "backend": "fluidsynth"},
+        ("/g", 0): {
+            "method": "midi-ddsp", "backend": "fluidsynth",
+            "reason": "soundfont_unsupported",
+        },
+        ("/g", 1): {
+            "method": "midi-ddsp", "backend": "fluidsynth",
+            "reason": "soundfont_unsupported",
+        },
     }
     fs5, fs5_n = _work_for_pass(
         df_g, [0], "fluidsynth", stem_recipe_index=fs_guitar,
     )
     assert fs5 == [] and fs5_n == 0
+
+    # Unsupported SF on a midi_ddsp song must not erase real neural remaining.
+    df_m = pd.DataFrame({
+        "path_output": ["/m"],
+        "n_fluidsynth": [0],
+        "n_ddsp_piano": [0],
+        "n_midi_ddsp": [3],
+    })
+    tables_m = tmp_path / "final_m"
+    tables_m.mkdir()
+    pd.DataFrame({
+        "path": ["/m", "/m"],
+        "track": [0, 1],
+        "category": ["strings", "strings"],
+        "ablation": ["ddsp_basic", "ddsp_basic"],
+        "method": ["midi-ddsp", "midi-ddsp"],
+        "fallback": ["basic", "basic"],
+        "backend": ["fluidsynth", "fluidsynth"],
+        "realify": [False, False],
+        "reason": ["soundfont_unsupported", "soundfont_polyphonic"],
+    }).to_csv(tables_m / "stem_recipe.fluidsynth.csv", index=False)
+    _, rem_m = _work_for_pass(
+        df_m, [0], "midi_ddsp", stem_recipe_index={}, tables_dir=tables_m,
+    )
+    # Only polyphony counts as midi_ddsp fallback → 3 - 1 = 2 remaining.
+    assert rem_m == 2
 
 
 def test_merge_filters_pending_midi_ddsp(tmp_path: Path):

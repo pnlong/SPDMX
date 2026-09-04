@@ -905,19 +905,40 @@ def _fluidsynth_recipe_frame(tables_dir: str | Path) -> pd.DataFrame:
     )
 
 
-def _is_fluidsynth_midi_ddsp_fallback_row(method, backend) -> bool:
-    """True for layout-MIDI-DDSP stems Fluidsynth actually soundfont-rendered."""
+# Render-time rejects of layout-MIDI-DDSP (not layout-Fluidsynth neural SF).
+_MIDI_DDSP_SOUNDFONT_FALLBACK_REASONS = frozenset({
+    "soundfont_polyphonic",
+    "soundfont_drum",
+    "drum_fluidsynth_fallback",
+    "empty_track",
+})
+
+
+def _is_fluidsynth_midi_ddsp_fallback_row(method, backend, reason=None) -> bool:
+    """True for layout-MIDI-DDSP stems Fluidsynth soundfont-rendered as fallbacks.
+
+    Only reasons that appear when layout assigned ``midi_ddsp`` but render-time
+    routing rejected neural (polyphony / drum). Layout-Fluidsynth neural-category
+    stems (unsupported, guitar, …) are also stored as ``method=midi-ddsp`` +
+    ``backend=fluidsynth``; counting those as MIDI-DDSP-done undercounts the bar
+    and makes tqdm drop the ``n/total`` display once renders exceed it.
+    """
     from synthesis.recipe import BACKEND_FLUIDSYNTH, BACKEND_PENDING_MIDI_DDSP, METHOD_MIDI_DDSP
 
     if str(method) != METHOD_MIDI_DDSP:
         return False
     backend_s = "" if backend is None else str(backend)
     if backend_s in ("", "nan", "None"):
-        # Pre-pending rows: treat as real SF fallbacks.
-        return True
+        backend_s = BACKEND_FLUIDSYNTH
     if backend_s == BACKEND_PENDING_MIDI_DDSP:
         return False
-    return backend_s == BACKEND_FLUIDSYNTH
+    if backend_s != BACKEND_FLUIDSYNTH:
+        return False
+    # Legacy rows without reason: keep crediting (pre-reason CSVs).
+    reason_s = "" if reason is None else str(reason).strip()
+    if reason_s in ("", "nan", "None"):
+        return True
+    return reason_s in _MIDI_DDSP_SOUNDFONT_FALLBACK_REASONS
 
 
 def _fluidsynth_midi_ddsp_fallback_counts_by_path(
@@ -936,9 +957,13 @@ def _fluidsynth_midi_ddsp_fallback_counts_by_path(
         df["backend"] if "backend" in df.columns
         else pd.Series([None] * len(df))
     )
+    reasons = (
+        df["reason"] if "reason" in df.columns
+        else pd.Series([None] * len(df))
+    )
     mask = [
-        _is_fluidsynth_midi_ddsp_fallback_row(m, b)
-        for m, b in zip(methods, backends, strict=False)
+        _is_fluidsynth_midi_ddsp_fallback_row(m, b, r)
+        for m, b, r in zip(methods, backends, reasons, strict=False)
     ]
     if not any(mask):
         return {}
@@ -975,13 +1000,16 @@ def _fluidsynth_pass_credits(
             key = str(path)
             method = str(rec.get("method") or "")
             backend = str(rec.get("backend") or "")
+            reason = rec.get("reason")
             if method == METHOD_MIDI_DDSP:
                 if backend == BACKEND_PENDING_MIDI_DDSP:
                     pending[key] = pending.get(key, 0) + 1
-                elif backend in ("", BACKEND_FLUIDSYNTH, "nan", "None"):
+                elif _is_fluidsynth_midi_ddsp_fallback_row(method, backend, reason):
                     md_sf[key] = md_sf.get(key, 0) + 1
+                elif backend in ("", BACKEND_FLUIDSYNTH, "nan", "None"):
+                    # Neural-category layout-Fluidsynth SF (unsupported, guitar, …).
+                    basic[key] = basic.get(key, 0) + 1
                 else:
-                    # Other backends still count as inspected neural slots.
                     pending[key] = pending.get(key, 0) + 1
             else:
                 basic[key] = basic.get(key, 0) + 1
@@ -1033,9 +1061,13 @@ def neural_fluidsynth_fallback_reason_counts(
         recipe["backend"] if "backend" in recipe.columns
         else pd.Series([None] * len(recipe))
     )
+    reasons = (
+        recipe["reason"] if "reason" in recipe.columns
+        else pd.Series([None] * len(recipe))
+    )
     mask = [
-        _is_fluidsynth_midi_ddsp_fallback_row(m, b)
-        for m, b in zip(methods, backends, strict=False)
+        _is_fluidsynth_midi_ddsp_fallback_row(m, b, r)
+        for m, b, r in zip(methods, backends, reasons, strict=False)
     ]
     fb = recipe.loc[mask].copy()
     if fb.empty:
@@ -1375,7 +1407,12 @@ def _run_song_pool(
 
     def _consume(result) -> None:
         song_info, stem_rows, routing_rows, recipe_rows, n_progress = result
-        pbar.update(int(n_progress) if use_tracks else 1)
+        inc = int(n_progress) if use_tracks else 1
+        # tqdm drops the percentage bar once n exceeds total; grow the
+        # denominator if the initial remaining estimate was low.
+        if use_tracks and pbar.total is not None and pbar.n + inc > pbar.total:
+            pbar.total = pbar.n + inc
+        pbar.update(inc)
         if recipe_rows and recipe_output_filepath is not None:
             write_row(
                 recipe_output_filepath,
@@ -1449,6 +1486,17 @@ def _run_song_pool(
         )
         if use_threads and _WORKER_CTX:
             _WORKER_CTX["completed_paths"] = shared_completed
+        # Keep the bar denominator aligned with remaining work on shared storage.
+        if use_tracks and pass_name in PASS_TRACK_COLUMNS:
+            _, rem = _work_for_pass(
+                dataset,
+                work_indices,
+                pass_name,
+                stem_recipe_index=getattr(args, "stem_recipe_index", None),
+                tables_dir=getattr(args, "_tables_dir", None),
+            )
+            if rem is not None:
+                pbar.total = max(pbar.n + int(rem), pbar.n)
 
     def _next_work_index(todo_iter):
         nonlocal skipped
