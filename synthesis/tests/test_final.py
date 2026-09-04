@@ -519,6 +519,23 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
     # 4 layout − 2 SF fallbacks = 2 neural remaining (pending does not credit midi_ddsp)
     assert rem_pending == 2
 
+    # Layout-Fluidsynth neural-category stems are written method=midi-ddsp; they
+    # must still clear n_fluidsynth so the bar does not stick at 0/N forever.
+    df_g = pd.DataFrame({
+        "path_output": ["/g"],
+        "n_fluidsynth": [2],
+        "n_ddsp_piano": [0],
+        "n_midi_ddsp": [0],
+    })
+    fs_guitar = {
+        ("/g", 0): {"method": "midi-ddsp", "backend": "fluidsynth"},
+        ("/g", 1): {"method": "midi-ddsp", "backend": "fluidsynth"},
+    }
+    fs5, fs5_n = _work_for_pass(
+        df_g, [0], "fluidsynth", stem_recipe_index=fs_guitar,
+    )
+    assert fs5 == [] and fs5_n == 0
+
 
 def test_merge_filters_pending_midi_ddsp(tmp_path: Path):
     from synthesis.pass_tables import merge_pass_tables, pass_recipe_csv, pass_stems_csv

@@ -945,56 +945,59 @@ def _fluidsynth_midi_ddsp_fallback_counts_by_path(
     return df.loc[mask, "path"].astype(str).value_counts().to_dict()
 
 
-def _fluidsynth_midi_ddsp_handled_counts(
+def _fluidsynth_pass_credits(
+    stem_recipe_index: dict | None,
     *,
-    stem_recipe_index: dict | None = None,
-    tables_dir: str | Path | None = None,
-) -> dict[str, int]:
-    """``path`` → Fluidsynth ``method=midi-ddsp`` rows (SF fallback or pending).
+    n_midi_ddsp_by_path: dict[str, int],
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Per-path ``(native_done, neural_handled)`` for Fluidsynth resume / bar.
 
-    Resume uses this so Fluidsynth does not re-visit layout-MIDI-DDSP tracks it
-    already rendered or deferred to the neural pass.
+    Neural-category stems Fluidsynth soundfont-renders are stored as
+    ``method=midi-ddsp`` + ``backend=fluidsynth``. Layout may put those in
+    ``n_fluidsynth`` (soundfont at layout) *or* ``n_midi_ddsp`` (mono layout,
+    SF at render). Attribute ``method=midi-ddsp`` SF rows to ``n_midi_ddsp``
+    first; any overflow counts toward ``n_fluidsynth`` so the bar does not stay
+    stuck on already-rendered layout-Fluidsynth tracks.
     """
-    from synthesis.recipe import METHOD_MIDI_DDSP
+    from synthesis.recipe import (
+        BACKEND_FLUIDSYNTH,
+        BACKEND_PENDING_MIDI_DDSP,
+        METHOD_MIDI_DDSP,
+    )
 
-    done: dict[str, int] = {}
+    basic: dict[str, int] = {}
+    md_sf: dict[str, int] = {}
+    pending: dict[str, int] = {}
     if stem_recipe_index:
         for (path, _track), rec in stem_recipe_index.items():
             if not rec:
                 continue
-            if str(rec.get("method") or "") != METHOD_MIDI_DDSP:
-                continue
             key = str(path)
-            done[key] = done.get(key, 0) + 1
-        return done
-    if tables_dir is None:
-        return done
-    df = _fluidsynth_recipe_frame(tables_dir)
-    if df.empty or "path" not in df.columns or "method" not in df.columns:
-        return done
-    mask = df["method"].astype(str) == METHOD_MIDI_DDSP
-    if not mask.any():
-        return done
-    return df.loc[mask, "path"].astype(str).value_counts().to_dict()
+            method = str(rec.get("method") or "")
+            backend = str(rec.get("backend") or "")
+            if method == METHOD_MIDI_DDSP:
+                if backend == BACKEND_PENDING_MIDI_DDSP:
+                    pending[key] = pending.get(key, 0) + 1
+                elif backend in ("", BACKEND_FLUIDSYNTH, "nan", "None"):
+                    md_sf[key] = md_sf.get(key, 0) + 1
+                else:
+                    # Other backends still count as inspected neural slots.
+                    pending[key] = pending.get(key, 0) + 1
+            else:
+                basic[key] = basic.get(key, 0) + 1
 
-
-def _fluidsynth_native_done_counts(
-    stem_recipe_index: dict | None,
-) -> dict[str, int]:
-    """``path`` → Fluidsynth recipe rows that are native (non-MIDI-DDSP-method)."""
-    from synthesis.recipe import METHOD_MIDI_DDSP
-
-    done: dict[str, int] = {}
-    if not stem_recipe_index:
-        return done
-    for (path, _track), rec in stem_recipe_index.items():
-        if not rec:
-            continue
-        if str(rec.get("method") or "") == METHOD_MIDI_DDSP:
-            continue
-        key = str(path)
-        done[key] = done.get(key, 0) + 1
-    return done
+    native_done: dict[str, int] = {}
+    neural_handled: dict[str, int] = {}
+    paths = set(basic) | set(md_sf) | set(pending) | set(n_midi_ddsp_by_path)
+    for path in paths:
+        n_md = int(n_midi_ddsp_by_path.get(path, 0))
+        sf = int(md_sf.get(path, 0))
+        pend = int(pending.get(path, 0))
+        # SF rows fill layout-MIDI-DDSP fallback slots first.
+        md_sf_credit = min(sf, n_md)
+        native_done[path] = int(basic.get(path, 0)) + max(0, sf - n_md)
+        neural_handled[path] = pend + md_sf_credit
+    return native_done, neural_handled
 
 
 def _pass_recipe_counts_by_path(
@@ -1160,13 +1163,22 @@ def _work_for_pass(
         return list(work_indices), None
 
     if pass_name == "fluidsynth":
-        native_done = _fluidsynth_native_done_counts(stem_recipe_index)
-        neural_handled = _fluidsynth_midi_ddsp_handled_counts(
-            stem_recipe_index=stem_recipe_index,
-        )
         md_done: dict[str, int] = {}
         if tables_dir is not None:
             md_done = _pass_recipe_counts_by_path(tables_dir, "midi_ddsp")
+        n_md_by_path: dict[str, int] = {}
+        for i in work_indices:
+            path = (
+                str(dataset.at[i, "path_output"])
+                if "path_output" in dataset.columns
+                else ""
+            )
+            if "n_midi_ddsp" in dataset.columns:
+                n_md_by_path[path] = int(dataset.at[i, "n_midi_ddsp"])
+        native_done, neural_handled = _fluidsynth_pass_credits(
+            stem_recipe_index,
+            n_midi_ddsp_by_path=n_md_by_path,
+        )
         kept: list = []
         total = 0
         for i in work_indices:
@@ -1177,11 +1189,7 @@ def _work_for_pass(
             )
             native_n = int(dataset.at[i, col])
             native_rem = max(0, native_n - int(native_done.get(path, 0)))
-            md_n = (
-                int(dataset.at[i, "n_midi_ddsp"])
-                if "n_midi_ddsp" in dataset.columns
-                else 0
-            )
+            md_n = int(n_md_by_path.get(path, 0))
             neural_rem = max(
                 0,
                 md_n
@@ -1191,9 +1199,9 @@ def _work_for_pass(
             if native_rem + neural_rem <= 0:
                 continue
             kept.append(i)
-            # Bar denominator: only native SF renders. Layout-MIDI-DDSP tracks
-            # are mostly deferred (pending_midi_ddsp, no audio); the few that
-            # become real SF fallbacks (drums, polyphony) tick past 100%.
+            # Bar denominator: only tracks Fluidsynth will actually render.
+            # Layout-MIDI-DDSP deferrals (pending_midi_ddsp) are excluded; the
+            # few new SF fallbacks among them may tick slightly past 100%.
             total += native_rem
         return kept, total
 
