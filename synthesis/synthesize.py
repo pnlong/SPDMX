@@ -934,9 +934,9 @@ def _is_fluidsynth_midi_ddsp_fallback_row(method, backend, reason=None) -> bool:
         return False
     if backend_s != BACKEND_FLUIDSYNTH:
         return False
-    # Legacy rows without reason: keep crediting (pre-reason CSVs).
+    # Legacy rows without reason (including CSV na_rep "NA"): keep crediting.
     reason_s = "" if reason is None else str(reason).strip()
-    if reason_s in ("", "nan", "None"):
+    if reason_s in ("", "nan", "None", "NA", "<NA>"):
         return True
     return reason_s in _MIDI_DDSP_SOUNDFONT_FALLBACK_REASONS
 
