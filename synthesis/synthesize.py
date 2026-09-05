@@ -905,10 +905,16 @@ def _fluidsynth_recipe_frame(tables_dir: str | Path) -> pd.DataFrame:
     )
 
 
-# Render-time rejects of layout-MIDI-DDSP (not layout-Fluidsynth neural SF).
+# Fluidsynth soundfont renders of layout-MIDI-DDSP stems (any render-time reject).
+# Excludes pending_midi_ddsp (no audio). After reason backfill, blank/NA is rare.
 _MIDI_DDSP_SOUNDFONT_FALLBACK_REASONS = frozenset({
     "soundfont_polyphonic",
+    "soundfont_unsupported",
     "soundfont_drum",
+    "soundfont_vocal",
+    "soundfont_guitar",
+    "soundfont_bass_guitar",
+    "piano_recipe_not_midi_ddsp",
     "drum_fluidsynth_fallback",
     "empty_track",
 })
@@ -917,11 +923,8 @@ _MIDI_DDSP_SOUNDFONT_FALLBACK_REASONS = frozenset({
 def _is_fluidsynth_midi_ddsp_fallback_row(method, backend, reason=None) -> bool:
     """True for layout-MIDI-DDSP stems Fluidsynth soundfont-rendered as fallbacks.
 
-    Only reasons that appear when layout assigned ``midi_ddsp`` but render-time
-    routing rejected neural (polyphony / drum). Layout-Fluidsynth neural-category
-    stems (unsupported, guitar, …) are also stored as ``method=midi-ddsp`` +
-    ``backend=fluidsynth``; counting those as MIDI-DDSP-done undercounts the bar
-    and makes tqdm drop the ``n/total`` display once renders exceed it.
+    Any ``method=midi-ddsp`` + ``backend=fluidsynth`` row with a soundfont-style
+    reason (or blank/legacy ``NA``) counts. ``pending_midi_ddsp`` does not.
     """
     from synthesis.recipe import BACKEND_FLUIDSYNTH, BACKEND_PENDING_MIDI_DDSP, METHOD_MIDI_DDSP
 

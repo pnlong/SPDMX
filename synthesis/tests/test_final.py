@@ -542,7 +542,7 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
     )
     assert fs5 == [] and fs5_n == 0
 
-    # Unsupported SF on a midi_ddsp song must not erase real neural remaining.
+    # Unsupported SF on a midi_ddsp song counts as a real Fluidsynth fallback.
     df_m = pd.DataFrame({
         "path_output": ["/m"],
         "n_fluidsynth": [0],
@@ -565,8 +565,8 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
     _, rem_m = _work_for_pass(
         df_m, [0], "midi_ddsp", stem_recipe_index={}, tables_dir=tables_m,
     )
-    # Only polyphony counts as midi_ddsp fallback → 3 - 1 = 2 remaining.
-    assert rem_m == 2
+    # Both SF rows credit → 3 - 2 = 1 remaining.
+    assert rem_m == 1
 
 
 def test_merge_filters_pending_midi_ddsp(tmp_path: Path):
