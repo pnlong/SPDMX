@@ -212,7 +212,7 @@ def log_next_pass(recipe, only: str) -> None:
     plan = pass_sequence(recipe)
 
     def _extra(nxt: str) -> str:
-        return " -j 8" if nxt in ("fluidsynth", "mix") else ""
+        return " -j 8" if nxt in ("fluidsynth", "verify", "mix") else ""
 
     if only == "merge":
         nxt = "realify" if recipe.uses_realify() else "verify"
@@ -253,7 +253,8 @@ def log_next_pass(recipe, only: str) -> None:
     if only == "verify":
         print(
             "Verify reports remaining stems per pass and checks claimed "
-            "audio exists on disk (run after rsync, before mix).",
+            "audio exists on disk in parallel via -j/--jobs "
+            "(run after rsync, before mix).",
             flush=True,
         )
     print(f"Next: uv run python -m synthesis.final --only-pass {nxt}{extra}", flush=True)
@@ -342,6 +343,7 @@ def main(argv=None):
                 run_command=raw_upstream_command(recipe),
                 audio_format=audio_format,
                 expected_n_songs=expected_song_count(args, media_dir),
+                jobs=args.jobs,
             )
             if not args.reset:
                 require_recipe_conflicts_ok(
@@ -356,12 +358,15 @@ def main(argv=None):
         merge_pass_tables(tables_dir)
         # Report remaining-per-pass and missing FLACs first (actionable), then
         # the stricter data.csv completeness check.
-        verify_claimed_stems_on_disk(tables_dir, audio_format, recipe=recipe)
+        verify_claimed_stems_on_disk(
+            tables_dir, audio_format, recipe=recipe, jobs=args.jobs,
+        )
         require_raw_synthesis(
             tables_dir,
             run_command=raw_upstream_command(recipe),
             audio_format=audio_format,
             expected_n_songs=expected_song_count(args, media_dir),
+            jobs=args.jobs,
         )
     elif only == "mix":
         merge_pass_tables(tables_dir)
@@ -370,6 +375,7 @@ def main(argv=None):
             run_command=raw_upstream_command(recipe),
             audio_format=audio_format,
             expected_n_songs=expected_song_count(args, media_dir),
+            jobs=args.jobs,
         )
         run_summable_mix(args, tables_dir, media_dir=media_dir)
 

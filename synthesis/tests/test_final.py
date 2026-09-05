@@ -89,7 +89,7 @@ def test_verify_claimed_stems_on_disk_raises_when_missing(tmp_path: Path):
         "velocity_scale": [1.0],
     }).to_csv(tables / "stems.fluidsynth.csv", index=False)
     with pytest.raises(RuntimeError, match="missing or invalid") as excinfo:
-        verify_claimed_stems_on_disk(tables, "flac")
+        verify_claimed_stems_on_disk(tables, "flac", jobs=2)
     assert str(song / "0.flac") in str(excinfo.value) or "0.flac" in str(excinfo.value)
 
 
@@ -567,6 +567,37 @@ def test_work_for_pass_counts_remaining_renders(tmp_path: Path):
     )
     # Both SF rows credit → 3 - 2 = 1 remaining.
     assert rem_m == 1
+
+    # SF overcount (extra method=midi-ddsp Fluidsynth rows) must not hide
+    # pending_midi_ddsp tracks that still need neural render.
+    df_p = pd.DataFrame({
+        "path_output": ["/p"],
+        "n_fluidsynth": [0],
+        "n_ddsp_piano": [0],
+        "n_midi_ddsp": [1],
+    })
+    tables_p = tmp_path / "final_p"
+    tables_p.mkdir()
+    pd.DataFrame({
+        "path": ["/p", "/p", "/p"],
+        "track": [0, 1, 2],
+        "category": ["strings", "guitar", "guitar"],
+        "ablation": ["ddsp_basic", "basic", "basic"],
+        "method": ["midi-ddsp", "midi-ddsp", "midi-ddsp"],
+        "fallback": ["basic", "basic", "basic"],
+        "backend": ["pending_midi_ddsp", "fluidsynth", "fluidsynth"],
+        "realify": [False, False, False],
+        "reason": [
+            "midi_ddsp_eligible",
+            "soundfont_unsupported",
+            "soundfont_unsupported",
+        ],
+    }).to_csv(tables_p / "stem_recipe.fluidsynth.csv", index=False)
+    _, rem_p = _work_for_pass(
+        df_p, [0], "midi_ddsp", stem_recipe_index={}, tables_dir=tables_p,
+    )
+    # Song-level: 2 SF credits ≥ n_midi_ddsp=1 → would be 0 without pending fix.
+    assert rem_p == 1
 
 
 def test_merge_filters_pending_midi_ddsp(tmp_path: Path):

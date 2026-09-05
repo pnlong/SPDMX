@@ -68,6 +68,8 @@ def count_pass_progress_fast(tables_dir: Path, recipe) -> list[dict]:
     """
     from synthesis.synthesize import (
         _fluidsynth_midi_ddsp_fallback_counts_by_path,
+        _fluidsynth_pending_unclaimed_counts_by_path,
+        _midi_ddsp_remaining_for_path,
         _recipe_done_by_path,
         neural_fluidsynth_fallback_reason_counts,
     )
@@ -115,14 +117,24 @@ def count_pass_progress_fast(tables_dir: Path, recipe) -> list[dict]:
             sid = _song_id_from_audio_dir(str(path))
             neural_by_sid[sid] = neural_by_sid.get(sid, 0) + int(n)
 
+        pending_by_sid: dict[str, int] = {}
+        if pass_name == "midi_ddsp":
+            for path, n in _fluidsynth_pending_unclaimed_counts_by_path(
+                tables_dir, stem_index,
+            ).items():
+                sid = _song_id_from_audio_dir(str(path))
+                pending_by_sid[sid] = pending_by_sid.get(sid, 0) + int(n)
+
         songs = index.loc[mask, ["song_id"]].copy()
         songs["assigned"] = assigned_col.loc[mask].to_numpy()
         songs["song_id"] = songs["song_id"].astype(str)
         songs["neural"] = songs["song_id"].map(neural_by_sid).fillna(0).astype(int)
         if pass_name == "midi_ddsp":
             songs["fallback"] = songs["song_id"].map(fs_fb_by_sid).fillna(0).astype(int)
+            songs["pending"] = songs["song_id"].map(pending_by_sid).fillna(0).astype(int)
         else:
             songs["fallback"] = 0
+            songs["pending"] = 0
         # Cap credits so Fluidsynth method=midi-ddsp rows on non-layout tracks
         # cannot erase real remaining MIDI-DDSP work.
         songs["neural"] = songs[["neural", "assigned"]].min(axis=1)
@@ -130,9 +142,25 @@ def count_pass_progress_fast(tables_dir: Path, recipe) -> list[dict]:
         songs["fallback_credit"] = pd.concat(
             [songs["fallback"], room], axis=1,
         ).min(axis=1)
-        songs["remaining"] = (
-            songs["assigned"] - songs["neural"] - songs["fallback_credit"]
-        ).clip(lower=0)
+        if pass_name == "midi_ddsp":
+            songs["remaining"] = [
+                _midi_ddsp_remaining_for_path(
+                    assigned=int(a),
+                    done=int(n) + int(f),
+                    pending_unclaimed=int(p),
+                )
+                for a, n, f, p in zip(
+                    songs["assigned"],
+                    songs["neural"],
+                    songs["fallback_credit"],
+                    songs["pending"],
+                    strict=True,
+                )
+            ]
+        else:
+            songs["remaining"] = (
+                songs["assigned"] - songs["neural"] - songs["fallback_credit"]
+            ).clip(lower=0)
         # Denominator: tracks MIDI-DDSP actually renders (exclude SF fallbacks).
         songs["renderable"] = songs["neural"] + songs["remaining"]
 

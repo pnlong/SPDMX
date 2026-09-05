@@ -580,22 +580,38 @@ def synthesize_song_at_index(
             if ddsp_pass in ("ddsp_piano", "midi_ddsp"):
                 neural_jobs: list[tuple[int, str, StemRoute]] = []
                 rendered_stem_rows: list[dict] = []
+                pending_keys = getattr(args, "_pending_midi_ddsp_keys", None) or frozenset()
+                path_key = os.path.normpath(str(path_output))
                 for j, track_path in enumerate(track_paths):
                     meta = track_render_meta[j]
-                    if hybrid and not meta.get("neural_ok"):
+                    is_pending = (
+                        (path_key, j) in pending_keys
+                        or (str(path_output), j) in pending_keys
+                    )
+                    # Fluidsynth deferred these as pending_midi_ddsp — always try neural.
+                    if hybrid and not meta.get("neural_ok") and not is_pending:
                         continue
-                    if meta.get("ddsp_backend") != ddsp_pass:
+                    if (
+                        meta.get("ddsp_backend") != ddsp_pass
+                        and not is_pending
+                    ):
                         continue
                     out_stem = stem_path(song_dir, j, audio_format)
                     plan = meta.get("plan")
                     if (
                         plan is not None
+                        and not is_pending
                         and _hybrid_raw_current(
                             args, path_output, j, out_stem, plan, ddsp_pass,
                         )
                     ):
                         continue
-                    if stem_is_valid(out_stem) and not args.reset and plan is None:
+                    if (
+                        stem_is_valid(out_stem)
+                        and not args.reset
+                        and plan is None
+                        and not is_pending
+                    ):
                         continue
                     # Defense: never send channel-9 / PrettyMIDI-drum stems to neural.
                     # Leave unclaimed so Fluidsynth (re)claims them as SF fallbacks.
@@ -603,13 +619,18 @@ def synthesize_song_at_index(
 
                     if midi_path_uses_drum_channel(track_path):
                         continue
+                    backend = meta.get("ddsp_backend") or ddsp_pass
+                    if is_pending and backend != ddsp_pass:
+                        backend = ddsp_pass
                     neural_jobs.append((
                         j,
                         track_path,
                         StemRoute(
-                            backend=ddsp_pass,
+                            backend=backend,
                             instrument_key=meta.get("ddsp_instrument_key"),
-                            reason=meta.get("ddsp_reason") or "",
+                            reason=meta.get("ddsp_reason") or (
+                                "midi_ddsp_eligible" if is_pending else ""
+                            ),
                         ),
                     ))
 
@@ -1093,6 +1114,53 @@ def neural_fluidsynth_fallback_reason_counts(
     return {"(unspecified)": len(fb)}
 
 
+def _fluidsynth_pending_unclaimed_keys(
+    tables_dir: str | Path,
+    stem_recipe_index: dict | None = None,
+) -> set[tuple[str, int]]:
+    """``(path, track)`` Fluidsynth ``pending_midi_ddsp`` rows with no MIDI-DDSP recipe."""
+    from synthesis.recipe import BACKEND_PENDING_MIDI_DDSP, METHOD_MIDI_DDSP
+
+    df = _fluidsynth_recipe_frame(tables_dir)
+    if df.empty or "path" not in df.columns or "method" not in df.columns:
+        return set()
+    if "backend" not in df.columns or "track" not in df.columns:
+        return set()
+    mask = (
+        (df["method"].astype(str) == METHOD_MIDI_DDSP)
+        & (df["backend"].astype(str) == BACKEND_PENDING_MIDI_DDSP)
+    )
+    if not mask.any():
+        return set()
+    neural = stem_recipe_index or {}
+    keys: set[tuple[str, int]] = set()
+    for row in df.loc[mask, ["path", "track"]].itertuples(index=False):
+        path = os.path.normpath(str(row.path))
+        track = int(row.track)
+        # Match either normalized or raw recipe path against neural index keys.
+        if (path, track) in neural or (str(row.path), track) in neural:
+            continue
+        keys.add((path, track))
+    return keys
+
+
+def _fluidsynth_pending_unclaimed_counts_by_path(
+    tables_dir: str | Path,
+    stem_recipe_index: dict | None = None,
+) -> dict[str, int]:
+    """``path`` → Fluidsynth ``pending_midi_ddsp`` tracks with no MIDI-DDSP recipe row.
+
+    Song-level SF-fallback credits can mask these (no audio yet). Verify / resume
+    must still treat them as MIDI-DDSP work.
+    """
+    counts: dict[str, int] = {}
+    for path, _track in _fluidsynth_pending_unclaimed_keys(
+        tables_dir, stem_recipe_index,
+    ):
+        counts[path] = counts.get(path, 0) + 1
+    return counts
+
+
 def _work_done_by_path(
     pass_name: str,
     *,
@@ -1103,9 +1171,25 @@ def _work_done_by_path(
     done = _recipe_done_by_path(stem_recipe_index, pass_name)
     if pass_name != "midi_ddsp" or tables_dir is None:
         return done
+    # Normalize keys so recipe paths match dataset path_output.
+    normalized: dict[str, int] = {}
+    for path, n in done.items():
+        key = os.path.normpath(str(path))
+        normalized[key] = normalized.get(key, 0) + int(n)
     for path, n in _fluidsynth_midi_ddsp_fallback_counts_by_path(tables_dir).items():
-        done[path] = int(done.get(path, 0)) + int(n)
-    return done
+        key = os.path.normpath(str(path))
+        normalized[key] = normalized.get(key, 0) + int(n)
+    return normalized
+
+
+def _midi_ddsp_remaining_for_path(
+    *,
+    assigned: int,
+    done: int,
+    pending_unclaimed: int,
+) -> int:
+    """Tracks still owed by MIDI-DDSP (neural), including unclaimed Fluidsynth pendings."""
+    return max(max(0, int(assigned) - int(done)), int(pending_unclaimed))
 
 
 def _reload_progress_from_disk(
@@ -1245,14 +1329,32 @@ def _work_for_pass(
         stem_recipe_index=stem_recipe_index,
         tables_dir=tables_dir,
     )
+    pending_unclaimed: dict[str, int] = {}
+    if pass_name == "midi_ddsp" and tables_dir is not None:
+        pending_unclaimed = _fluidsynth_pending_unclaimed_counts_by_path(
+            tables_dir,
+            stem_recipe_index,
+        )
     kept = []
     total = 0
     for i in work_indices:
         n = int(dataset.at[i, col])
-        if n <= 0:
-            continue
         path = str(dataset.at[i, "path_output"]) if "path_output" in dataset.columns else ""
-        remaining = max(0, n - int(done.get(path, 0)))
+        path_key = os.path.normpath(path) if path else ""
+        rem_pending = int(pending_unclaimed.get(path_key, 0)) or int(
+            pending_unclaimed.get(path, 0)
+        )
+        if n <= 0 and rem_pending <= 0:
+            continue
+        remaining = (
+            _midi_ddsp_remaining_for_path(
+                assigned=n,
+                done=int(done.get(path_key, 0)) or int(done.get(path, 0)),
+                pending_unclaimed=rem_pending,
+            )
+            if pass_name == "midi_ddsp"
+            else max(0, n - int(done.get(path_key, 0) or done.get(path, 0)))
+        )
         if remaining <= 0:
             continue
         kept.append(i)
@@ -2035,6 +2137,20 @@ def _run_hybrid_synthesis(
         args.stem_recipe_index = load_stem_recipe_index(
             tables, filename=recipe_path.name,
         )
+        if pass_name == "midi_ddsp":
+            args._pending_midi_ddsp_keys = _fluidsynth_pending_unclaimed_keys(
+                tables, args.stem_recipe_index,
+            )
+            n_pending = len(args._pending_midi_ddsp_keys)
+            if n_pending:
+                n_songs = len({p for p, _ in args._pending_midi_ddsp_keys})
+                print(
+                    f"Fluidsynth pending_midi_ddsp still needing neural: "
+                    f"{n_pending} tracks across {n_songs} songs",
+                    flush=True,
+                )
+        else:
+            args._pending_midi_ddsp_keys = frozenset()
         indices, track_total = _work_for_pass(
             dataset, work_indices, pass_name,
             stem_recipe_index=args.stem_recipe_index,
@@ -2370,26 +2486,53 @@ def count_pass_remaining(
             stem_recipe_index=stem_index,
             tables_dir=root,
         )
+        pending_by_path: dict[str, int] = {}
+        if pass_name == "midi_ddsp":
+            pending_by_path = _fluidsynth_pending_unclaimed_counts_by_path(
+                root,
+                stem_index,
+            )
         done_by_sid: dict[str, int] = {}
         for path, n in done_by_path.items():
             sid = _song_id_from_audio_dir(str(path))
             done_by_sid[sid] = done_by_sid.get(sid, 0) + int(n)
-        # Cap per-song done at assigned so Fluidsynth over-count (method=midi-ddsp
-        # on fluidsynth-layout tracks) cannot invent negative remaining.
+        pending_by_sid: dict[str, int] = {}
+        for path, n in pending_by_path.items():
+            sid = _song_id_from_audio_dir(str(path))
+            pending_by_sid[sid] = pending_by_sid.get(sid, 0) + int(n)
         assigned = 0
         remaining = 0
         songs_left = 0
         neural_done = 0
         examples: list[dict] = []
-        for _, row in index.iterrows():
+        for _, row in tqdm(
+            index.iterrows(),
+            total=len(index),
+            desc=f"verify remaining ({pass_name})",
+            unit="song",
+            leave=False,
+        ):
             n = int(row[col])
-            if n <= 0:
-                continue
             sid = str(row["song_id"])
-            assigned += n
-            done = min(n, int(done_by_sid.get(sid, 0)))
-            neural_done += done
-            rem = n - done
+            rem_pending = int(pending_by_sid.get(sid, 0))
+            if n <= 0 and rem_pending <= 0:
+                continue
+            if n > 0:
+                assigned += n
+                done_cap = min(n, int(done_by_sid.get(sid, 0)))
+            else:
+                assigned += rem_pending
+                done_cap = 0
+            neural_done += done_cap
+            rem = (
+                _midi_ddsp_remaining_for_path(
+                    assigned=n,
+                    done=done_cap,
+                    pending_unclaimed=rem_pending,
+                )
+                if pass_name == "midi_ddsp"
+                else max(0, n - done_cap)
+            )
             if rem > 0:
                 remaining += rem
                 songs_left += 1
@@ -2406,34 +2549,108 @@ def count_pass_remaining(
     return rows
 
 
+def _verify_stem_path_ok(path_str: str) -> bool:
+    """Picklable worker: True when claimed stem path is valid on disk."""
+    return stem_is_valid(Path(path_str))
+
+
+def _verify_stem_path_ok_indexed(item: tuple[int, str]) -> tuple[int, bool]:
+    idx, path_str = item
+    return idx, stem_is_valid(Path(path_str))
+
+
+def _verify_song_complete_task(
+    item: tuple[str, int, str, bool],
+) -> bool:
+    song_dir, n_tracks, audio_format, require_mixture = item
+    return song_is_complete(
+        Path(song_dir),
+        int(n_tracks),
+        audio_format,
+        require_mixture=require_mixture,
+    )
+
+
+def _missing_from_stem_paths(
+    path_strs: list[str],
+    *,
+    jobs: int = 1,
+    desc: str = "verify disk",
+    limit: int | None = None,
+) -> list[str]:
+    """Return invalid paths from ``path_strs`` (optional early stop via ``limit``)."""
+    if not path_strs:
+        return []
+    n_jobs = max(1, int(jobs))
+    label = f"{desc} (-j {n_jobs})" if n_jobs > 1 else desc
+    missing: list[str] = []
+    if n_jobs <= 1 or len(path_strs) <= 1:
+        for path_str in tqdm(path_strs, total=len(path_strs), desc=label, unit="stem", leave=False):
+            if not _verify_stem_path_ok(path_str):
+                missing.append(path_str)
+                if limit is not None and len(missing) >= limit:
+                    break
+        return missing
+
+    chunksize = max(4, min(32, len(path_strs) // (n_jobs * 8) or 4))
+    pbar = tqdm(
+        total=len(path_strs),
+        desc=label,
+        unit="stem",
+        leave=False,
+        miniters=1,
+        smoothing=0.05,
+    )
+    try:
+        with multiprocessing.Pool(processes=n_jobs) as pool:
+            for idx, ok in pool.imap_unordered(
+                _verify_stem_path_ok_indexed,
+                enumerate(path_strs),
+                chunksize=chunksize,
+            ):
+                pbar.update(1)
+                if not ok:
+                    missing.append(path_strs[idx])
+                    if limit is not None and len(missing) >= limit:
+                        pool.terminate()
+                        break
+    finally:
+        pbar.close()
+    # imap_unordered order is nondeterministic; stable report order.
+    missing.sort()
+    return missing
+
+
 def find_missing_claimed_stems(
     tables_dir: str | Path,
     audio_format: str,
     *,
     limit: int | None = None,
     by_pass: bool = False,
+    jobs: int = 1,
 ) -> list[str] | dict[str, list[str]]:
     """Paths claimed in ``stems.csv`` (or per-pass shards) that lack a valid FLAC.
 
     Used as the mix-time verify so CSV-only resume cannot ship missing audio.
     When ``by_pass`` is True, return ``{pass_name: [paths...]}`` (canonical
     ``stems.csv`` is checked under the key ``\"merged\"``).
+    ``jobs`` parallelizes stem validation via ``multiprocessing.Pool``.
     """
     from synthesis.pass_tables import RENDER_PASSES, pass_stems_csv
 
     root = Path(tables_dir)
 
-    def _missing_from_frame(frame: pd.DataFrame) -> list[str]:
+    def _missing_from_frame(frame: pd.DataFrame, *, desc: str) -> list[str]:
         if frame is None or frame.empty:
             return []
-        missing: list[str] = []
-        for _, row in frame.drop_duplicates(["path", "track"]).iterrows():
-            out = stem_path(Path(str(row["path"])), int(row["track"]), audio_format)
-            if not stem_is_valid(out):
-                missing.append(str(out))
-                if limit is not None and len(missing) >= limit:
-                    break
-        return missing
+        uniq = frame.drop_duplicates(["path", "track"])
+        path_strs = [
+            str(stem_path(Path(str(p)), int(t), audio_format))
+            for p, t in zip(uniq["path"].tolist(), uniq["track"].tolist(), strict=True)
+        ]
+        return _missing_from_stem_paths(
+            path_strs, jobs=jobs, desc=desc, limit=limit,
+        )
 
     if by_pass:
         out: dict[str, list[str]] = {}
@@ -2441,12 +2658,14 @@ def find_missing_claimed_stems(
         if stems_csv.is_file() and stems_csv.stat().st_size > 0:
             out["merged"] = _missing_from_frame(
                 pd.read_csv(stems_csv, usecols=["path", "track"]),
+                desc="verify disk (merged)",
             )
         for name in RENDER_PASSES:
             path = pass_stems_csv(root, name)
             if path.is_file() and path.stat().st_size > 0:
                 out[name] = _missing_from_frame(
                     pd.read_csv(path, usecols=["path", "track"]),
+                    desc=f"verify disk ({name})",
                 )
         return out
 
@@ -2462,7 +2681,7 @@ def find_missing_claimed_stems(
     if not frames:
         return []
     stems = pd.concat(frames, ignore_index=True).drop_duplicates(["path", "track"])
-    return _missing_from_frame(stems)
+    return _missing_from_frame(stems, desc="verify disk")
 
 
 def _format_verify_examples(label: str, items: list[str], *, total: int, limit: int) -> str:
@@ -2481,11 +2700,13 @@ def verify_claimed_stems_on_disk(
     *,
     sample_limit: int = 25,
     recipe=None,
+    jobs: int = 1,
 ) -> None:
     """Raise if render work remains or claimed stems are missing/invalid on disk.
 
     Always prints a per-pass summary. On failure the exception lists counts and
     concrete examples (incomplete ``song_id``s and missing file paths).
+    ``jobs`` parallelizes claimed-stem FLAC checks.
     """
     root = Path(tables_dir)
     remaining_rows = count_pass_remaining(
@@ -2520,7 +2741,7 @@ def verify_claimed_stems_on_disk(
         )
 
     missing_by_pass = find_missing_claimed_stems(
-        root, audio_format, by_pass=True,
+        root, audio_format, by_pass=True, jobs=jobs,
     )
     assert isinstance(missing_by_pass, dict)
     report_passes = [
@@ -2621,12 +2842,15 @@ def synthesis_is_complete(
     *,
     require_mixture: bool = False,
     expected_n_songs: int | None = None,
+    progress: bool = False,
+    jobs: int = 1,
 ) -> bool:
     """True when data/stems tables exist and every listed song has stem files on disk.
 
     When ``ddsp_routing.csv`` is present, every song must also have routing rows for
     all tracks (DDSP ablations). ``expected_n_songs`` (unique songs in SPDMX.csv)
     rejects a partial ``data.csv`` written while Fluidsynth/DDSP are still running.
+    ``jobs`` parallelizes per-song completeness checks.
     """
     source = Path(source_dir)
     data_csv = source / f"{DATA_DIR_NAME}.csv"
@@ -2647,13 +2871,46 @@ def synthesis_is_complete(
         if songs_missing_routing(songs, routing):
             return False
 
-    for _, row in songs.iterrows():
-        song_dir = Path(row["path"])
-        n_tracks = int(row["n_tracks"])
-        if not song_is_complete(
-            song_dir, n_tracks, audio_format, require_mixture=require_mixture,
-        ):
-            return False
+    tasks = [
+        (str(row.path), int(row.n_tracks), audio_format, require_mixture)
+        for row in songs[["path", "n_tracks"]].itertuples(index=False)
+    ]
+    n_jobs = max(1, int(jobs))
+    label = "verify song completeness"
+    if n_jobs > 1:
+        label = f"{label} (-j {n_jobs})"
+
+    if n_jobs <= 1 or len(tasks) <= 1:
+        rows = tasks
+        if progress:
+            rows = tqdm(rows, total=len(tasks), desc=label, unit="song")
+        for item in rows:
+            if not _verify_song_complete_task(item):
+                return False
+        return True
+
+    chunksize = max(1, min(16, len(tasks) // (n_jobs * 8) or 1))
+    pbar = tqdm(
+        total=len(tasks),
+        desc=label,
+        unit="song",
+        miniters=1,
+        smoothing=0.05,
+        disable=not progress,
+    )
+    try:
+        with multiprocessing.Pool(processes=n_jobs) as pool:
+            for ok in pool.imap_unordered(
+                _verify_song_complete_task,
+                tasks,
+                chunksize=chunksize,
+            ):
+                pbar.update(1)
+                if not ok:
+                    pool.terminate()
+                    return False
+    finally:
+        pbar.close()
     return True
 
 
@@ -2663,6 +2920,7 @@ def require_raw_synthesis(
     run_command: str,
     audio_format: str = DEFAULT_AUDIO_FORMAT,
     expected_n_songs: int | None = None,
+    jobs: int = 1,
 ) -> None:
     """Raise if the non-realify synthesis pass has not completed successfully."""
     if synthesis_is_complete(
@@ -2670,16 +2928,35 @@ def require_raw_synthesis(
         audio_format,
         require_mixture=False,
         expected_n_songs=expected_n_songs,
+        progress=True,
+        jobs=jobs,
     ):
         return
-    detail = ""
+    source = Path(source_dir)
+    data_csv = source / f"{DATA_DIR_NAME}.csv"
+    have = 0
+    if data_csv.is_file():
+        try:
+            have = len(pd.read_csv(data_csv, usecols=["path"]))
+        except Exception:
+            have = 0
+    detail_parts: list[str] = []
     if expected_n_songs is not None:
-        detail = (
-            f" Need {expected_n_songs} songs in data.csv "
-            "(Fluidsynth and DDSP must both finish first)."
+        detail_parts.append(
+            f"Need {expected_n_songs} songs in data.csv "
+            f"(have {have}). Fluidsynth and MIDI-DDSP must both finish first."
         )
+        if have and have < int(expected_n_songs):
+            pending = _fluidsynth_pending_unclaimed_counts_by_path(source)
+            n_pending = sum(pending.values())
+            if n_pending:
+                detail_parts.append(
+                    f"{n_pending} Fluidsynth pending_midi_ddsp tracks still lack "
+                    "a MIDI-DDSP recipe/audio — re-run midi_ddsp."
+                )
+    detail = (" " + " ".join(detail_parts)) if detail_parts else ""
     raise RuntimeError(
-        "Cannot realify: raw stems are missing or incomplete at "
+        "Raw stems are missing or incomplete at "
         f"{source_dir}.{detail}\n"
         "Run the corresponding non-realify ablation first:\n"
         f"  {run_command}"

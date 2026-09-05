@@ -65,7 +65,7 @@ def add_synthesis_args(
         "--workers",
         default=int(multiprocessing.cpu_count() / 4),
         type=int,
-        help="CPU workers for synthesis and CPU realify (small-music).",
+        help="CPU workers for synthesis, verify disk checks, mix, and CPU realify.",
     )
     if include_render_mode:
         parser.add_argument(
