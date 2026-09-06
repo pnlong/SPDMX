@@ -14,7 +14,7 @@ def _stem(path: str, track: int, name: str) -> dict:
     return {
         "path": path, "track": track, "original_track": track, "program": track,
         "is_drum": False, "name": name, "has_lyrics": False,
-        "max_velocity": 64, "velocity_scale": 0.5,
+        "max_velocity": 64, "velocity_scale": 0.5, "zero_duration_notes": False,
     }
 
 

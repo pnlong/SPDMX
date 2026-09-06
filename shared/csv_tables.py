@@ -81,6 +81,28 @@ def read_csv_flexible(
     return df
 
 
+def _csv_cell(col: str, row: dict) -> object:
+    """Serialize one cell; bool stem flags default to False when missing."""
+    value = row.get(col)
+    if col == "zero_duration_notes":
+        if value is None or value == "" or (
+            isinstance(value, float) and value != value
+        ):
+            return False
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in ("", "nan", "none", "na", "<na>"):
+                return False
+            if text in ("true", "1", "yes"):
+                return True
+            if text in ("false", "0", "no"):
+                return False
+        return bool(value)
+    if value is None or value == "":
+        return NA_STRING
+    return value
+
+
 def _rewrite_csv_with_columns(
     path: Path,
     columns: list[str],
@@ -98,10 +120,7 @@ def _rewrite_csv_with_columns(
         )
         writer.writeheader()
         for row in existing_rows + new_rows:
-            writer.writerow({
-                col: NA_STRING if row.get(col) in (None, "") else row.get(col)
-                for col in columns
-            })
+            writer.writerow({col: _csv_cell(col, row) for col in columns})
     tmp.replace(path)
 
 
@@ -145,10 +164,7 @@ def append_rows(csv_path: str, columns: list[str], new_rows: list[dict]) -> None
             if new_file:
                 writer.writeheader()
             for row in new_rows:
-                writer.writerow({
-                    col: NA_STRING if row.get(col) is None else row.get(col)
-                    for col in columns
-                })
+                writer.writerow({col: _csv_cell(col, row) for col in columns})
 
 
 def append_rows_deduped(
@@ -181,6 +197,12 @@ def append_rows_deduped(
                     existing.to_dict("records") + new_df.to_dict("records"),
                     columns=columns,
                 )
+
+        if "zero_duration_notes" in new_df.columns:
+            new_df["zero_duration_notes"] = [
+                _csv_cell("zero_duration_notes", {"zero_duration_notes": v})
+                for v in new_df["zero_duration_notes"].tolist()
+            ]
 
         new_df.to_csv(
             csv_path,

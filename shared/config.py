@@ -79,6 +79,10 @@ LISTENING_SAMPLE_FILE_NAME = "listening_sample.yaml"
 STEMS_TABLE_COLUMNS = [
     "path", "track", "original_track", "program", "is_drum", "name", "has_lyrics",
     "max_velocity", "velocity_scale",
+    # True when the track has note_ons but every note is a same-tick on/off pair
+    # (zero-duration *notes*). The track timeline can still be long; Fluidsynth
+    # owns these — we never invent note lengths for MIDI-DDSP.
+    "zero_duration_notes",
 ]
 
 SONGS_TABLE_COLUMNS = [

@@ -21,6 +21,8 @@ from synthesis.ddsp.routing import (
     REASON_POLYPHONIC,
     REASON_UNSUPPORTED,
     REASON_VOCAL,
+    REASON_ZERO_DURATION,
+    has_positive_duration_notes,
     is_monophonic_messages,
     is_monophonic_midi,
     route_stem,
@@ -56,6 +58,28 @@ def test_empty_track_not_routed_to_piano():
     )
     assert route.backend == BACKEND_SOUNDFONT
     assert route.reason == REASON_EMPTY
+
+
+def test_route_zero_duration_notes_prefer_fluidsynth():
+    """Same-tick on/off pairs look monophonic but MIDI-DDSP renders silence."""
+    track = _track(
+        mido.Message("program_change", program=40, time=0),
+        mido.Message("note_on", note=60, velocity=80, time=0),
+        mido.Message("note_on", note=60, velocity=0, time=0),
+        mido.Message("note_on", note=62, velocity=80, time=120),
+        mido.Message("note_on", note=62, velocity=0, time=0),
+    )
+    assert is_monophonic_messages(track)
+    assert not has_positive_duration_notes(track)
+    route = route_stem(
+        program=40,
+        is_drum=False,
+        track_name="Violin",
+        track=track,
+        check_monophony=True,
+    )
+    assert route.backend == BACKEND_SOUNDFONT
+    assert route.reason == REASON_ZERO_DURATION
 
 
 def test_route_piano_by_name():

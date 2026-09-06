@@ -383,6 +383,9 @@ def synthesize_song_at_index(
         program = int(track_map[j].get("program", program))
         if bool(track_map[j].get("is_drum", False)):
             is_drum = True
+        from synthesis.ddsp.routing import has_positive_duration_notes
+
+        zero_duration_notes = bool(n_notes > 0 and not has_positive_duration_notes(track))
 
         if need_to_synthesize:
             track_midi.tracks.append(track_midi_track)
@@ -476,6 +479,7 @@ def synthesize_song_at_index(
             "has_lyrics": has_lyrics,
             "max_velocity": max_velocity,
             "velocity_scale": None,  # filled after all tracks
+            "zero_duration_notes": zero_duration_notes,
         })
 
     from synthesis.velocity import velocity_scales_from_track_maxima
@@ -501,7 +505,10 @@ def synthesize_song_at_index(
             )
 
         if hybrid and ddsp_pass == "fluidsynth":
-            from synthesis.ddsp.routing import midi_path_uses_drum_channel
+            from synthesis.ddsp.routing import (
+                midi_path_has_positive_duration_notes,
+                midi_path_uses_drum_channel,
+            )
             from synthesis.recipe import (
                 BACKEND_FLUIDSYNTH,
                 BACKEND_PENDING_MIDI_DDSP,
@@ -513,19 +520,27 @@ def synthesize_song_at_index(
                 meta = track_render_meta[j]
                 plan = meta.get("plan")
                 out_stem = stem_path(song_dir, j, audio_format)
-                # Already claimed this pass (native SF, neural→SF, or deferred)?
-                if (
-                    plan is not None
-                    and not args.reset
-                    and (str(path_output), j) in recipe_index
-                ):
-                    continue
                 backend = meta.get("ddsp_backend")
                 leave_for_neural = (
                     meta.get("neural_ok")
                     and backend in ("midi_ddsp", "ddsp_piano")
                     and not midi_path_uses_drum_channel(track_path)
+                    # Zero-duration notes → Fluidsynth (never pending for MIDI-DDSP).
+                    and midi_path_has_positive_duration_notes(track_path)
                 )
+                claimed = recipe_index.get((str(path_output), j))
+                # Already claimed this pass (native SF, neural→SF, or deferred)?
+                if claimed is not None and not args.reset:
+                    claimed_backend = str(claimed.get("backend") or "")
+                    # Reclaim pending rows when routing now prefers soundfont
+                    # (e.g. zero-duration notes that MIDI-DDSP cannot render).
+                    if (
+                        claimed_backend == BACKEND_PENDING_MIDI_DDSP
+                        and not leave_for_neural
+                    ):
+                        pass  # fall through to SF-render
+                    else:
+                        continue
                 if leave_for_neural:
                     # Bookkeeping only — MIDI-DDSP / DDSP-Piano owns the audio.
                     if plan is not None:
@@ -614,10 +629,16 @@ def synthesize_song_at_index(
                     ):
                         continue
                     # Defense: never send channel-9 / PrettyMIDI-drum stems to neural.
+                    # Same for zero-duration-only MIDI (PrettyMIDI end_time=0).
                     # Leave unclaimed so Fluidsynth (re)claims them as SF fallbacks.
-                    from synthesis.ddsp.routing import midi_path_uses_drum_channel
+                    from synthesis.ddsp.routing import (
+                        midi_path_has_positive_duration_notes,
+                        midi_path_uses_drum_channel,
+                    )
 
                     if midi_path_uses_drum_channel(track_path):
+                        continue
+                    if not midi_path_has_positive_duration_notes(track_path):
                         continue
                     backend = meta.get("ddsp_backend") or ddsp_pass
                     if is_pending and backend != ddsp_pass:
@@ -935,6 +956,9 @@ _MIDI_DDSP_SOUNDFONT_FALLBACK_REASONS = frozenset({
     "soundfont_vocal",
     "soundfont_guitar",
     "soundfont_bass_guitar",
+    "soundfont_zero_duration_notes",
+    # Legacy reason string from the one-shot backfill (same meaning).
+    "soundfont_zero_duration",
     "piano_recipe_not_midi_ddsp",
     "drum_fluidsynth_fallback",
     "empty_track",
@@ -2859,7 +2883,9 @@ def synthesis_is_complete(
         return False
 
     songs = pd.read_csv(data_csv, sep=",", header=0, index_col=False)
-    stems = pd.read_csv(stems_csv, sep=",", header=0, index_col=False)
+    stems = pd.read_csv(
+        stems_csv, sep=",", header=0, index_col=False, low_memory=False,
+    )
     if len(songs) == 0 or len(stems) == 0:
         return False
     if expected_n_songs is not None and len(songs) < int(expected_n_songs):

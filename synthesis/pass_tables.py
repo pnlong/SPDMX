@@ -62,10 +62,46 @@ def _song_id_from_audio_dir(path: str) -> str:
     return Path(path).name
 
 
+def _normalize_stems_bool_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Coerce ``zero_duration_notes`` to real True/False (missing → False)."""
+    if df is None or not len(df):
+        return df
+    col = "zero_duration_notes"
+    if col not in df.columns:
+        # Legacy one-shot column name before rename.
+        if "zero_duration" in df.columns:
+            df = df.rename(columns={"zero_duration": col})
+        else:
+            df[col] = False
+            return df
+    raw = df[col]
+    truthy = {"true", "1", "yes"}
+    falsy = {"false", "0", "no", "", "nan", "none", "na", "<na>"}
+    out = []
+    for value in raw.tolist():
+        if value is True or value is False:
+            out.append(bool(value))
+            continue
+        if value is None or (isinstance(value, float) and value != value):
+            out.append(False)
+            continue
+        text = str(value).strip().lower()
+        if text in truthy:
+            out.append(True)
+        elif text in falsy:
+            out.append(False)
+        else:
+            out.append(bool(value))
+    df = df.copy()
+    df[col] = out
+    return df
+
+
 def _read_csv(path: Path) -> pd.DataFrame:
     if not path.is_file() or path.stat().st_size == 0:
         return pd.DataFrame()
-    return pd.read_csv(path)
+    # low_memory=False avoids chunked dtype guesses on large stem tables.
+    return pd.read_csv(path, low_memory=False)
 
 
 def _concat_dedup(paths: list[Path], key_cols: list[str]) -> pd.DataFrame:
@@ -95,7 +131,11 @@ def merge_pass_tables(tables_dir: str | Path) -> dict[str, int]:
     stems = _concat_dedup(stem_paths, ["path", "track"])
     if not len(stems):
         stems = pd.DataFrame(columns=STEMS_TABLE_COLUMNS)
-    elif set(STEMS_TABLE_COLUMNS) <= set(stems.columns):
+    else:
+        stems = _normalize_stems_bool_columns(stems)
+        for col in STEMS_TABLE_COLUMNS:
+            if col not in stems.columns:
+                stems[col] = False if col == "zero_duration_notes" else pd.NA
         stems = stems[STEMS_TABLE_COLUMNS]
     stems.to_csv(canonical_stems_csv(root), index=False, na_rep=NA_STRING)
 

@@ -23,6 +23,8 @@ REASON_BASS_GUITAR = "soundfont_bass_guitar"
 REASON_VOCAL = "soundfont_vocal"
 REASON_GUITAR = "soundfont_guitar"
 REASON_EMPTY = "empty_track"
+# note_on + note_off at the same tick → PrettyMIDI drops the notes / end_time=0
+REASON_ZERO_DURATION = "soundfont_zero_duration_notes"
 
 
 def track_uses_drum_channel(track) -> bool:
@@ -327,6 +329,39 @@ def _note_on_count(messages) -> int:
     )
 
 
+def has_positive_duration_notes(messages) -> bool:
+    """True if any note is closed at a later tick than its note_on.
+
+    Some MIDI exports encode events as note_on + note_off (vel=0) at the *same*
+    tick. Those are zero-duration *notes* (the track itself may still span many
+    beats). PrettyMIDI drops them (``get_end_time() == 0``), so MIDI-DDSP would
+    write empty audio — route to Fluidsynth instead; do not invent lengths.
+    """
+    open_ticks: dict[int, list[int]] = {}
+    abs_tick = 0
+    for message in messages:
+        abs_tick += int(getattr(message, "time", 0) or 0)
+        typ = getattr(message, "type", None)
+        if typ == "note_on" and int(getattr(message, "velocity", 0) or 0) > 0:
+            open_ticks.setdefault(int(message.note), []).append(abs_tick)
+        elif typ == "note_off" or (
+            typ == "note_on" and int(getattr(message, "velocity", 0) or 0) == 0
+        ):
+            stack = open_ticks.get(int(message.note))
+            if not stack:
+                continue
+            start = stack.pop()
+            if abs_tick > start:
+                return True
+    return False
+
+
+def midi_path_has_positive_duration_notes(midi_path: str | Path) -> bool:
+    """True if any track in ``midi_path`` has a positive-duration note."""
+    midi = mido.MidiFile(filename=str(midi_path), charset="utf8")
+    return any(has_positive_duration_notes(track) for track in midi.tracks)
+
+
 def route_stem(
     *,
     program: int,
@@ -349,10 +384,14 @@ def route_stem(
     # Sending those to DDSP-Piano yields a zero-length file that fails finalize.
     if track is not None and _note_on_count(track) == 0:
         return StemRoute(BACKEND_SOUNDFONT, None, REASON_EMPTY)
+    if track is not None and not has_positive_duration_notes(track):
+        return StemRoute(BACKEND_SOUNDFONT, None, REASON_ZERO_DURATION)
     if track is None and midi_path is not None:
         midi = mido.MidiFile(filename=str(midi_path), charset="utf8")
         if sum(_note_on_count(t) for t in midi.tracks) == 0:
             return StemRoute(BACKEND_SOUNDFONT, None, REASON_EMPTY)
+        if not any(has_positive_duration_notes(t) for t in midi.tracks):
+            return StemRoute(BACKEND_SOUNDFONT, None, REASON_ZERO_DURATION)
 
     if is_vocal_stem(program=program, is_drum=is_drum, track_name=track_name):
         return StemRoute(BACKEND_SOUNDFONT, None, REASON_VOCAL)

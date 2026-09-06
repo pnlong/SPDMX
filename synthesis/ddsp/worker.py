@@ -197,14 +197,11 @@ def _run_midi_ddsp(args: argparse.Namespace | SimpleNamespace) -> dict:
         raise ValueError("Cannot synthesize drum")
     total_sec = float(pm.get_end_time())
     if total_sec <= 0:
-        _write_wav(Path(args.out), np.zeros(0, dtype=np.float32), sample_rate)
-        return {
-            "ok": True,
-            "backend": "midi_ddsp",
-            "instrument": args.instrument,
-            "sample_rate": sample_rate,
-            "out": args.out,
-        }
+        # Do not claim success with empty audio — Fluidsynth should own these.
+        raise ValueError(
+            "MIDI has no sounding duration (PrettyMIDI end_time=0); "
+            "refuse empty MIDI-DDSP output"
+        )
 
     total_samples = max(1, int(round(total_sec * sample_rate)))
     chunk_samples = max(1, int(round(chunk_sec * sample_rate)))
