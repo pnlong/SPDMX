@@ -9,7 +9,8 @@ SEP="$ROOT/dev/experiments/separation"
 echo "== prepare stems (skip if packs already built) =="
 uv run python -m experiments.separation.prepare_stems \
   --corpus both \
-  --spdmx-root "${SPDMX_DATASET_ROOT:-$ROOT/SPDMX}"
+  --spdmx-root "${SPDMX_DATASET_ROOT:-$ROOT/SPDMX}" \
+  -j "${PREPARE_JOBS:-8}"
 
 echo "== freeze manifests =="
 uv run python -m experiments.separation.freeze_manifests

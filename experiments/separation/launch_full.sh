@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 ARM="${1:-all}"
 echo "Preparing packs (this can take many hours)…"
-uv run python -m experiments.separation.prepare_stems --corpus both
+uv run python -m experiments.separation.prepare_stems --corpus both -j "${PREPARE_JOBS:-8}"
 uv run python -m experiments.separation.freeze_manifests
 echo "Training arm=${ARM} (matched max_steps from config.yaml)…"
 uv run python -m experiments.separation.train --arm "$ARM"

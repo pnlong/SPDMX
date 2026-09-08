@@ -29,8 +29,8 @@ One-shot (GPU host for train/eval):
 Or step-by-step:
 
 ```bash
-# 1) Remap stems → 4-stem packs (+ mix)
-uv run python -m experiments.separation.prepare_stems --corpus both
+# 1) Remap stems → 4-stem packs (+ mix); -j parallelizes decode/encode
+uv run python -m experiments.separation.prepare_stems --corpus both -j 8
 
 # 2) Freeze manifests (matched hours ≈ Slakh train)
 uv run python -m experiments.separation.freeze_manifests

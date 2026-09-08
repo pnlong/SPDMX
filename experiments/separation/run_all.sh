@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ARM="${1:-all}"
-uv run python -m experiments.separation.prepare_stems --corpus both
+uv run python -m experiments.separation.prepare_stems --corpus both -j "${PREPARE_JOBS:-8}"
 uv run python -m experiments.separation.freeze_manifests
 uv run python -m experiments.separation.train --arm "$ARM"
 uv run python -m experiments.separation.eval --arm "$ARM"
