@@ -4,7 +4,7 @@
 
 Default root: `/deepfreeze/pnlong/SPDMX` (`OUTPUT_DIR` in [`shared/config.py`](../shared/config.py)).
 
-Development artifacts live under `{OUTPUT_DIR}/dev/`. The shipped dataset is `{OUTPUT_DIR}/SPDMX/`.
+Development artifacts live under `{OUTPUT_DIR}/dev/`. Flat production render is `{OUTPUT_DIR}/SPDMX_dev/`; chunked release is `{OUTPUT_DIR}/SPDMX/`.
 
 **Ablation** (listening test; default `synthesize` behavior):
 
@@ -27,7 +27,7 @@ If an older `slakh_ddsp/` tree exists, rename it to `ddsp_slakh/` (and `*_realif
 **Production sPDMX** (`python -m synthesis.final`; default `--full`):
 
 ```
-{OUTPUT_DIR}/SPDMX/
+{OUTPUT_DIR}/SPDMX_dev/
 ├── LICENSE
 ├── README.md
 ├── SPDMX.csv                     # PDMX song_id (./data/{song_id}.json)
@@ -55,10 +55,10 @@ Ablation outputs symlinked at [`synthesis/ablations_output/`](../synthesis/ablat
 
 Create both after clone: `uv run python -m shared.setup_symlinks`
 
-**Assembled sPDMX dataset** (via `build_spdmx.py`, not implemented yet):
+**Assembled sPDMX dataset** (flat render via `synthesis.final`; chunk with `build_spdmx`):
 
 ```
-{OUTPUT_DIR}/SPDMX/
+{OUTPUT_DIR}/SPDMX_dev/
 ```
 
 ## GM register (step 0)
@@ -127,7 +127,7 @@ Synthesis and realify are intentionally separate passes with different hardware 
 | 1 — Synthesis | Fluidsynth render (basic or slakh) | `-j` / `--jobs` multiprocessing pool | CPU |
 | 2 — Realify | SA3 audio-to-audio per stem | One process per visible GPU; stems sorted category→length; batch size auto from per-GPU VRAM (`REALIFY_BATCH_SIZE=0`, or `--realify-batch-size N`) | GPU / CPU |
 
-Pass 1 writes raw stems under `dev/ablations/{basic,slakh}/` (listening) or `{OUTPUT_DIR}/SPDMX/` (hybrid final). Ablation realify still writes a sibling `{mode}_realify/` tree. **Hybrid final realify overwrites stems in place.** Pass 2 never re-synthesizes — it errors if the raw tree is incomplete. `synthesis.final` then normalizes stems in place (no `mixture.*`).
+Pass 1 writes raw stems under `dev/ablations/{basic,slakh}/` (listening) or `{OUTPUT_DIR}/SPDMX_dev/` (hybrid final). Ablation realify still writes a sibling `{mode}_realify/` tree. **Hybrid final realify overwrites stems in place.** Pass 2 never re-synthesizes — it errors if the raw tree is incomplete. `synthesis.final` then normalizes stems in place (no `mixture.*`).
 
 Use `CUDA_VISIBLE_DEVICES` to select GPU(s). `medium` requires a visible GPU. `small-music` uses GPU when available, otherwise CPU multiprocessing with `-j`.
 
@@ -198,7 +198,7 @@ After the ablation listening test, edit [`recipe.yaml`](recipe.yaml) with the wi
 
 `python -m synthesis.final --only-pass …` renders **one** mixed stem tree (not eight ablation dirs). Passes are **one method at a time** (do not omit `--only-pass`):
 
-0. **layout** — mkdir `{OUTPUT_DIR}/SPDMX/audio/<shard>/<hash>/` for every valid PDMX song, plus `mid/` parent dirs. Empty `data.csv` / `stems.csv` / `stem_recipe.csv` and `midi_index.csv` (dense MIDI path + `n_tracks` per song) under `{OUTPUT_DIR}/dev/final/`.
+0. **layout** — mkdir `{OUTPUT_DIR}/SPDMX_dev/audio/<shard>/<hash>/` for every valid PDMX song, plus `mid/` parent dirs. Empty `data.csv` / `stems.csv` / `stem_recipe.csv` and `midi_index.csv` (dense MIDI path + `n_tracks` per song) under `{OUTPUT_DIR}/dev/final/`.
 1. **Fluidsynth** — categories whose recipe is `basic` / `slakh` (and DDSP-ineligible fallbacks). Per-track slakh recipes vs default GM. `-j` workers. Progress is `stems.fluidsynth.csv` / `stem_recipe.fluidsynth.csv` (append-only).
 2. **DDSP-Piano** — only if the **piano** category recipe is `ddsp_*` (acoustic-piano engine). Current `recipe.yaml` uses slakh for piano, so this pass is omitted. Writes `stems.ddsp_piano.csv` / `stem_recipe.ddsp_piano.csv`.
 3. **MIDI-DDSP** — strings/wind/brass whose recipe is `ddsp_*`. May run **in parallel** with Fluidsynth and with DDSP-Piano when that pass exists. Writes `stems.midi_ddsp.csv` / `stem_recipe.midi_ddsp.csv`.
@@ -230,7 +230,7 @@ uv run python -m synthesis.final --only-pass fluidsynth -y -j 8
 uv run python -m synthesis.final --only-pass layout --ablation-sample
 ```
 
-`--only-pass` is required. `--full` is the default. Stems are always FLAC (`N.flac`). MIDI + `SPDMX.csv` + `LICENSE` + `README.md`: `{OUTPUT_DIR}/SPDMX/` from `prepare_synthesis` (`song_id` joins to PDMX.csv; `path`/`mid` are dataset-relative). Tables: `{OUTPUT_DIR}/dev/final/`. If the recipe sets `*_realify`, SA3 overwrites those stems in the same directory. Do not add `final` to listening `CONDITION_ORDER`. Render passes append `stem_recipe.<engine>.csv`; mix merges those into `stem_recipe.csv` beside `stems.csv` (`path`, `track`, `category`, `ablation`, `method`, `fallback`, `backend`, `realify`).
+`--only-pass` is required. `--full` is the default. Stems are always FLAC (`N.flac`). MIDI + `SPDMX.csv` + `LICENSE` + `README.md`: `{OUTPUT_DIR}/SPDMX_dev/` from `prepare_synthesis` (`song_id` joins to PDMX.csv; `path`/`mid` are dataset-relative). Tables: `{OUTPUT_DIR}/dev/final/`. If the recipe sets `*_realify`, SA3 overwrites those stems in the same directory. Do not add `final` to listening `CONDITION_ORDER`. Render passes append `stem_recipe.<engine>.csv`; mix merges those into `stem_recipe.csv` beside `stems.csv` (`path`, `track`, `category`, `ablation`, `method`, `fallback`, `backend`, `realify`).
 
 Synthesize always uses those dense corrected MIDIs (`prepare_synthesis` is the step-0 setup).
 
@@ -247,7 +247,7 @@ python -m analysis.ddsp_coverage --subset rated_deduplicated
 python -m analysis.ddsp_coverage --subset rated_deduplicated --check-monophony -n 500
 ```
 
-Production layout is written by `python -m synthesis.final` (see above). `build_spdmx.py` remains a stub.
+Production layout is written by `python -m synthesis.final` (flat `audio/` + `mid/`). After the full render, `python -m synthesis.build_spdmx` builds a **new** `{OUTPUT}/SPDMX/` tree (hardlinks; flat `SPDMX_dev/` untouched), then stage zips with `python -m synthesis.distribute_spdmx --stage-dir …`.
 
 Standalone realify (captions generated in memory):
 
@@ -263,7 +263,9 @@ synthesis/
 ├── final.py            # hybrid production CLI (per-category recipe.yaml)
 ├── recipe.yaml         # per-category synthesis recipe (edit this)
 ├── recipe.py           # parse recipe → per-track plan + stem_recipe.csv
-├── build_spdmx.py      # assemble {OUTPUT_DIR}/SPDMX/ (stub)
+├── build_spdmx.py      # post-render: SPDMX_dev/ → SPDMX/chunk_N/
+├── distribute_spdmx.py # stage Zenodo metadata + chunk_NNN.zip
+├── chunking.py         # song→chunk assignment helpers
 ├── realify/
 │   ├── realify.py      # SA3 audio-to-audio
 │   ├── captions/       # caption generation
@@ -346,8 +348,8 @@ See [`listening/README.md`](listening/README.md).
 | `--render-mode ddsp_basic` / `ddsp_slakh` + donor copy reuse | Done (isolated TF venv; SETUP Track C) |
 | Stratified listening sample + 10s clips | Done |
 | `--full` for all valid PDMX | Done |
-| Hybrid `synthesis.final` from `recipe.yaml` | Done (FLAC in `{OUTPUT_DIR}/SPDMX/`, in-place realify, mix = sum) |
-| `build_spdmx.py` | Stub (use `synthesis.final`) |
+| Hybrid `synthesis.final` from `recipe.yaml` | Done (FLAC in `{OUTPUT_DIR}/SPDMX_dev/`, in-place realify, mix = sum) |
+| `build_spdmx.py` / `distribute_spdmx.py` | Done (post-render chunk + Zenodo staging) |
 | Patch pools (Slakh) | Stub |
 | `mixture` per song | Not stored; `synthesis.final` (and `synthesis.mix`) apply LUFS × velocity × peak so mix = sum(stems). See [`MIXING.md`](MIXING.md). |
 | Listening test | Viewer available (`python -m synthesis.listening.serve`) |

@@ -17,6 +17,18 @@ OUTPUT_DIR = path_from_env(
     "/deepfreeze/pnlong/SPDMX",
 )
 
+# Slakh2100-redux (train/val/test FLAC stems) for MSS / SAO PoCs.
+SLAKH_ROOT = path_from_env(
+    "SPDMX_SLAKH_ROOT",
+    "/deepfreeze/share/pnlong/slakh2100_flac_redux",
+)
+
+# Optional MUSDB18-HQ for cross-domain separation eval (Bass/Drums).
+MUSDB_ROOT = path_from_env(
+    "SPDMX_MUSDB_ROOT",
+    "/deepfreeze/share/pnlong/musdb18hq",
+)
+
 # Local soundfont library (symlinked at repo root via shared.setup_symlinks).
 SOUNDFONT_DIR = path_from_env(
     "SPDMX_SOUNDFONT_DIR",
@@ -54,7 +66,7 @@ SONG_LENGTHS_DIR_NAME = "song_lengths"
 INSTRUMENTS_DIR_NAME = "instruments"
 TRACK_NAMES_DIR_NAME = "track_names"
 
-# {OUTPUT_DIR}/dev/mid_corrected/ — legacy dense MIDI tree (now {OUTPUT_DIR}/SPDMX/mid/)
+# {OUTPUT_DIR}/dev/mid_corrected/ — legacy dense MIDI tree (now {OUTPUT_DIR}/SPDMX_dev/mid/)
 MID_CORRECTED_DIR_NAME = "mid_corrected"
 
 # {OUTPUT_DIR}/dev/experiments/ — experiment outputs (preset sweep, etc.)
@@ -62,8 +74,10 @@ EXPERIMENTS_DIR_NAME = "experiments"
 PRESET_SWEEP_DIR_NAME = "preset_sweep"
 PATCH_SWEEP_DIR_NAME = "patch_sweep"
 
-# {OUTPUT_DIR}/SPDMX/ — released dataset: LICENSE, README, SPDMX.csv, audio/, mid/
-# Raw hybrid stems live under raw/; mix writes the released summable tree to audio/.
+# {OUTPUT_DIR}/SPDMX_dev/ — flat production render (synthesis.final):
+# raw/, audio/, mid/, SPDMX.csv. Packaging never mutates this tree.
+# {OUTPUT_DIR}/SPDMX/ — chunked distributable (build_spdmx): chunk_N/, packaged CSVs.
+SPDMX_DEV_DIR_NAME = "SPDMX_dev"
 SPDMX_DATASET_DIR_NAME = "SPDMX"
 SPDMX_RAW_DIR_NAME = "raw"
 SPDMX_AUDIO_DIR_NAME = "audio"

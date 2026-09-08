@@ -93,10 +93,13 @@ def test_song_lengths_dir():
 
 
 def test_spdmx_dataset_dir():
+    from shared.config import SPDMX_DEV_DIR_NAME
+    from synthesis.paths import mid_corrected_dir, production_tables_dir, spdmx_dev_dir
+
     assert spdmx_dataset_dir("/out") == f"/out/{SPDMX_DATASET_DIR_NAME}"
-    assert spdmx_audio_dir("/out") == f"/out/{SPDMX_DATASET_DIR_NAME}/{SPDMX_AUDIO_DIR_NAME}"
-    assert spdmx_mid_dir("/out") == f"/out/{SPDMX_DATASET_DIR_NAME}/{SPDMX_MID_DIR_NAME}"
-    from synthesis.paths import mid_corrected_dir, production_tables_dir
+    assert spdmx_dev_dir("/out") == f"/out/{SPDMX_DEV_DIR_NAME}"
+    assert spdmx_audio_dir("/out") == f"/out/{SPDMX_DEV_DIR_NAME}/{SPDMX_AUDIO_DIR_NAME}"
+    assert spdmx_mid_dir("/out") == f"/out/{SPDMX_DEV_DIR_NAME}/{SPDMX_MID_DIR_NAME}"
 
     assert mid_corrected_dir("/out") == spdmx_mid_dir("/out")
     assert production_tables_dir("/out") == f"/out/{DEV_DIR_NAME}/final"

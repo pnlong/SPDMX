@@ -22,6 +22,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+separation = ["demucs"]
+sao = ["stable-audio-tools"]
+metrics = ["laion-clap", "frechet_audio_distance"]
 
 [dependency-groups]
 dev = ["pytest"]
@@ -52,6 +55,7 @@ testpaths = [
     "experiments/listening/tests",
     "experiments/listening_shared/tests",
     "experiments/ablation_listening/tests",
+    "experiments/separation/tests",
     "experiments/tests",
 ]
 markers = [

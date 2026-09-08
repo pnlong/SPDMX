@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from shared.config import SPDMX_DATASET_DIR_NAME, SPDMX_FILE_NAME
+from shared.config import SPDMX_DATASET_DIR_NAME, SPDMX_DEV_DIR_NAME, SPDMX_FILE_NAME
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent
 RELEASE_DOC_NAMES = ("LICENSE", "README.md")
@@ -25,8 +25,8 @@ def write_spdmx_release_docs(dataset_dir: str | Path) -> None:
 
 
 def maybe_write_spdmx_release_docs(dataset_dir: str | Path) -> None:
-    """Write release docs only when ``dataset_dir`` is a ``SPDMX/`` tree."""
+    """Write release docs into ``SPDMX/`` or ``SPDMX_dev/`` trees."""
     dest = Path(dataset_dir)
-    if dest.name != SPDMX_DATASET_DIR_NAME:
+    if dest.name not in (SPDMX_DATASET_DIR_NAME, SPDMX_DEV_DIR_NAME):
         return
     write_spdmx_release_docs(dest)

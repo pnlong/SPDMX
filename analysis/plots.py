@@ -348,3 +348,259 @@ def plot_track_name_bar(
     fig.tight_layout()
     _savefig(fig, output_path)
     plt.close(fig)
+
+
+_ARM_LABELS = {
+    "slakh": "Slakh",
+    "spdmx_matched": "sPDMX-matched",
+    "spdmx_full": "sPDMX-full",
+    "Slakh": "Slakh",
+    "sPDMX-matched": "sPDMX-matched",
+    "sPDMX-full": "sPDMX-full",
+}
+
+_ARM_ORDER = ("Slakh", "sPDMX-matched", "sPDMX-full")
+_TARGET_ORDER = ("bass", "drums", "guitar", "piano")
+# Non-realify ablation arms reported in the ICASSP draft (SA3 omitted).
+_CONDITION_ORDER = ("A1", "B1", "CA1", "CB1")
+
+
+def _annotate_bars(ax, fmt: str = "{:.1f}", fontsize: int = 7) -> None:
+    for container in ax.containers:
+        labels = []
+        for patch in container:
+            h = patch.get_height()
+            if h != h:  # NaN
+                labels.append("")
+            else:
+                labels.append(fmt.format(h))
+        ax.bar_label(container, labels=labels, padding=2, fontsize=fontsize)
+
+
+def plot_ablation_listening(
+    scores: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    figsize: tuple[float, float] = (8.0, 3.6),
+) -> None:
+    """Grouped bars: condition × {content, realism} with value labels.
+
+    Expects columns: ``condition``, ``content``, ``realism``.
+    """
+    import seaborn as sns
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df = scores.copy()
+    df["condition"] = pd.Categorical(df["condition"], categories=list(_CONDITION_ORDER), ordered=True)
+    long = df.melt(
+        id_vars=["condition"],
+        value_vars=["content", "realism"],
+        var_name="scale",
+        value_name="score",
+    )
+    long["scale"] = long["scale"].str.capitalize()
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        fig, ax = plt.subplots(figsize=figsize)
+        sns.barplot(
+            data=long,
+            x="condition",
+            y="score",
+            hue="scale",
+            order=list(_CONDITION_ORDER),
+            hue_order=["Content", "Realism"],
+            ax=ax,
+            saturation=0.9,
+        )
+        _annotate_bars(ax, fmt="{:.1f}")
+        ax.set_xlabel("Condition")
+        ax.set_ylabel("Mean score (0–100)")
+        ax.set_ylim(0, 100)
+        ax.legend(title=None, frameon=True, fontsize=8)
+        sns.despine(ax=ax)
+        fig.tight_layout()
+        _savefig(fig, output_path, pad_inches=0.02)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()
+
+
+def plot_separation_sisdr(
+    summary: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    figsize: tuple[float, float] = (8.0, 4.2),
+) -> None:
+    """SI-SDR bars: instrument × train arm, optional MUSDB panel.
+
+    Expects columns: ``train_arm``, ``test_set``, ``target``, ``si_sdr_mean``.
+    """
+    import seaborn as sns
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df = summary.copy()
+    df["train_arm"] = df["train_arm"].map(lambda a: _ARM_LABELS.get(str(a), str(a)))
+    df["target"] = df["target"].str.lower()
+    test_sets = [t for t in ("slakh2100", "musdb18") if t in set(df["test_set"].astype(str))]
+    if not test_sets:
+        test_sets = sorted(df["test_set"].astype(str).unique())
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        n = len(test_sets)
+        fig, axes = plt.subplots(1, n, figsize=figsize, sharey=True)
+        if n == 1:
+            axes = [axes]
+        for ax, test_set in zip(axes, test_sets):
+            sub = df[df["test_set"].astype(str) == test_set]
+            targets = [t for t in _TARGET_ORDER if t in set(sub["target"])]
+            if test_set == "musdb18":
+                targets = [t for t in ("bass", "drums") if t in set(sub["target"])]
+            sns.barplot(
+                data=sub,
+                x="target",
+                y="si_sdr_mean",
+                hue="train_arm",
+                order=targets,
+                hue_order=[a for a in _ARM_ORDER if a in set(sub["train_arm"])],
+                ax=ax,
+                saturation=0.9,
+            )
+            _annotate_bars(ax, fmt="{:.1f}")
+            title = "Slakh2100 test" if test_set == "slakh2100" else "MUSDB18 test"
+            ax.set_title(title, fontsize=10)
+            ax.set_xlabel("Target")
+            ax.set_ylabel("SI-SDR (dB)" if ax is axes[0] else "")
+            ax.legend(title=None, frameon=True, fontsize=7)
+            sns.despine(ax=ax)
+        fig.tight_layout()
+        _savefig(fig, output_path, pad_inches=0.02)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()
+
+
+def plot_sao_metrics(
+    metrics: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    figsize: tuple[float, float] = (7.0, 3.4),
+) -> None:
+    """Two-panel FAD (lower better) and CLAP (higher better) by train arm."""
+    import seaborn as sns
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df = metrics.copy()
+    df["train_arm"] = df["train_arm"].map(lambda a: _ARM_LABELS.get(str(a), str(a)))
+    arm_order = [a for a in _ARM_ORDER if a in set(df["train_arm"])]
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
+        for ax, col, ylabel, title in (
+            (axes[0], "fad", "FAD ↓", "FAD"),
+            (axes[1], "clap", "CLAP ↑", "CLAP"),
+        ):
+            sns.barplot(
+                data=df,
+                x="train_arm",
+                y=col,
+                order=arm_order,
+                ax=ax,
+                color="C0",
+                saturation=0.9,
+            )
+            _annotate_bars(ax, fmt="{:.3g}")
+            ax.set_xlabel("Training data")
+            ax.set_ylabel(ylabel)
+            ax.set_title(title, fontsize=10)
+            ax.tick_params(axis="x", rotation=15)
+            sns.despine(ax=ax)
+        fig.tight_layout()
+        _savefig(fig, output_path, pad_inches=0.02)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()
+
+
+def plot_downstream_poc(
+    separation: pd.DataFrame,
+    sao: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    figsize: tuple[float, float] = (8.5, 3.2),
+) -> None:
+    """Single figure: SI-SDR (Slakh test) | FAD | CLAP for the three train arms."""
+    import seaborn as sns
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    sep = separation.copy()
+    sep["train_arm"] = sep["train_arm"].map(lambda a: _ARM_LABELS.get(str(a), str(a)))
+    sep["target"] = sep["target"].astype(str).str.lower()
+    sep = sep[sep["test_set"].astype(str) == "slakh2100"]
+    sao_df = sao.copy()
+    sao_df["train_arm"] = sao_df["train_arm"].map(lambda a: _ARM_LABELS.get(str(a), str(a)))
+    arm_order = [a for a in _ARM_ORDER if a in set(sep["train_arm"]) | set(sao_df["train_arm"])]
+    targets = [t for t in _TARGET_ORDER if t in set(sep["target"])]
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        fig, axes = plt.subplots(1, 3, figsize=figsize)
+        # Panel 0: SI-SDR
+        if not sep.empty and sep["si_sdr_mean"].notna().any():
+            sns.barplot(
+                data=sep,
+                x="target",
+                y="si_sdr_mean",
+                hue="train_arm",
+                order=targets,
+                hue_order=arm_order,
+                ax=axes[0],
+                saturation=0.9,
+            )
+            _annotate_bars(axes[0], fmt="{:.1f}")
+            axes[0].legend(title=None, frameon=True, fontsize=6)
+        else:
+            axes[0].text(0.5, 0.5, "SI-SDR pending", ha="center", va="center")
+            axes[0].set_xticks([])
+            axes[0].set_yticks([])
+        axes[0].set_title("Demucs SI-SDR", fontsize=10)
+        axes[0].set_xlabel("Target")
+        axes[0].set_ylabel("SI-SDR (dB)")
+
+        for ax, col, ylabel, title in (
+            (axes[1], "fad", "FAD ↓", "SAO FAD"),
+            (axes[2], "clap", "CLAP ↑", "SAO CLAP"),
+        ):
+            if not sao_df.empty and sao_df[col].notna().any():
+                sns.barplot(
+                    data=sao_df,
+                    x="train_arm",
+                    y=col,
+                    order=arm_order,
+                    ax=ax,
+                    color="C0",
+                    saturation=0.9,
+                )
+                _annotate_bars(ax, fmt="{:.3g}")
+            else:
+                ax.text(0.5, 0.5, f"{title} pending", ha="center", va="center")
+                ax.set_xticks([])
+                ax.set_yticks([])
+            ax.set_title(title, fontsize=10)
+            ax.set_xlabel("Training data")
+            ax.set_ylabel(ylabel)
+            ax.tick_params(axis="x", rotation=15)
+            sns.despine(ax=ax)
+        sns.despine(ax=axes[0])
+        fig.tight_layout()
+        _savefig(fig, output_path, pad_inches=0.02)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()

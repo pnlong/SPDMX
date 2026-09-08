@@ -92,7 +92,12 @@ uv run python -m experiments.ablation_listening.aggregate \
   --output experiments/ablation_listening/output/results_notes.md
 ```
 
-**Test 2 — SAO downstream:** see [`model_listening/README.md`](model_listening/README.md) (populate after training).
+**Test 2 — SAO downstream:** see [`model_listening/README.md`](model_listening/README.md) (scaffold; ICASSP PoC uses objective FAD/CLAP instead).
+
+## ICASSP PoC (objective, no listening)
+
+- [`separation/`](separation/) — Hybrid Demucs × Slakh / sPDMX-matched / sPDMX-full (SI-SDR)
+- [`sao/`](sao/) — lite Stable Audio Open fine-tunes (FAD + CLAP)
 
 Shared UI and ngrok notes: [`listening_shared/README.md`](listening_shared/README.md).
 

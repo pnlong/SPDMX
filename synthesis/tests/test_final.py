@@ -18,7 +18,8 @@ from synthesis.paths import (
     MIDI_INDEX_FILE_NAME,
     ablation_raw_dir,
     production_tables_dir,
-    spdmx_dataset_dir,
+    raw_path_to_audio,
+    spdmx_dev_dir,
 )
 from synthesis.recipe import (
     DEFAULT_RECIPE_PATH,
@@ -103,12 +104,12 @@ def test_count_pass_remaining_and_verify_reports(tmp_path: Path):
 
     tables = tmp_path / "final"
     tables.mkdir()
-    song = tmp_path / "SPDMX" / "audio" / "1" / "11" / "QmA"
+    song = tmp_path / "SPDMX_dev" / "audio" / "1" / "11" / "QmA"
     song.mkdir(parents=True)
     path = str(song)
     pd.DataFrame({
         "song_id": ["1/11/QmA"],
-        "mid": [str(tmp_path / "SPDMX" / "mid" / "1" / "11" / "QmA.mid")],
+        "mid": [str(tmp_path / "SPDMX_dev" / "mid" / "1" / "11" / "QmA.mid")],
         "n_tracks": [2],
         "n_fluidsynth": [2],
         "n_ddsp_piano": [0],
@@ -167,20 +168,20 @@ def test_raw_path_to_audio():
 
     assert raw_path_to_audio("./raw/1/11/Qm") == "./audio/1/11/Qm"
     assert (
-        raw_path_to_audio("/deepfreeze/share/SPDMX/SPDMX/raw/1/11/Qm")
-        == "/deepfreeze/share/SPDMX/SPDMX/audio/1/11/Qm"
+        raw_path_to_audio("/deepfreeze/share/SPDMX/SPDMX_dev/raw/1/11/Qm")
+        == "/deepfreeze/share/SPDMX/SPDMX_dev/audio/1/11/Qm"
     )
 
 
 def test_hybrid_mix_writes_audio_leaves_raw(tmp_path: Path):
-    """Final mix writes to SPDMX/audio and leaves SPDMX/raw untouched."""
+    """Final mix writes to SPDMX_dev/audio and leaves SPDMX_dev/raw untouched."""
     from shared.config import SAMPLE_RATE, SPDMX_FILE_NAME
     from synthesis.audio import load_stem
     from synthesis.final import run_summable_mix
     import numpy as np
     import soundfile as sf
 
-    media = tmp_path / "SPDMX"
+    media = tmp_path / "SPDMX_dev"
     tables = tmp_path / "dev" / "final"
     tables.mkdir(parents=True)
     song_rel = "1/11/QmMix"
@@ -265,7 +266,7 @@ def test_hybrid_dirs_write_one_tree():
     sample = parse_args(["-o", "/tmp/spdmx", "--ablation-sample", "--only-pass", "layout"])
     assert hybrid_dirs(full) == (
         production_tables_dir("/tmp/spdmx"),
-        spdmx_dataset_dir("/tmp/spdmx"),
+        spdmx_dev_dir("/tmp/spdmx"),
     )
     dest = ablation_raw_dir("/tmp/spdmx", FINAL_CONDITION)
     assert hybrid_dirs(sample) == (dest, dest)
@@ -284,15 +285,17 @@ def test_pass_sequence_starts_with_layout():
     with_ddsp_realify = CategoryRecipe(
         specs={"strings": CategorySpec("midi-ddsp", True, "basic", "ddsp_basic_realify")},
     )
-    assert pass_sequence(no_realify) == ("layout", "fluidsynth", "verify", "mix")
+    assert pass_sequence(no_realify) == (
+        "layout", "fluidsynth", "verify", "mix", "verify_mix",
+    )
     assert pass_sequence(with_ddsp) == (
-        "layout", "fluidsynth", "midi_ddsp", "verify", "mix",
+        "layout", "fluidsynth", "midi_ddsp", "verify", "mix", "verify_mix",
     )
     assert pass_sequence(with_realify) == (
-        "layout", "fluidsynth", "realify", "verify", "mix",
+        "layout", "fluidsynth", "realify", "verify", "mix", "verify_mix",
     )
     assert pass_sequence(with_ddsp_realify) == (
-        "layout", "fluidsynth", "midi_ddsp", "realify", "verify", "mix",
+        "layout", "fluidsynth", "midi_ddsp", "realify", "verify", "mix", "verify_mix",
     )
     with_piano_ddsp = CategoryRecipe(
         specs={
@@ -301,7 +304,7 @@ def test_pass_sequence_starts_with_layout():
         },
     )
     assert pass_sequence(with_piano_ddsp) == (
-        "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "verify", "mix",
+        "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "verify", "mix", "verify_mix",
     )
 
 
@@ -316,7 +319,7 @@ def test_layout_pass_creates_song_dirs(tmp_path: Path):
         "n_tracks": [2],
     }).to_csv(csv_path, index=False)
 
-    out = tmp_path / "SPDMX"
+    out = tmp_path / "out"
     args = parse_args([
         "--only-pass", "layout",
         "-o", str(out),
@@ -327,7 +330,7 @@ def test_layout_pass_creates_song_dirs(tmp_path: Path):
     args.recipe = CategoryRecipe(
         specs={"piano": CategorySpec("basic", False, "basic", "basic")},
     )
-    dest = spdmx_dataset_dir(str(out))
+    dest = spdmx_dev_dir(str(out))
     tables = production_tables_dir(str(out))
     dataset = run_layout_pass(args, tables, media_dir=dest)
     song_dir = Path(dataset.iloc[0]["path_output"])
@@ -354,7 +357,7 @@ def test_layout_pass_restricts_to_spdmx_csv(tmp_path: Path):
     }).to_csv(csv_path, index=False)
 
     out = tmp_path / "out"
-    dest = Path(spdmx_dataset_dir(str(out)))
+    dest = Path(spdmx_dev_dir(str(out)))
     dest.mkdir(parents=True)
     pd.DataFrame({
         "song_id": ["1/11/QmKeep"],
@@ -390,7 +393,7 @@ def test_layout_pass_restricts_to_spdmx_csv(tmp_path: Path):
 
 
 def test_attach_corrected_midi_uses_index_without_stat(tmp_path: Path):
-    dest = tmp_path / "SPDMX"
+    dest = tmp_path / "SPDMX_dev"
     mid_dir = dest / "mid"
     mid_dir.mkdir(parents=True)
     pd.DataFrame({
@@ -606,7 +609,7 @@ def test_merge_filters_pending_midi_ddsp(tmp_path: Path):
 
     tables = tmp_path / "final"
     tables.mkdir()
-    song = "/out/SPDMX/raw/7/19/QmSong"
+    song = "/out/SPDMX_dev/raw/7/19/QmSong"
     pd.DataFrame({
         "song_id": ["7/19/QmSong"],
         "n_tracks": [2],
@@ -721,7 +724,7 @@ def test_raw_upstream_command_includes_ddsp_when_needed():
 
 
 def test_expected_song_count_from_spdmx_csv(tmp_path: Path):
-    dest = tmp_path / "SPDMX"
+    dest = tmp_path / "SPDMX_dev"
     dest.mkdir()
     pd.DataFrame({
         "song_id": ["a/b/QmOne", "a/b/QmOne", "a/b/QmTwo"],

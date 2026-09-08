@@ -29,7 +29,7 @@ def _recipe(path: str, track: int, backend: str) -> dict:
 def test_merge_pass_tables_uses_shards_only(tmp_path: Path):
     tables = tmp_path / "final"
     tables.mkdir()
-    song = "/out/SPDMX/raw/7/19/QmSong"
+    song = "/out/SPDMX_dev/raw/7/19/QmSong"
     pd.DataFrame({
         "song_id": ["7/19/QmSong"],
         "n_tracks": [2],
@@ -86,7 +86,7 @@ def test_drop_canonical_tables(tmp_path: Path):
 def test_merge_pass_tables_incomplete_song_stays_out_of_data_csv(tmp_path: Path):
     tables = tmp_path / "final"
     tables.mkdir()
-    song = "/out/SPDMX/raw/a/b/QmPartial"
+    song = "/out/SPDMX_dev/raw/a/b/QmPartial"
     pd.DataFrame({"song_id": ["a/b/QmPartial"], "n_tracks": [3]}).to_csv(
         tables / MIDI_INDEX_FILE_NAME, index=False,
     )

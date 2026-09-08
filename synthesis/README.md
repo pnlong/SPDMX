@@ -28,14 +28,17 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 | `mix.py` | Post-hoc LUFS × velocity dynamics × peak gain so stems remain summable |
 | `listening/serve.py` | Localhost viewer for A1–CB2 ablation comparison |
 | `listening/make_clips.py` | Aligned 10s clips (windows from A1) for listening |
-| `build_spdmx.py` | Assemble final dataset at `{OUTPUT_DIR}/SPDMX/` (stub) |
+| `build_spdmx.py` | Post-render: build `{OUTPUT}/SPDMX/` chunks from flat `SPDMX_dev/` (no mutate) |
+| `distribute_spdmx.py` | Stage Zenodo files (metadata + `chunk_NNN.zip`) |
 
 ## Source files
 
 | File | Description |
 |------|-------------|
 | `synthesize.py` | MIDI → fluidsynth → mono FLAC stems; optional SA3 realify pass |
-| `build_spdmx.py` | Planned: copy PDMX metadata + call `synthesize --full` → `{OUTPUT_DIR}/SPDMX/` |
+| `build_spdmx.py` | Post-render chunking of flat `SPDMX/` into download chunks |
+| `distribute_spdmx.py` | Stage Zenodo upload files (CSVs + per-chunk zips) |
+| `chunking.py` | Song→chunk assignment (~25 GiB) and packaged CSV helpers |
 | `audio.py` | fluidsynth rendering, mono downmix, BS.1770-4 loudness, FLAC I/O, mixture build |
 | `velocity.py` | MIDI max-velocity → per-track dynamics scales for mix |
 | `mix.py` | Dataset-level stem normalization (summability) |
@@ -60,4 +63,17 @@ On deepfreeze:
 
 Browsable in-repo via gitignored symlink [`ablations_output/`](ablations_output/) (created by `shared.setup_symlinks` or `synthesize`).
 
-Final dataset: `{OUTPUT_DIR}/SPDMX/` (via `build_spdmx`).
+Flat production render: `{OUTPUT_DIR}/SPDMX_dev/` via `synthesis.final`.
+Chunked release: `{OUTPUT_DIR}/SPDMX/` via `build_spdmx`.
+
+Post-render packaging for Zenodo:
+
+```bash
+# 1. Build chunked release in a NEW dir (flat SPDMX/ untouched; hardlinks by default)
+uv run python -m synthesis.build_spdmx -o "$SPDMX_OUTPUT_DIR"
+# → {OUTPUT}/SPDMX/chunk_N/ + SPDMX.csv + chunks.csv
+
+# 2. Stage loose metadata + chunk_N.zip for upload
+uv run python -m synthesis.distribute_spdmx -o "$SPDMX_OUTPUT_DIR" \
+  --stage-dir /path/to/zenodo_stage
+```

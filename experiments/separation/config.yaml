@@ -1,0 +1,35 @@
+# ICASSP PoC — Hybrid Demucs quantity ablation (Slakh / sPDMX-matched / sPDMX-full)
+
+seed: 43
+sample_rate: 44100
+# Matched optimizer step budget across all three train arms.
+max_steps: 50000
+batch_size: 4
+segment_seconds: 10.0
+lr: 3.0e-4
+num_workers: 4
+# Channels: demucs HTDemucs expects stereo; we duplicate mono → stereo.
+channels: 2
+
+sources:
+  - bass
+  - drums
+  - guitar
+  - piano
+
+# Skip songs that do not contain all four targets (plan policy).
+require_all_targets: true
+
+# Paths (override with env SPDMX_SLAKH_ROOT / SPDMX_DATASET_ROOT / SPDMX_MUSDB_ROOT).
+# slakh_root: /deepfreeze/share/pnlong/slakh2100_flac_redux
+# Chunked sPDMX release (Zenodo layout); not SPDMX_dev.
+spdmx_root: /deepfreeze/share/SPDMX/SPDMX
+# musdb_root: /deepfreeze/share/pnlong/musdb18hq
+
+# Hour matching: sPDMX-matched total mixture hours ≈ Slakh train hours.
+# Set null to auto-measure Slakh train from metadata / audio.
+slakh_train_hours: null
+match_tolerance_hours: 0.5
+
+# Held-out fraction of eligible sPDMX songs for validation (shared by matched + full).
+spdmx_val_fraction: 0.05

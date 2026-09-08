@@ -175,7 +175,7 @@ def add_synthesis_args(
         type=str,
         help=(
             "Root of dense corrected MIDI copies "
-            f"(default: {OUTPUT_DIR}/SPDMX/mid/)."
+            f"(default: {OUTPUT_DIR}/SPDMX_dev/mid/)."
         ),
     )
     parser.add_argument(

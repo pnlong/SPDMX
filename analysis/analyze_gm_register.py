@@ -34,7 +34,7 @@ def parse_args(args=None, namespace=None):
         description=(
             "Step-0 synthesis setup: correct GM program ids from MIDI track names, "
             "write register.csv, and (by default) write dense corrected MIDI copies "
-            f"under {OUTPUT_DIR}/SPDMX/mid/ (empty tracks dropped). "
+            f"under {OUTPUT_DIR}/SPDMX_dev/mid/ (empty tracks dropped). "
             "Prefer: python -m analysis.prepare_synthesis"
         ),
     )
@@ -99,7 +99,7 @@ def parse_args(args=None, namespace=None):
         "--corrected-midi-dir",
         default=None,
         type=str,
-        help=f"Output root for corrected MIDIs (default: {OUTPUT_DIR}/SPDMX/mid/).",
+        help=f"Output root for corrected MIDIs (default: {OUTPUT_DIR}/SPDMX_dev/mid/).",
     )
     return parser.parse_args(args=args, namespace=namespace)
 

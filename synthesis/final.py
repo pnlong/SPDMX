@@ -10,7 +10,7 @@ import pandas as pd
 from shared.config import (
     FLAC_AUDIO_FORMAT,
     OUTPUT_DIR,
-    SPDMX_DATASET_DIR_NAME,
+    SPDMX_DEV_DIR_NAME,
     SPDMX_FILE_NAME,
 )
 from synthesis.cli_common import add_synthesis_args
@@ -18,7 +18,7 @@ from synthesis.paths import (
     MIDI_INDEX_FILE_NAME,
     ablation_raw_dir,
     production_tables_dir,
-    spdmx_dataset_dir,
+    spdmx_dev_dir,
 )
 from shared.repo_symlinks import link_ablations_in_repo
 from synthesis.pass_tables import merge_pass_tables
@@ -36,7 +36,7 @@ from synthesis.synthesize import (
     run_synthesis,
     verify_claimed_stems_on_disk,
 )
-GLOBAL_ONLY_PASSES = ("layout", "merge", "verify", "mix")
+GLOBAL_ONLY_PASSES = ("layout", "merge", "verify", "mix", "verify_mix")
 
 
 def _reject_sharded_global_pass(args) -> None:
@@ -77,7 +77,7 @@ def _realify_allowed_song_ids(args, tables_dir: str) -> set[str] | None:
 FINAL_CONDITION = "final"
 ONLY_PASSES = (
     "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "merge", "realify",
-    "verify", "mix",
+    "verify", "mix", "verify_mix",
 )
 DDSP_PASSES = ("ddsp_piano", "midi_ddsp")
 
@@ -87,14 +87,14 @@ def parse_args(args=None, namespace=None):
         prog="synthesis.final",
         description=(
             "Synthesize the sPDMX dataset using a per-category recipe. "
-            f"Writes raw FLAC stems under {OUTPUT_DIR}/{SPDMX_DATASET_DIR_NAME}/raw/ "
+            f"Writes raw FLAC stems under {OUTPUT_DIR}/{SPDMX_DEV_DIR_NAME}/raw/ "
             f"(mix writes summable stems to audio/) "
             "and sanitized MIDI under mid/. Join SPDMX.csv to PDMX.csv on song_id. "
             "Audio format is always FLAC. "
             "Run one pass at a time with --only-pass "
-            "(layout → fluidsynth → ddsp_piano → midi_ddsp → verify → mix). "
+            "(layout → fluidsynth → ddsp_piano → midi_ddsp → verify → mix → verify_mix). "
             "Fluidsynth, ddsp_piano, and midi_ddsp may run in parallel. "
-            "Realify, verify, and mix merge per-pass CSVs first."
+            "Realify, verify, mix, and verify_mix merge per-pass CSVs first."
         ),
     )
     add_synthesis_args(
@@ -117,9 +117,10 @@ def parse_args(args=None, namespace=None):
         required=True,
         help=(
             "Required. One method pass: layout, fluidsynth, ddsp_piano, midi_ddsp, "
-            "merge, realify, verify, or mix. Fluidsynth, ddsp_piano, and midi_ddsp "
-            "may run in parallel. Verify checks every claimed stem exists on disk "
-            "before mix. Mix/realify/verify merge per-pass tables first."
+            "merge, realify, verify, mix, or verify_mix. Fluidsynth, ddsp_piano, and "
+            "midi_ddsp may run in parallel. Verify checks claimed raw stems before mix. "
+            "verify_mix fully FLAC-decodes every stem under audio/ after mix. "
+            "Mix/realify/verify/verify_mix merge per-pass tables first."
         ),
     )
     parser.add_argument(
@@ -149,7 +150,7 @@ def hybrid_dirs(args) -> tuple[str, str]:
     ``--ablation-sample``: both under ``dev/ablations/final/``.
     """
     if args.full:
-        return production_tables_dir(args.output_dir), spdmx_dataset_dir(args.output_dir)
+        return production_tables_dir(args.output_dir), spdmx_dev_dir(args.output_dir)
     dest = ablation_raw_dir(args.output_dir, FINAL_CONDITION)
     return dest, dest
 
@@ -163,7 +164,7 @@ def pass_sequence(recipe) -> tuple[str, ...]:
         steps.append("midi_ddsp")
     if recipe.uses_realify():
         steps.append("realify")
-    steps.extend(["verify", "mix"])
+    steps.extend(["verify", "mix", "verify_mix"])
     return tuple(steps)
 
 
@@ -181,7 +182,7 @@ def expected_song_count(args, media_dir: str) -> int | None:
     """Unique songs in SPDMX.csv, or None if that table is missing."""
     candidates = [
         Path(media_dir) / f"{SPDMX_FILE_NAME}.csv",
-        Path(spdmx_dataset_dir(args.output_dir)) / f"{SPDMX_FILE_NAME}.csv",
+        Path(spdmx_dev_dir(args.output_dir)) / f"{SPDMX_FILE_NAME}.csv",
     ]
     seen: set[str] = set()
     for path in candidates:
@@ -212,7 +213,7 @@ def log_next_pass(recipe, only: str) -> None:
     plan = pass_sequence(recipe)
 
     def _extra(nxt: str) -> str:
-        return " -j 8" if nxt in ("fluidsynth", "verify", "mix") else ""
+        return " -j 8" if nxt in ("fluidsynth", "verify", "mix", "verify_mix") else ""
 
     if only == "merge":
         nxt = "realify" if recipe.uses_realify() else "verify"
@@ -253,8 +254,14 @@ def log_next_pass(recipe, only: str) -> None:
     if only == "verify":
         print(
             "Verify reports remaining stems per pass and checks claimed "
-            "audio exists on disk in parallel via -j/--jobs "
+            "raw audio exists on disk in parallel via -j/--jobs "
             "(run after rsync, before mix).",
+            flush=True,
+        )
+    if only == "mix":
+        print(
+            "After mix, run --only-pass verify_mix -j N to fully FLAC-decode "
+            "every stem under SPDMX/audio/.",
             flush=True,
         )
     print(f"Next: uv run python -m synthesis.final --only-pass {nxt}{extra}", flush=True)
@@ -275,7 +282,8 @@ def run_summable_mix(args, stems_dir: str, *, media_dir: str) -> None:
     print(
         f"Writing mixable stems to {audio_root}/ "
         f"(raw {raw_root}/ untouched; LUFS + velocity + peak; "
-        f"{FLAC_AUDIO_FORMAT}; mix = sum of stems, no mixture file).",
+        f"{FLAC_AUDIO_FORMAT}; mix = sum of stems, no mixture file; "
+        f"{'reset' if getattr(args, 'reset', False) else 'resumes if audio/ complete'}).",
         flush=True,
     )
     normalize_stems_for_dataset(
@@ -287,6 +295,7 @@ def run_summable_mix(args, stems_dir: str, *, media_dir: str) -> None:
         pdmx_root=Path(args.dataset_filepath).parent,
         spdmx_output_dir=args.output_dir,
         dest_song_dir_fn=raw_path_to_audio,
+        reset=bool(getattr(args, "reset", False)),
     )
     spdmx_csv = media / f"{SPDMX_FILE_NAME}.csv"
     if spdmx_csv.is_file():
@@ -378,6 +387,15 @@ def main(argv=None):
             jobs=args.jobs,
         )
         run_summable_mix(args, tables_dir, media_dir=media_dir)
+    elif only == "verify_mix":
+        merge_pass_tables(tables_dir)
+        from synthesis.mix import verify_mixed_stems_on_disk
+
+        verify_mixed_stems_on_disk(
+            tables_dir,
+            audio_format=audio_format,
+            jobs=args.jobs,
+        )
 
     log_next_pass(recipe, only)
     link_ablations_in_repo(args.output_dir)

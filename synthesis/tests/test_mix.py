@@ -136,3 +136,114 @@ def test_overwrite_with_yes_skips_prompt(tmp_path: Path, monkeypatch):
     stem0 = load_stem(song / "stem_0.flac")
     stem1 = load_stem(song / "stem_1.flac")
     assert (stem0 + stem1).abs().max().item() <= 1.0 + 1e-4
+
+
+def test_mix_resume_skips_complete_dest(tmp_path: Path):
+    from synthesis.mix import build_mixture_tasks, mix_output_ready
+
+    source = tmp_path / "raw"
+    _seed_song_tree(source)
+    # Canonical stem names under a separate dest (like raw → audio).
+    dest_song = tmp_path / "audio" / "data" / "song"
+    dest_song.mkdir(parents=True)
+    for track in (0, 1):
+        sf.write(
+            str(dest_song / f"{track}.flac"),
+            np.full(100, 0.1, np.float32),
+            SAMPLE_RATE,
+            format="FLAC",
+        )
+    assert mix_output_ready(dest_song, [0, 1], "flac")
+
+    stems = pd.read_csv(source / "stems.csv")
+
+    def to_audio(path: str) -> str:
+        return str(path).replace(str(source), str(tmp_path / "audio"), 1)
+
+    tasks, skipped = build_mixture_tasks(
+        stems,
+        source,
+        source,
+        "flac",
+        write_mixture=False,
+        use_velocity_dynamics=False,
+        dest_song_dir_fn=to_audio,
+        reset=False,
+    )
+    assert skipped == 1
+    assert tasks == []
+
+    tasks_reset, skipped_reset = build_mixture_tasks(
+        stems,
+        source,
+        source,
+        "flac",
+        write_mixture=False,
+        use_velocity_dynamics=False,
+        dest_song_dir_fn=to_audio,
+        reset=True,
+    )
+    assert skipped_reset == 0
+    assert len(tasks_reset) == 1
+
+
+def test_mix_resume_reruns_incomplete_dest(tmp_path: Path):
+    from synthesis.mix import build_mixture_tasks
+
+    source = tmp_path / "raw"
+    _seed_song_tree(source)
+    dest_song = tmp_path / "audio" / "data" / "song"
+    dest_song.mkdir(parents=True)
+    # Only track 0 present → must not skip.
+    sf.write(
+        str(dest_song / "0.flac"),
+        np.full(100, 0.1, np.float32),
+        SAMPLE_RATE,
+        format="FLAC",
+    )
+    stems = pd.read_csv(source / "stems.csv")
+
+    def to_audio(path: str) -> str:
+        return str(path).replace(str(source), str(tmp_path / "audio"), 1)
+
+    tasks, skipped = build_mixture_tasks(
+        stems,
+        source,
+        source,
+        "flac",
+        use_velocity_dynamics=False,
+        dest_song_dir_fn=to_audio,
+    )
+    assert skipped == 0
+    assert len(tasks) == 1
+
+
+def test_verify_mixed_stems_decodes_audio_tree(tmp_path: Path):
+    from synthesis.audio import flac_fully_decodes
+    from synthesis.mix import verify_mixed_stems_on_disk
+
+    tables = tmp_path / "final"
+    tables.mkdir()
+    raw_song = tmp_path / "SPDMX" / "raw" / "1" / "2" / "QmX"
+    audio_song = tmp_path / "SPDMX" / "audio" / "1" / "2" / "QmX"
+    raw_song.mkdir(parents=True)
+    audio_song.mkdir(parents=True)
+    # stems.csv still points at raw/; verify_mix remaps to audio/
+    pd.DataFrame({
+        "path": [str(raw_song), str(raw_song)],
+        "track": [0, 1],
+    }).to_csv(tables / "stems.csv", index=False)
+    for track in (0, 1):
+        sf.write(
+            str(audio_song / f"{track}.flac"),
+            np.full(200, 0.05, np.float32),
+            SAMPLE_RATE,
+            format="FLAC",
+        )
+    assert flac_fully_decodes(audio_song / "0.flac")
+    verify_mixed_stems_on_disk(tables, audio_format="flac", jobs=2)
+
+    # Corrupt / empty → fail
+    (audio_song / "1.flac").write_bytes(b"")
+    with pytest.raises(RuntimeError, match="FLAC decode"):
+        verify_mixed_stems_on_disk(tables, audio_format="flac", jobs=1)

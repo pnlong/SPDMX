@@ -7,13 +7,21 @@ the hashed layout path without `./data/` or `.json`
 
 ## Layout
 
+Released / Zenodo layout (after packaging):
+
 ```
 .
 ├── LICENSE
 ├── README.md
 ├── SPDMX.csv
-├── audio/<song_id>/<track>.flac
-└── mid/<song_id>.mid
+├── chunks.csv
+├── chunk_0/
+│   ├── audio/<song_id>/<track>.flac
+│   └── mid/<song_id>.mid
+├── chunk_1/
+│   ├── audio/...
+│   └── mid/...
+└── ...
 ```
 
 `track` in filenames and in `SPDMX.csv` is the **dense** MIDI track index
@@ -27,12 +35,32 @@ index.
 | sPDMX | PDMX.csv |
 |-------|----------|
 | `song_id` | `path` with `./data/` prefix and `.json` suffix stripped |
-| `mid` (`./mid/{song_id}.mid`) | `mid` = `./mid/{song_id}.mid` |
-| `path` (`./audio/{song_id}`) | PDMX `path` is metadata JSON; sPDMX `path` is the stem directory |
+| `mid` (`./chunk_N/mid/{song_id}.mid`) | `mid` is the PDMX MIDI path; sPDMX `mid` is dataset-relative |
+| `path` (`./chunk_N/audio/{song_id}`) | PDMX `path` is metadata JSON; sPDMX `path` is the stem directory |
 
 Row identity in `SPDMX.csv` is `(song_id, track)`.
 
-Columns: `song_id`, `path`, `mid`, `track`, `original_track`, `program`, `is_drum`, `name`.
+Columns: `song_id`, `path`, `mid`, `track`, `original_track`, `program`,
+`is_drum`, `name`, `chunk`.
+
+The **`chunk`** column is an integer id (`0`, `1`, `2`, …) naming the
+`chunk_N/` directory that holds that song’s audio and MIDI. All stems for a
+song share one chunk.
+
+## Zenodo download
+
+On Zenodo, metadata files and chunk archives are **separate downloads**:
+
+1. Download `SPDMX.csv`, `chunks.csv`, `LICENSE`, and `README.md`.
+2. Use `chunks.csv` (or filter `SPDMX.csv` by `chunk`) to choose media.
+3. Download only the `chunk_N.zip` files you need (~25 GB each).
+4. Unzip each archive next to the CSVs so paths like
+   `./chunk_0/audio/...` resolve.
+5. Restrict work to local media with
+   `SPDMX.csv[SPDMX.csv["chunk"] == 0]` (or a set of chunk ids).
+
+`chunks.csv` columns: `chunk`, `n_songs`, `n_stems`, `bytes`, `archive`,
+`sha256`.
 
 ## Citation
 

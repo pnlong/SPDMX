@@ -14,6 +14,7 @@ from shared.config import (
     DEV_DIR_NAME,
     MID_CORRECTED_DIR_NAME,
     SPDMX_DATASET_DIR_NAME,
+    SPDMX_DEV_DIR_NAME,
     SPDMX_FILE_NAME,
     SPDMX_MID_DIR_NAME,
 )
@@ -117,7 +118,7 @@ def track_map_csv_candidates(corrected_midi_dir: str | Path) -> list[Path]:
         locations.append(nested)
     if (
         root.name == SPDMX_MID_DIR_NAME
-        and root.parent.name == SPDMX_DATASET_DIR_NAME
+        and root.parent.name in (SPDMX_DEV_DIR_NAME, SPDMX_DATASET_DIR_NAME)
     ):
         locations.append(
             root.parent.parent
@@ -496,7 +497,7 @@ def resolve_corrected_midi_path(
         return primary
     if (
         corrected_midi_dir.name == SPDMX_MID_DIR_NAME
-        and corrected_midi_dir.parent.name == SPDMX_DATASET_DIR_NAME
+        and corrected_midi_dir.parent.name in (SPDMX_DEV_DIR_NAME, SPDMX_DATASET_DIR_NAME)
     ):
         legacy = (
             corrected_midi_dir.parent.parent

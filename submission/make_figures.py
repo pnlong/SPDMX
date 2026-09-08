@@ -7,10 +7,17 @@ from pathlib import Path
 
 import pandas as pd
 
-from analysis.plots import plot_gm_program_compare
+from analysis.plots import (
+    plot_ablation_listening,
+    plot_downstream_poc,
+    plot_gm_program_compare,
+    plot_sao_metrics,
+    plot_separation_sisdr,
+)
 from shared.config import OUTPUT_DIR
 
 FIGURES_DIR = Path(__file__).resolve().parent / "figures"
+DATA_DIR = Path(__file__).resolve().parent / "data"
 INSTRUMENTS_DIR = (
     Path(OUTPUT_DIR) / "dev" / "analysis" / "instruments" / "all_valid"
 )
@@ -34,39 +41,130 @@ def make_gm_program_compare_figure(
         top_n=top_n,
         rank_by=rank_by,
         show_percentages=show_percentages,
-        figsize=(8.0, 4.0),  # 2:1 wide; large canvas so text scales down in-column
+        figsize=(3.4, 3.2),
     )
     return out
 
 
+def make_ablation_listening_figure() -> Path | None:
+    csv_path = DATA_DIR / "ablation_listening.csv"
+    if not csv_path.is_file():
+        print(f"skip ablation figure: missing {csv_path}")
+        return None
+    out = FIGURES_DIR / "ablation_listening.pdf"
+    plot_ablation_listening(pd.read_csv(csv_path), out, figsize=(5.5, 3.2))
+    return out
+
+
+def make_separation_figure() -> Path | None:
+    csv_path = DATA_DIR / "separation_sisdr.csv"
+    out = FIGURES_DIR / "separation_sisdr.pdf"
+    if not csv_path.is_file():
+        _placeholder_figure(out, "SI-SDR results pending")
+        return out
+    df = pd.read_csv(csv_path)
+    if df.empty or df["si_sdr_mean"].isna().all():
+        _placeholder_figure(out, "SI-SDR results pending")
+        return out
+    plot_separation_sisdr(df, out)
+    return out
+
+
+def make_sao_figure() -> Path | None:
+    csv_path = DATA_DIR / "sao_metrics.csv"
+    out = FIGURES_DIR / "sao_metrics.pdf"
+    if not csv_path.is_file():
+        _placeholder_figure(out, "FAD / CLAP results pending")
+        return out
+    df = pd.read_csv(csv_path)
+    if df.empty or (df[["fad", "clap"]].isna().all(axis=None)):
+        _placeholder_figure(out, "FAD / CLAP results pending")
+        return out
+    plot_sao_metrics(df, out)
+    return out
+
+
+def make_downstream_figure() -> Path:
+    """Combined Demucs + SAO figure used in the camera-ready draft."""
+    sep_path = DATA_DIR / "separation_sisdr.csv"
+    sao_path = DATA_DIR / "sao_metrics.csv"
+    out = FIGURES_DIR / "downstream_poc.pdf"
+    sep = (
+        pd.read_csv(sep_path)
+        if sep_path.is_file()
+        else pd.DataFrame(columns=["train_arm", "test_set", "target", "si_sdr_mean"])
+    )
+    sao = (
+        pd.read_csv(sao_path)
+        if sao_path.is_file()
+        else pd.DataFrame(columns=["train_arm", "fad", "clap", "n"])
+    )
+    plot_downstream_poc(sep, sao, out)
+    return out
+
+
+def _placeholder_figure(path: Path, message: str) -> None:
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6.0, 2.5))
+    ax.axis("off")
+    ax.text(0.5, 0.5, message, ha="center", va="center", fontsize=12)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, bbox_inches="tight", transparent=True)
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--top-n",
-        type=int,
-        default=10,
-        help="Top-N programs for named bars (default: 10).",
-    )
+    parser.add_argument("--top-n", type=int, default=10)
     parser.add_argument(
         "--rank-by",
         choices=("corrected", "original"),
         default="corrected",
-        help="Inventory used to pick/order top-N + Other (default: corrected).",
     )
+    parser.add_argument("--show-percentages", action="store_true")
     parser.add_argument(
-        "--show-percentages",
-        action="store_true",
-        help="Annotate bars with percentage labels.",
+        "--only",
+        choices=("gm", "ablation", "separation", "sao", "downstream", "all"),
+        default="all",
     )
     args = parser.parse_args()
 
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-    path = make_gm_program_compare_figure(
-        top_n=args.top_n,
-        rank_by=args.rank_by,
-        show_percentages=args.show_percentages,
-    )
-    print(f"Wrote {path}")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+
+    if args.only in ("gm", "all") and ORIGINAL_STEMS.is_file() and CORRECTED_STEMS.is_file():
+        written.append(
+            make_gm_program_compare_figure(
+                top_n=args.top_n,
+                rank_by=args.rank_by,
+                show_percentages=args.show_percentages,
+            )
+        )
+    elif args.only in ("gm", "all"):
+        print(f"skip GM figure: missing {ORIGINAL_STEMS} or {CORRECTED_STEMS}")
+
+    if args.only in ("ablation", "all"):
+        p = make_ablation_listening_figure()
+        if p:
+            written.append(p)
+
+    if args.only in ("separation", "all"):
+        p = make_separation_figure()
+        if p:
+            written.append(p)
+
+    if args.only in ("sao", "all"):
+        p = make_sao_figure()
+        if p:
+            written.append(p)
+
+    if args.only in ("downstream", "all"):
+        written.append(make_downstream_figure())
+
+    for path in written:
+        print(f"Wrote {path}")
 
 
 if __name__ == "__main__":

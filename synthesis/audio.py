@@ -316,6 +316,31 @@ def stem_flac_is_valid(path: Path) -> bool:
     return stem_is_valid(path)
 
 
+def flac_fully_decodes(path: Path) -> bool:
+    """True when ``path`` exists and fully decodes to ≥1 sample (strict verify).
+
+    Unlike ``stem_is_valid`` (header ``sf.info`` only), this reads the audio
+    payload so truncated/corrupt FLAC bodies fail.
+    """
+    if not path.is_file():
+        return False
+    try:
+        if path.stat().st_size <= 0:
+            return False
+        frames, sr = _stem_frame_count(path)
+        if sr <= 0 or frames <= 0 or frames > MAX_N_SAMPLES_IN_STEM:
+            return False
+        with _suppress_native_stderr():
+            audio, file_sr = sf.read(
+                str(path), frames=frames, dtype="float32", always_2d=True,
+            )
+        if int(file_sr or 0) <= 0:
+            return False
+        return int(np.asarray(audio).size) > 0
+    except (RuntimeError, OSError, ValueError):
+        return False
+
+
 def stem_duration_seconds(path: Path) -> float:
     """Duration in seconds, capped at MAX_N_SAMPLES_IN_STEM."""
     return stem_n_samples(path) / SAMPLE_RATE

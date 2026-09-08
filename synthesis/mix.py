@@ -36,7 +36,9 @@ from shared.config import (
 )
 from synthesis.paths import remap_path_prefix
 from synthesis.audio import (
+    mixture_path,
     normalize_stems_in_song_dir,
+    stem_path,
     synthesis_audio_format,
 )
 from synthesis.cli_common import add_audio_format_arg
@@ -69,6 +71,37 @@ def normalize_song_task(task: dict) -> str | None:
 
 # Back-compat alias
 write_mixture_task = normalize_song_task
+
+
+def mix_output_ready(
+    dest_song_dir: Path,
+    tracks: list[int],
+    audio_format: str,
+    *,
+    write_mixture: bool = False,
+) -> bool:
+    """True when dest already has non-empty stems for every track (resume skip).
+
+    Uses size>0 rather than ``stem_is_valid`` so scanning hundreds of thousands of
+    songs on NFS stays a cheap ``stat``, not an ``sf.info`` per file.
+    """
+    if not dest_song_dir.is_dir():
+        return False
+    for track in tracks:
+        path = stem_path(dest_song_dir, track, audio_format)
+        try:
+            if not path.is_file() or path.stat().st_size <= 0:
+                return False
+        except OSError:
+            return False
+    if write_mixture:
+        mix = mixture_path(dest_song_dir, audio_format)
+        try:
+            if not mix.is_file() or mix.stat().st_size <= 0:
+                return False
+        except OSError:
+            return False
+    return True
 
 
 def _scales_from_stems_group(group: pd.DataFrame) -> dict[int, float] | None:
@@ -137,8 +170,16 @@ def build_mixture_tasks(
     spdmx_output_dir: str = OUTPUT_DIR,
     use_velocity_dynamics: bool = True,
     dest_song_dir_fn=None,
-) -> list[dict]:
+    reset: bool = False,
+) -> tuple[list[dict], int]:
+    """Build per-song mix tasks.
+
+    Returns ``(tasks, n_skipped)``. When ``reset`` is False and the destination
+    tree differs from the source, songs whose dest stems are already present are
+    skipped (resume). In-place overwrite (dest == source) never skips.
+    """
     tasks = []
+    skipped = 0
     root = Path(pdmx_root) if pdmx_root is not None else Path(PDMX_FILEPATH).parent
     for song_path, group in stems.groupby("path"):
         src_song_dir = Path(song_path)
@@ -147,6 +188,18 @@ def build_mixture_tasks(
         else:
             out_song_dir = resolve_output_song_dir(src_song_dir, source_dir, output_dir)
         tracks = sorted(int(t) for t in group["track"])
+        if (
+            not reset
+            and out_song_dir.resolve() != src_song_dir.resolve()
+            and mix_output_ready(
+                out_song_dir,
+                tracks,
+                audio_format,
+                write_mixture=write_mixture,
+            )
+        ):
+            skipped += 1
+            continue
         try:
             scales = velocity_scales_for_song(
                 src_song_dir,
@@ -168,7 +221,7 @@ def build_mixture_tasks(
             "write_mixture": write_mixture,
             "velocity_scales": scales,
         })
-    return tasks
+    return tasks, skipped
 
 
 def _shutdown_pool(pool) -> None:
@@ -222,6 +275,7 @@ def normalize_stems_for_dataset(
     spdmx_output_dir: str = OUTPUT_DIR,
     use_velocity_dynamics: bool = True,
     dest_song_dir_fn=None,
+    reset: bool = False,
 ):
     """Peak-normalize stems so they remain linearly summable.
 
@@ -229,6 +283,9 @@ def normalize_stems_for_dataset(
     mirrored tree under ``output_dir``. When ``source_dir == output_dir``, stems
     are overwritten in place unless ``dest_song_dir_fn`` remaps each song path
     (hybrid ``raw`` → ``audio``).
+
+    When the destination differs from the source, songs whose dest stems are
+    already present are skipped unless ``reset`` is True.
     """
     stems_csv = source_dir / f"{STEMS_FILE_NAME}.csv"
     if not stems_csv.exists():
@@ -243,7 +300,7 @@ def normalize_stems_for_dataset(
         copy_metadata_tables(source_dir, output_dir)
 
     stems = pd.read_csv(stems_csv)
-    tasks = build_mixture_tasks(
+    tasks, n_skipped = build_mixture_tasks(
         stems,
         source_dir,
         output_dir,
@@ -253,8 +310,18 @@ def normalize_stems_for_dataset(
         spdmx_output_dir=spdmx_output_dir,
         use_velocity_dynamics=use_velocity_dynamics,
         dest_song_dir_fn=dest_song_dir_fn,
+        reset=reset,
     )
+    n_total = n_skipped + len(tasks)
+    if n_skipped:
+        print(
+            f"Resume: skipping {n_skipped}/{n_total} song(s) with mix output already on disk; "
+            f"{len(tasks)} remaining.",
+            flush=True,
+        )
     if not tasks:
+        if n_skipped:
+            print("Nothing left to mix.", flush=True)
         return
 
     n_workers = min(max(jobs, 1), len(tasks))
@@ -285,6 +352,106 @@ def normalize_stems_for_dataset(
 
 # Back-compat alias
 write_mixtures_for_dataset = normalize_stems_for_dataset
+
+
+def _mixed_stem_path_ok(path_str: str) -> bool:
+    """Picklable worker: full FLAC decode of one mixed stem path."""
+    from synthesis.audio import flac_fully_decodes
+
+    return flac_fully_decodes(Path(path_str))
+
+
+def _mixed_stem_path_ok_indexed(item: tuple[int, str]) -> tuple[int, bool]:
+    idx, path_str = item
+    return idx, _mixed_stem_path_ok(path_str)
+
+
+def mixed_stem_paths_from_tables(
+    tables_dir: str | Path,
+    audio_format: str = DEFAULT_AUDIO_FORMAT,
+) -> list[str]:
+    """Absolute mixed-stem paths under ``audio/`` implied by ``stems.csv``."""
+    from synthesis.paths import raw_path_to_audio
+
+    root = Path(tables_dir)
+    stems_csv = root / f"{STEMS_FILE_NAME}.csv"
+    if not stems_csv.is_file() or stems_csv.stat().st_size == 0:
+        raise FileNotFoundError(f"Missing stems table for mix verify: {stems_csv}")
+    stems = pd.read_csv(stems_csv, usecols=["path", "track"], low_memory=False)
+    if stems.empty:
+        return []
+    out: list[str] = []
+    for path, track in zip(stems["path"].tolist(), stems["track"].tolist(), strict=False):
+        song = str(path)
+        try:
+            if "/raw/" in song.replace("\\", "/") or song.replace("\\", "/").startswith("./raw/"):
+                song = raw_path_to_audio(song)
+        except ValueError:
+            pass
+        out.append(str(stem_path(Path(song), int(track), audio_format)))
+    return out
+
+
+def verify_mixed_stems_on_disk(
+    tables_dir: str | Path,
+    *,
+    audio_format: str = DEFAULT_AUDIO_FORMAT,
+    jobs: int = 1,
+    limit: int = 25,
+) -> None:
+    """Require every mixed ``audio/`` stem to exist and fully FLAC-decode.
+
+    Raises ``RuntimeError`` listing up to ``limit`` failures. Intended as
+    ``--only-pass verify_mix`` after the mix pass.
+    """
+    paths = mixed_stem_paths_from_tables(tables_dir, audio_format=audio_format)
+    if not paths:
+        raise RuntimeError(f"No stems to verify under {tables_dir}")
+
+    n_jobs = max(1, int(jobs))
+    label = f"verify_mix decode (-j {n_jobs})" if n_jobs > 1 else "verify_mix decode"
+    bad: list[str] = []
+    if n_jobs <= 1 or len(paths) <= 1:
+        for path_str in tqdm(paths, total=len(paths), desc=label, unit="stem"):
+            if not _mixed_stem_path_ok(path_str):
+                bad.append(path_str)
+                if len(bad) >= limit:
+                    break
+    else:
+        chunksize = max(4, min(32, len(paths) // (n_jobs * 8) or 4))
+        pbar = tqdm(total=len(paths), desc=label, unit="stem", miniters=1, smoothing=0.05)
+        try:
+            with multiprocessing.Pool(processes=n_jobs) as pool:
+                for idx, ok in pool.imap_unordered(
+                    _mixed_stem_path_ok_indexed,
+                    enumerate(paths),
+                    chunksize=chunksize,
+                ):
+                    pbar.update(1)
+                    if not ok:
+                        bad.append(paths[idx])
+                        if len(bad) >= limit:
+                            pool.terminate()
+                            break
+        finally:
+            pbar.close()
+        bad.sort()
+
+    if bad:
+        # Recount failures without early stop for accurate total when we hit limit.
+        n_bad = len(bad)
+        if n_bad >= limit and len(paths) > limit:
+            # Approximate: at least limit; optional full recount is expensive.
+            extra = f" (showing first {limit}; scan stopped early)"
+        else:
+            extra = ""
+        lines = "\n".join(f"  {p}" for p in bad[:limit])
+        raise RuntimeError(
+            f"Mixed stems failed FLAC decode or are missing ({n_bad}{extra}):\n{lines}\n"
+            "Re-run: uv run python -m synthesis.final --only-pass mix -j 8\n"
+            "Then:    uv run python -m synthesis.final --only-pass verify_mix -j 8"
+        )
+    print(f"verify_mix ok: {len(paths)} stem(s) fully decoded.", flush=True)
 
 
 def resolve_stems_dir(
@@ -409,6 +576,14 @@ def parse_args(args=None):
         help="Skip the overwrite confirmation prompt.",
     )
     parser.add_argument(
+        "--reset",
+        action="store_true",
+        help=(
+            "Re-mix even when destination stems already exist "
+            "(default resumes and skips complete dest songs)."
+        ),
+    )
+    parser.add_argument(
         "-j",
         "--jobs",
         "--workers",
@@ -467,6 +642,7 @@ def main(args=None) -> None:
         pdmx_root=Path(opts.dataset_filepath).parent,
         spdmx_output_dir=opts.output_dir,
         use_velocity_dynamics=use_velocity,
+        reset=bool(opts.reset),
     )
     print(f"Done. Output: {dest_dir}", flush=True)
 

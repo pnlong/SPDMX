@@ -1,0 +1,23 @@
+{
+  "release_songs": 253982,
+  "release_stems": 490159,
+  "pdmx_all_valid_songs": 254035,
+  "pdmx_all_valid_hours": 6248.0,
+  "release_hours_approx": 6248.0,
+  "hours_note": "Duration sum over PDMX subset:all_valid (song_length.seconds). Release drops 53 empty-note songs; hours quoted as ~6250.",
+  "sample_rate_hz": 44100,
+  "channels": 1,
+  "audio_format": "flac",
+  "target_lufs": -23.0,
+  "realify": false,
+  "backends": {"fluidsynth": 432620, "midi_ddsp": 57539},
+  "mean_stems_per_song": 1.93,
+  "comparison_table": {
+    "MUSDB18": {"songs": 150, "hours": 10, "type": "recorded"},
+    "MedleyDB": {"songs": 122, "hours": 7.2, "type": "recorded"},
+    "MoisesDB": {"songs": 240, "hours": 14.4, "type": "recorded"},
+    "Slakh2100": {"songs": 2100, "hours": 145, "type": "synth"},
+    "PDMX": {"songs": 254035, "hours": 6248, "type": "symbolic"},
+    "sPDMX": {"songs": 253982, "hours": 6248, "type": "synth"}
+  }
+}

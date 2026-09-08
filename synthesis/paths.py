@@ -13,6 +13,7 @@ from shared.config import (
     SONG_LENGTHS_DIR_NAME,
     SPDMX_AUDIO_DIR_NAME,
     SPDMX_DATASET_DIR_NAME,
+    SPDMX_DEV_DIR_NAME,
     SPDMX_MID_DIR_NAME,
     SPDMX_RAW_DIR_NAME,
     STEMS_DIR_NAME,
@@ -94,22 +95,28 @@ def production_tables_dir(output_dir: str) -> str:
     return f"{dev_root(output_dir)}/{PRODUCTION_TABLES_DIR_NAME}"
 
 
+def spdmx_dev_dir(output_dir: str) -> str:
+    """Flat production render: ``{OUTPUT}/SPDMX_dev/``."""
+    return f"{output_dir}/{SPDMX_DEV_DIR_NAME}"
+
+
 def spdmx_dataset_dir(output_dir: str) -> str:
+    """Chunked distributable release: ``{OUTPUT}/SPDMX/``."""
     return f"{output_dir}/{SPDMX_DATASET_DIR_NAME}"
 
 
 def spdmx_audio_dir(output_dir: str) -> str:
-    """Released / mixable stem tree: ``{OUTPUT}/SPDMX/audio/``."""
-    return f"{spdmx_dataset_dir(output_dir)}/{SPDMX_AUDIO_DIR_NAME}"
+    """Mixable stem tree: ``{OUTPUT}/SPDMX_dev/audio/``."""
+    return f"{spdmx_dev_dir(output_dir)}/{SPDMX_AUDIO_DIR_NAME}"
 
 
 def spdmx_raw_dir(output_dir: str) -> str:
-    """Pre-mix hybrid stem tree: ``{OUTPUT}/SPDMX/raw/``."""
-    return f"{spdmx_dataset_dir(output_dir)}/{SPDMX_RAW_DIR_NAME}"
+    """Pre-mix hybrid stem tree: ``{OUTPUT}/SPDMX_dev/raw/``."""
+    return f"{spdmx_dev_dir(output_dir)}/{SPDMX_RAW_DIR_NAME}"
 
 
 def spdmx_mid_dir(output_dir: str) -> str:
-    return f"{spdmx_dataset_dir(output_dir)}/{SPDMX_MID_DIR_NAME}"
+    return f"{spdmx_dev_dir(output_dir)}/{SPDMX_MID_DIR_NAME}"
 
 
 def raw_path_to_audio(path: str) -> str:
