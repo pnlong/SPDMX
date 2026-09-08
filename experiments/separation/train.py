@@ -1,4 +1,8 @@
-"""Train Hybrid Demucs (HTDemucs) on a frozen manifest arm."""
+"""Train Hybrid Demucs (HTDemucs) on a frozen manifest arm.
+
+Resumes automatically from ``last.ckpt`` when present (use ``--reset`` to
+start fresh). Checkpoints store model + optimizer + step + best metrics.
+"""
 
 from __future__ import annotations
 
@@ -51,17 +55,20 @@ def run_validation(
 
 
 class LossLogger:
-    """Append-only JSONL + CSV loss history."""
+    """JSONL + CSV loss history (truncate or append for resume)."""
 
-    def __init__(self, ckpt_dir: Path) -> None:
+    def __init__(self, ckpt_dir: Path, *, append: bool) -> None:
         ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.jsonl_path = ckpt_dir / "losses.jsonl"
         self.csv_path = ckpt_dir / "losses.csv"
-        self._jsonl = open(self.jsonl_path, "w")
-        self._csv = open(self.csv_path, "w", newline="")
+        mode = "a" if append else "w"
+        self._jsonl = open(self.jsonl_path, mode)
+        new_csv = not append or not self.csv_path.is_file() or self.csv_path.stat().st_size == 0
+        self._csv = open(self.csv_path, "a" if append and not new_csv else "w", newline="")
         self._writer = csv.DictWriter(self._csv, fieldnames=("step", "split", "loss"))
-        self._writer.writeheader()
-        self._csv.flush()
+        if new_csv:
+            self._writer.writeheader()
+            self._csv.flush()
 
     def log(self, *, step: int, split: str, loss: float) -> None:
         row = {"step": int(step), "split": split, "loss": float(loss)}
@@ -83,6 +90,7 @@ def train_arm(
     manifests_dir: Path,
     ckpt_dir: Path,
     device: torch.device,
+    resume: bool = True,
 ) -> Path:
     train_csv = manifests_dir / arm / "train.csv"
     val_csv = manifests_dir / arm / "val.csv"
@@ -143,17 +151,42 @@ def train_arm(
     last_path = ckpt_dir / "last.ckpt"
     best_val_path = ckpt_dir / "best_val.ckpt"
     best_train_path = ckpt_dir / "best_train.ckpt"
-    logger = LossLogger(ckpt_dir)
 
     best_val = float("inf")
     best_train = float("inf")
     step = 0
+    resumed = False
+
+    if not resume:
+        for p in (last_path, best_val_path, best_train_path):
+            if p.is_file():
+                p.unlink()
+        print(f"{arm}: --reset (cleared checkpoints)")
+    elif last_path.is_file():
+        blob = torch.load(last_path, map_location=device, weights_only=False)
+        model.load_state_dict(blob["model"])
+        if blob.get("optimizer") is not None:
+            opt.load_state_dict(blob["optimizer"])
+        step = int(blob.get("step") or 0)
+        if blob.get("best_val") is not None:
+            best_val = float(blob["best_val"])
+        if blob.get("best_train") is not None:
+            best_train = float(blob["best_train"])
+        resumed = True
+        print(f"{arm}: resume from {last_path} at step {step}")
+
+    if step >= max_steps:
+        print(f"{arm}: already at step {step} >= max_steps {max_steps}; skip")
+        return last_path
+
+    logger = LossLogger(ckpt_dir, append=resumed)
     running = 0.0
     running_n = 0
 
     def _save(path: Path, *, extra: dict | None = None) -> None:
         blob = {
             "model": model.state_dict(),
+            "optimizer": opt.state_dict(),
             "step": step,
             "arm": arm,
             "sources": sources,
@@ -168,7 +201,7 @@ def train_arm(
         torch.save(blob, path)
 
     model.train()
-    pbar = tqdm(total=max_steps, desc=f"train:{arm}")
+    pbar = tqdm(total=max_steps, initial=step, desc=f"train:{arm}")
     try:
         while step < max_steps:
             for batch in loader:
@@ -240,6 +273,7 @@ def train_arm(
             {
                 "arm": arm,
                 "steps": step,
+                "resumed": resumed,
                 "last_ckpt": str(last_path),
                 "best_val_ckpt": str(best_val_path) if best_val_path.is_file() else None,
                 "best_train_ckpt": str(best_train_path) if best_train_path.is_file() else None,
@@ -263,6 +297,11 @@ def main() -> None:
     )
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Ignore last.ckpt and start training from step 0",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -280,6 +319,7 @@ def main() -> None:
             manifests_dir=manifests,
             ckpt_dir=ckpt_dir,
             device=device,
+            resume=not args.reset,
         )
         print(f"{arm}: wrote {path}")
 
