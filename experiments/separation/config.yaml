@@ -11,6 +11,11 @@ num_workers: 4
 # Channels: demucs HTDemucs expects stereo; we duplicate mono → stereo.
 channels: 2
 
+# Logging / validation (only three ckpts: last.ckpt, best_val.ckpt, best_train.ckpt)
+log_every: 50          # average train L1 → losses.csv / losses.jsonl; refresh last.ckpt
+val_every: 1000        # val loop; saves best_val.ckpt on improvement
+val_max_batches: null  # null = full val set; set e.g. 32 to cap val cost
+
 sources:
   - bass
   - drums

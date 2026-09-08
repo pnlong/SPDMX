@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
+import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -22,6 +24,55 @@ def build_model(sources: list[str], sample_rate: int):
             "demucs is required for training. Install with: uv pip install demucs"
         ) from exc
     return HTDemucs(sources=sources, samplerate=sample_rate)
+
+
+@torch.no_grad()
+def run_validation(
+    model: torch.nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    *,
+    max_batches: int | None,
+) -> float:
+    model.eval()
+    total = 0.0
+    n = 0
+    for i, batch in enumerate(loader):
+        if max_batches is not None and i >= max_batches:
+            break
+        mix = batch["mix"].to(device)
+        sources_t = batch["sources"].to(device)
+        estimate = model(mix)
+        loss = torch.nn.functional.l1_loss(estimate, sources_t)
+        total += float(loss.detach().cpu())
+        n += 1
+    model.train()
+    return total / max(n, 1)
+
+
+class LossLogger:
+    """Append-only JSONL + CSV loss history."""
+
+    def __init__(self, ckpt_dir: Path) -> None:
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        self.jsonl_path = ckpt_dir / "losses.jsonl"
+        self.csv_path = ckpt_dir / "losses.csv"
+        self._jsonl = open(self.jsonl_path, "w")
+        self._csv = open(self.csv_path, "w", newline="")
+        self._writer = csv.DictWriter(self._csv, fieldnames=("step", "split", "loss"))
+        self._writer.writeheader()
+        self._csv.flush()
+
+    def log(self, *, step: int, split: str, loss: float) -> None:
+        row = {"step": int(step), "split": split, "loss": float(loss)}
+        self._jsonl.write(json.dumps(row) + "\n")
+        self._jsonl.flush()
+        self._writer.writerow(row)
+        self._csv.flush()
+
+    def close(self) -> None:
+        self._jsonl.close()
+        self._csv.close()
 
 
 def train_arm(
@@ -46,6 +97,10 @@ def train_arm(
     lr = float(cfg.get("lr", 3e-4))
     num_workers = int(cfg.get("num_workers", 4))
     sources = list(cfg.get("sources") or TARGETS)
+    log_every = int(cfg.get("log_every", 50))
+    val_every = int(cfg.get("val_every", 1000))
+    raw_val_max = cfg.get("val_max_batches")
+    val_max_batches = int(raw_val_max) if raw_val_max is not None else None
 
     ds = StemPackDataset(
         train_csv,
@@ -62,58 +117,141 @@ def train_arm(
         num_workers=num_workers,
         drop_last=True,
     )
+
+    val_loader: DataLoader | None = None
+    if val_csv.is_file() and val_csv.stat().st_size > 0 and len(pd.read_csv(val_csv)) > 0:
+        val_ds = StemPackDataset(
+            val_csv,
+            packs_root,
+            sample_rate=sample_rate,
+            segment_seconds=segment,
+            channels=channels,
+            train=False,
+        )
+        val_loader = DataLoader(
+            val_ds,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            drop_last=False,
+        )
+
     model = build_model(sources, sample_rate).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
 
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    step = 0
-    model.train()
-    pbar = tqdm(total=max_steps, desc=f"train:{arm}")
-    while step < max_steps:
-        for batch in loader:
-            mix = batch["mix"].to(device)
-            sources_t = batch["sources"].to(device)
-            # demucs forward: (B, C, T) → (B, S, C, T)
-            estimate = model(mix)
-            loss = torch.nn.functional.l1_loss(estimate, sources_t)
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            opt.step()
-            step += 1
-            pbar.set_postfix(loss=float(loss.detach().cpu()))
-            pbar.update(1)
-            if step % 1000 == 0:
-                torch.save(
-                    {
-                        "model": model.state_dict(),
-                        "step": step,
-                        "arm": arm,
-                        "sources": sources,
-                        "sample_rate": sample_rate,
-                        "cfg": cfg,
-                    },
-                    ckpt_dir / f"step_{step:06d}.pt",
-                )
-            if step >= max_steps:
-                break
-    pbar.close()
+    last_path = ckpt_dir / "last.ckpt"
+    best_val_path = ckpt_dir / "best_val.ckpt"
+    best_train_path = ckpt_dir / "best_train.ckpt"
+    logger = LossLogger(ckpt_dir)
 
-    final_path = ckpt_dir / "final.pt"
-    torch.save(
-        {
+    best_val = float("inf")
+    best_train = float("inf")
+    step = 0
+    running = 0.0
+    running_n = 0
+
+    def _save(path: Path, *, extra: dict | None = None) -> None:
+        blob = {
             "model": model.state_dict(),
             "step": step,
             "arm": arm,
             "sources": sources,
             "sample_rate": sample_rate,
             "cfg": cfg,
-            "val_manifest": str(val_csv) if val_csv.is_file() else None,
-        },
-        final_path,
-    )
+            "best_val": best_val if best_val < float("inf") else None,
+            "best_train": best_train if best_train < float("inf") else None,
+            "val_manifest": str(val_csv) if val_loader is not None else None,
+        }
+        if extra:
+            blob.update(extra)
+        torch.save(blob, path)
+
+    model.train()
+    pbar = tqdm(total=max_steps, desc=f"train:{arm}")
+    try:
+        while step < max_steps:
+            for batch in loader:
+                mix = batch["mix"].to(device)
+                sources_t = batch["sources"].to(device)
+                estimate = model(mix)
+                loss = torch.nn.functional.l1_loss(estimate, sources_t)
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                opt.step()
+                step += 1
+                loss_f = float(loss.detach().cpu())
+                running += loss_f
+                running_n += 1
+
+                postfix = {"loss": f"{loss_f:.4f}"}
+                if best_train < float("inf"):
+                    postfix["best_tr"] = f"{best_train:.4f}"
+                if best_val < float("inf"):
+                    postfix["best_val"] = f"{best_val:.4f}"
+                pbar.set_postfix(**postfix)
+                pbar.update(1)
+
+                if step % log_every == 0:
+                    avg = running / max(running_n, 1)
+                    logger.log(step=step, split="train", loss=avg)
+                    running = 0.0
+                    running_n = 0
+                    _save(last_path)
+                    if avg < best_train:
+                        best_train = avg
+                        _save(best_train_path, extra={"train_loss": avg})
+
+                if val_loader is not None and step % val_every == 0:
+                    val_loss = run_validation(
+                        model, val_loader, device, max_batches=val_max_batches,
+                    )
+                    logger.log(step=step, split="val", loss=val_loss)
+                    _save(last_path)
+                    if val_loss < best_val:
+                        best_val = val_loss
+                        _save(best_val_path, extra={"val_loss": val_loss})
+                    postfix = {
+                        "loss": f"{loss_f:.4f}",
+                        "val": f"{val_loss:.4f}",
+                    }
+                    if best_train < float("inf"):
+                        postfix["best_tr"] = f"{best_train:.4f}"
+                    postfix["best_val"] = f"{best_val:.4f}"
+                    pbar.set_postfix(**postfix)
+
+                if step >= max_steps:
+                    break
+    finally:
+        pbar.close()
+
+    if val_loader is not None:
+        val_loss = run_validation(model, val_loader, device, max_batches=val_max_batches)
+        logger.log(step=step, split="val", loss=val_loss)
+        if val_loss < best_val:
+            best_val = val_loss
+            _save(best_val_path, extra={"val_loss": val_loss})
+
+    _save(last_path)
+    logger.close()
+
     with open(ckpt_dir / "train_meta.json", "w") as f:
-        json.dump({"arm": arm, "steps": step, "ckpt": str(final_path)}, f, indent=2)
-    return final_path
+        json.dump(
+            {
+                "arm": arm,
+                "steps": step,
+                "last_ckpt": str(last_path),
+                "best_val_ckpt": str(best_val_path) if best_val_path.is_file() else None,
+                "best_train_ckpt": str(best_train_path) if best_train_path.is_file() else None,
+                "best_val": best_val if best_val < float("inf") else None,
+                "best_train": best_train if best_train < float("inf") else None,
+                "losses_csv": str(ckpt_dir / "losses.csv"),
+                "losses_jsonl": str(ckpt_dir / "losses.jsonl"),
+            },
+            f,
+            indent=2,
+        )
+    return last_path
 
 
 def main() -> None:

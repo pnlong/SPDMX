@@ -36,6 +36,7 @@ uv run python -m experiments.separation.prepare_stems --corpus both -j 8
 uv run python -m experiments.separation.freeze_manifests
 
 # 3) Train (matched step budget from config.yaml) — requires GPU
+#    Writes checkpoints/*/losses.csv + losses.jsonl; val every val_every steps.
 uv run python -m experiments.separation.train --arm all
 
 # 4) Eval → CSV for paper figures

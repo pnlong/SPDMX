@@ -165,10 +165,17 @@ def main() -> None:
     arms = ("slakh", "spdmx_matched", "spdmx_full") if args.arm == "all" else (args.arm,)
     all_rows: list[pd.DataFrame] = []
     for arm in arms:
-        ckpt = root / "checkpoints" / arm / "final.pt"
-        if not ckpt.is_file():
-            print(f"missing checkpoint for {arm}: {ckpt}")
+        ckpt_dir = root / "checkpoints" / arm
+        # Prefer best val, then best train, then last.
+        for name in ("best_val.ckpt", "best_train.ckpt", "last.ckpt", "best.pt", "final.pt"):
+            cand = ckpt_dir / name
+            if cand.is_file():
+                ckpt = cand
+                break
+        else:
+            print(f"missing checkpoint for {arm} under {ckpt_dir}")
             continue
+        print(f"{arm}: evaluating {ckpt.name}")
         model, sr, _ = load_checkpoint(ckpt, device)
         test_csv = manifests / arm / "test.csv"
         if test_csv.is_file():
