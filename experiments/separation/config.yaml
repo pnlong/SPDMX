@@ -4,7 +4,7 @@ seed: 43
 sample_rate: 44100
 # Matched optimizer step budget across all three train arms.
 max_steps: 50000
-batch_size: 12
+batch_size: 8
 segment_seconds: 10.0
 lr: 3.0e-4
 num_workers: 4
