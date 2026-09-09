@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -87,6 +88,8 @@ def train_arm(
         "4",
         "--max-steps",
         str(max_steps),
+        "--logger",
+        str(cfg.get("logger") or "none"),
     ]
     meta = {
         "arm": arm,
@@ -98,8 +101,9 @@ def train_arm(
     with open(save_dir / "launch_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
 
+    env = {**os.environ, "WANDB_MODE": "disabled"}
     print("Launching (cwd=%s):" % tools_root, " ".join(cmd))
-    subprocess.check_call(cmd, cwd=tools_root)
+    subprocess.check_call(cmd, cwd=tools_root, env=env)
 
 
 def main() -> None:

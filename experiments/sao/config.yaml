@@ -9,6 +9,8 @@ batch_size: 2
 # HuggingFace / local unwrapped Stable Audio Open checkpoint.
 pretrained_ckpt: null  # set after download, or pass --pretrained-ckpt
 model_config: model_config.json
+# stable-audio-tools logger: none | wandb | comet
+logger: none
 
 # Captions
 caption_template: "instrumental music, {instruments}"

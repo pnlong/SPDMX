@@ -85,8 +85,8 @@
     },
     "demo": {
       "demo_every": 2000,
-      "demo_steps": 100,
-      "num_demos": 4,
+      "demo_steps": 50,
+      "num_demos": 1,
       "demo_cond": [
         {"prompt": "instrumental music, piano drums bass guitar"}
       ],
