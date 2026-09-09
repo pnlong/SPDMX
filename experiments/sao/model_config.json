@@ -10,6 +10,7 @@
       "config": {
         "encoder": {
           "type": "oobleck",
+          "requires_grad": false,
           "config": {
             "in_channels": 2,
             "channels": 128,
@@ -26,7 +27,7 @@
             "channels": 128,
             "c_mults": [1, 2, 4, 8, 16],
             "strides": [2, 4, 4, 8, 8],
-            "latent_dim": 128,
+            "latent_dim": 64,
             "use_snake": true,
             "final_tanh": false
           }
@@ -46,14 +47,31 @@
           "type": "t5",
           "config": {
             "t5_model_name": "t5-base",
-            "max_length": 64
+            "max_length": 128
+          }
+        },
+        {
+          "id": "seconds_start",
+          "type": "number",
+          "config": {
+            "min_val": 0,
+            "max_val": 512
+          }
+        },
+        {
+          "id": "seconds_total",
+          "type": "number",
+          "config": {
+            "min_val": 0,
+            "max_val": 512
           }
         }
       ],
       "cond_dim": 768
     },
     "diffusion": {
-      "cross_attention_cond_ids": ["prompt"],
+      "cross_attention_cond_ids": ["prompt", "seconds_start", "seconds_total"],
+      "global_cond_ids": ["seconds_start", "seconds_total"],
       "type": "dit",
       "config": {
         "io_channels": 64,
@@ -80,6 +98,14 @@
             "betas": [0.9, 0.999],
             "weight_decay": 1e-3
           }
+        },
+        "scheduler": {
+          "type": "InverseLR",
+          "config": {
+            "inv_gamma": 1000000,
+            "power": 0.5,
+            "warmup": 0.99
+          }
         }
       }
     },
@@ -88,7 +114,11 @@
       "demo_steps": 50,
       "num_demos": 1,
       "demo_cond": [
-        {"prompt": "instrumental music, piano drums bass guitar"}
+        {
+          "prompt": "instrumental music, piano drums bass guitar",
+          "seconds_start": 0,
+          "seconds_total": 47
+        }
       ],
       "demo_cfg_scales": [7]
     }
