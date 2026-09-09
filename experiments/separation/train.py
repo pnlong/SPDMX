@@ -2,6 +2,9 @@
 
 Resumes automatically from ``last.ckpt`` when present (use ``--reset`` to
 start fresh). Checkpoints store model + optimizer + step + best metrics.
+
+Progress UI: one tqdm bar per train segment of ``val_every`` steps, then a
+short val line, then a new bar for the next segment.
 """
 
 from __future__ import annotations
@@ -82,6 +85,12 @@ class LossLogger:
         self._csv.close()
 
 
+def _iter_batches(loader: DataLoader):
+    """Infinite iterator over a DataLoader."""
+    while True:
+        yield from loader
+
+
 def train_arm(
     arm: str,
     *,
@@ -106,7 +115,7 @@ def train_arm(
     num_workers = int(cfg.get("num_workers", 4))
     sources = list(cfg.get("sources") or TARGETS)
     log_every = int(cfg.get("log_every", 50))
-    val_every = int(cfg.get("val_every", 1000))
+    val_every = max(1, int(cfg.get("val_every", 1000)))
     raw_val_max = cfg.get("val_max_batches")
     val_max_batches = int(raw_val_max) if raw_val_max is not None else None
 
@@ -180,8 +189,7 @@ def train_arm(
         return last_path
 
     logger = LossLogger(ckpt_dir, append=resumed)
-    running = 0.0
-    running_n = 0
+    batch_iter = _iter_batches(loader)
 
     def _save(path: Path, *, extra: dict | None = None) -> None:
         blob = {
@@ -200,73 +208,88 @@ def train_arm(
             blob.update(extra)
         torch.save(blob, path)
 
-    model.train()
-    pbar = tqdm(total=max_steps, initial=step, desc=f"train:{arm}")
-    try:
-        while step < max_steps:
-            for batch in loader:
-                mix = batch["mix"].to(device)
-                sources_t = batch["sources"].to(device)
-                estimate = model(mix)
-                loss = torch.nn.functional.l1_loss(estimate, sources_t)
-                opt.zero_grad(set_to_none=True)
-                loss.backward()
-                opt.step()
-                step += 1
-                loss_f = float(loss.detach().cpu())
-                running += loss_f
-                running_n += 1
-
-                postfix = {"loss": f"{loss_f:.4f}"}
-                if best_train < float("inf"):
-                    postfix["best_tr"] = f"{best_train:.4f}"
-                if best_val < float("inf"):
-                    postfix["best_val"] = f"{best_val:.4f}"
-                pbar.set_postfix(**postfix)
-                pbar.update(1)
-
-                if step % log_every == 0:
-                    avg = running / max(running_n, 1)
-                    logger.log(step=step, split="train", loss=avg)
-                    running = 0.0
-                    running_n = 0
-                    _save(last_path)
-                    if avg < best_train:
-                        best_train = avg
-                        _save(best_train_path, extra={"train_loss": avg})
-
-                if val_loader is not None and step % val_every == 0:
-                    val_loss = run_validation(
-                        model, val_loader, device, max_batches=val_max_batches,
-                    )
-                    logger.log(step=step, split="val", loss=val_loss)
-                    _save(last_path)
-                    if val_loss < best_val:
-                        best_val = val_loss
-                        _save(best_val_path, extra={"val_loss": val_loss})
-                    postfix = {
-                        "loss": f"{loss_f:.4f}",
-                        "val": f"{val_loss:.4f}",
-                    }
-                    if best_train < float("inf"):
-                        postfix["best_tr"] = f"{best_train:.4f}"
-                    postfix["best_val"] = f"{best_val:.4f}"
-                    pbar.set_postfix(**postfix)
-
-                if step >= max_steps:
-                    break
-    finally:
-        pbar.close()
-
-    if val_loader is not None:
-        val_loss = run_validation(model, val_loader, device, max_batches=val_max_batches)
+    def _run_val(*, label: str) -> float | None:
+        nonlocal best_val
+        if val_loader is None:
+            print(f"  [{label}] step {step}/{max_steps}  (no val set)")
+            return None
+        val_loss = run_validation(
+            model, val_loader, device, max_batches=val_max_batches,
+        )
         logger.log(step=step, split="val", loss=val_loss)
+        improved = ""
         if val_loss < best_val:
             best_val = val_loss
             _save(best_val_path, extra={"val_loss": val_loss})
+            improved = "  *best*"
+        train_note = f"  best_train={best_train:.4f}" if best_train < float("inf") else ""
+        print(
+            f"  [{label}] step {step}/{max_steps}  "
+            f"val_l1={val_loss:.4f}  best_val={best_val:.4f}{train_note}{improved}"
+        )
+        return val_loss
+
+    model.train()
+    seg_idx = step // val_every
+    try:
+        while step < max_steps:
+            seg_start = step
+            seg_end = min(seg_start + val_every, max_steps)
+            seg_len = seg_end - seg_start
+            seg_idx += 1
+            n_segs = (max_steps + val_every - 1) // val_every
+            running = 0.0
+            running_n = 0
+            last_loss = 0.0
+
+            pbar = tqdm(
+                total=seg_len,
+                desc=f"{arm} seg {seg_idx}/{n_segs} [{seg_start}→{seg_end})",
+                leave=True,
+            )
+            try:
+                for _ in range(seg_len):
+                    batch = next(batch_iter)
+                    mix = batch["mix"].to(device)
+                    sources_t = batch["sources"].to(device)
+                    estimate = model(mix)
+                    loss = torch.nn.functional.l1_loss(estimate, sources_t)
+                    opt.zero_grad(set_to_none=True)
+                    loss.backward()
+                    opt.step()
+                    step += 1
+                    last_loss = float(loss.detach().cpu())
+                    running += last_loss
+                    running_n += 1
+                    pbar.set_postfix(loss=f"{last_loss:.4f}")
+                    pbar.update(1)
+
+                    if step % log_every == 0:
+                        avg = running / max(running_n, 1)
+                        logger.log(step=step, split="train", loss=avg)
+                        running = 0.0
+                        running_n = 0
+                        _save(last_path)
+                        if avg < best_train:
+                            best_train = avg
+                            _save(best_train_path, extra={"train_loss": avg})
+            finally:
+                pbar.close()
+
+            # Flush remaining train window into the log.
+            if running_n > 0:
+                avg = running / running_n
+                logger.log(step=step, split="train", loss=avg)
+                _save(last_path)
+                if avg < best_train:
+                    best_train = avg
+                    _save(best_train_path, extra={"train_loss": avg})
+
+            _run_val(label=f"val after seg {seg_idx}/{n_segs}")
+    finally:
+        logger.close()
 
     _save(last_path)
-    logger.close()
 
     with open(ckpt_dir / "train_meta.json", "w") as f:
         json.dump(
