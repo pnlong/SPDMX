@@ -8,7 +8,8 @@ Eval: OpenL3/VGGish **FAD** + **CLAP** (no listening).
 ```bash
 # Clone training code (recommended)
 git clone https://github.com/Stability-AI/stable-audio-tools experiments/sao/stable-audio-tools
-uv pip install -e experiments/sao/stable-audio-tools
+# [train] pulls pytorch_lightning and other training deps (not in the base package)
+uv pip install -e "experiments/sao/stable-audio-tools[train]"
 uv pip install laion-clap frechet_audio_distance  # metrics
 
 # Download unwrapped SAO 1.0 checkpoint (HF: stabilityai/stable-audio-open-1.0)
