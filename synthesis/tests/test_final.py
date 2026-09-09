@@ -221,7 +221,7 @@ def test_hybrid_mix_writes_audio_leaves_raw(tmp_path: Path):
     assert (s0 + s1).abs().max().item() <= 1.0 + 1e-4
     # Pipeline tables still point at raw/
     assert pd.read_csv(tables / "stems.csv").iloc[0]["path"] == path
-    # Released SPDMX.csv points at audio/
+    # Released stems.csv points at audio/
     released = pd.read_csv(media / f"{SPDMX_FILE_NAME}.csv")
     assert released.iloc[0]["path"] == f"./audio/{song_rel}"
 
@@ -368,7 +368,7 @@ def test_layout_pass_restricts_to_spdmx_csv(tmp_path: Path):
         "program": [0],
         "is_drum": [False],
         "name": ["Piano"],
-    }).to_csv(dest / "SPDMX.csv", index=False)
+    }).to_csv(dest / "stems.csv", index=False)
 
     args = parse_args([
         "--only-pass", "layout",
@@ -405,7 +405,7 @@ def test_attach_corrected_midi_uses_index_without_stat(tmp_path: Path):
         "program": [0, 0, 0],
         "is_drum": [False, False, False],
         "name": ["A", "B", "C"],
-    }).to_csv(dest / "SPDMX.csv", index=False)
+    }).to_csv(dest / "stems.csv", index=False)
     tables = tmp_path / "dev" / "final"
     tables.mkdir(parents=True)
     args = parse_args(["--only-pass", "fluidsynth", "-o", str(tmp_path), "--no-register"])
@@ -729,6 +729,6 @@ def test_expected_song_count_from_spdmx_csv(tmp_path: Path):
     pd.DataFrame({
         "song_id": ["a/b/QmOne", "a/b/QmOne", "a/b/QmTwo"],
         "track": [0, 1, 0],
-    }).to_csv(dest / "SPDMX.csv", index=False)
+    }).to_csv(dest / "stems.csv", index=False)
     args = parse_args(["--only-pass", "realify", "-o", str(tmp_path)])
     assert expected_song_count(args, str(dest)) == 2

@@ -352,14 +352,19 @@ def plot_track_name_bar(
 
 _ARM_LABELS = {
     "slakh": "Slakh",
-    "spdmx_matched": "sPDMX-matched",
+    "spdmx": "sPDMX",
+    "spdmx_matched": "sPDMX-BDGP",
     "spdmx_full": "sPDMX-full",
     "Slakh": "Slakh",
-    "sPDMX-matched": "sPDMX-matched",
+    "sPDMX": "sPDMX",
+    "sPDMX-matched": "sPDMX-BDGP",
+    "sPDMX-BDGP": "sPDMX-BDGP",
     "sPDMX-full": "sPDMX-full",
 }
 
-_ARM_ORDER = ("Slakh", "sPDMX-matched", "sPDMX-full")
+_ARM_ORDER_SEP = ("Slakh", "sPDMX")
+_ARM_ORDER_SAO = ("Slakh", "sPDMX-BDGP", "sPDMX-full")
+_ARM_ORDER = _ARM_ORDER_SAO  # default for combined/legacy callers
 _TARGET_ORDER = ("bass", "drums", "guitar", "piano")
 # Non-realify ablation arms reported in the ICASSP draft (SA3 omitted).
 _CONDITION_ORDER = ("A1", "B1", "CA1", "CB1")
@@ -465,7 +470,7 @@ def plot_separation_sisdr(
                 y="si_sdr_mean",
                 hue="train_arm",
                 order=targets,
-                hue_order=[a for a in _ARM_ORDER if a in set(sub["train_arm"])],
+                hue_order=[a for a in _ARM_ORDER_SEP if a in set(sub["train_arm"])],
                 ax=ax,
                 saturation=0.9,
             )
@@ -496,7 +501,7 @@ def plot_sao_metrics(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df = metrics.copy()
     df["train_arm"] = df["train_arm"].map(lambda a: _ARM_LABELS.get(str(a), str(a)))
-    arm_order = [a for a in _ARM_ORDER if a in set(df["train_arm"])]
+    arm_order = [a for a in _ARM_ORDER_SAO if a in set(df["train_arm"])]
 
     sns.set_theme(style="ticks", context="paper")
     try:
@@ -546,7 +551,8 @@ def plot_downstream_poc(
     sep = sep[sep["test_set"].astype(str) == "slakh2100"]
     sao_df = sao.copy()
     sao_df["train_arm"] = sao_df["train_arm"].map(lambda a: _ARM_LABELS.get(str(a), str(a)))
-    arm_order = [a for a in _ARM_ORDER if a in set(sep["train_arm"]) | set(sao_df["train_arm"])]
+    sep_arm_order = [a for a in _ARM_ORDER_SEP if a in set(sep["train_arm"])]
+    sao_arm_order = [a for a in _ARM_ORDER_SAO if a in set(sao_df["train_arm"])]
     targets = [t for t in _TARGET_ORDER if t in set(sep["target"])]
 
     sns.set_theme(style="ticks", context="paper")
@@ -560,7 +566,7 @@ def plot_downstream_poc(
                 y="si_sdr_mean",
                 hue="train_arm",
                 order=targets,
-                hue_order=arm_order,
+                hue_order=sep_arm_order,
                 ax=axes[0],
                 saturation=0.9,
             )
@@ -583,7 +589,7 @@ def plot_downstream_poc(
                     data=sao_df,
                     x="train_arm",
                     y=col,
-                    order=arm_order,
+                    order=sao_arm_order,
                     ax=ax,
                     color="C0",
                     saturation=0.9,

@@ -46,8 +46,9 @@ CHUNK_SIZE = 1
 NA_STRING = "NA"
 
 DATA_DIR_NAME = "data"
-STEMS_FILE_NAME = "stems"
-SPDMX_FILE_NAME = "SPDMX"  # released table {SPDMX}/SPDMX.csv (was track_map.csv)
+STEMS_FILE_NAME = "stems"  # ablation / final pipeline tables (dev/…)
+# Released + SPDMX_dev track map (stem-level). Was SPDMX.csv / track_map.csv.
+SPDMX_FILE_NAME = "stems"
 CAPTIONS_FILE_NAME = "captions"
 
 # {OUTPUT_DIR}/dev/ — development artifacts (ablations, analysis, interim stems)
@@ -75,7 +76,8 @@ PRESET_SWEEP_DIR_NAME = "preset_sweep"
 PATCH_SWEEP_DIR_NAME = "patch_sweep"
 
 # {OUTPUT_DIR}/SPDMX_dev/ — flat production render (synthesis.final):
-# raw/, audio/, mid/, SPDMX.csv. Packaging never mutates this tree.
+# Flat production render lives at {OUTPUT_DIR}/SPDMX_dev/ with LICENSE,
+# README, stems.csv, raw/, audio/, mid/. Packaging never mutates this tree.
 # {OUTPUT_DIR}/SPDMX/ — chunked distributable (build_spdmx): chunk_N/, packaged CSVs.
 SPDMX_DEV_DIR_NAME = "SPDMX_dev"
 SPDMX_DATASET_DIR_NAME = "SPDMX"
@@ -84,6 +86,9 @@ SPDMX_AUDIO_DIR_NAME = "audio"
 SPDMX_MID_DIR_NAME = "mid"
 
 ABLATION_SUBSET_COLUMN = "subset:rated_deduplicated"
+# sPDMX song-level subset (PDMX-style boolean on songs.csv): all four BDGP classes.
+SPDMX_BDGP_SUBSET_COLUMN = "subset:bdgp"
+SPDMX_SONGS_FILE_NAME = "songs.csv"
 # Safety cap for category-stratified ablation fill (not a fixed random N).
 ABLATION_SAMPLE_SIZE = 400
 ABLATION_SAMPLE_SEED = 43

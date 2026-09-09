@@ -9,7 +9,7 @@ from shared.config import SPDMX_DATASET_DIR_NAME, SPDMX_DEV_DIR_NAME, SPDMX_FILE
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent
 RELEASE_DOC_NAMES = ("LICENSE", "README.md")
-LEGACY_TRACK_MAP_FILE_NAME = "track_map.csv"
+LEGACY_TRACK_MAP_NAMES = ("SPDMX.csv", "track_map.csv")
 
 
 def write_spdmx_release_docs(dataset_dir: str | Path) -> None:
@@ -19,9 +19,12 @@ def write_spdmx_release_docs(dataset_dir: str | Path) -> None:
     for name in RELEASE_DOC_NAMES:
         shutil.copy2(_TEMPLATE_DIR / name, dest / name)
     preferred = dest / f"{SPDMX_FILE_NAME}.csv"
-    legacy = dest / LEGACY_TRACK_MAP_FILE_NAME
-    if not preferred.is_file() and legacy.is_file():
-        legacy.rename(preferred)
+    if not preferred.is_file():
+        for legacy_name in LEGACY_TRACK_MAP_NAMES:
+            legacy = dest / legacy_name
+            if legacy.is_file():
+                legacy.rename(preferred)
+                break
 
 
 def maybe_write_spdmx_release_docs(dataset_dir: str | Path) -> None:

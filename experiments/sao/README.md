@@ -1,32 +1,36 @@
 # Lite Stable Audio Open fine-tune PoC
 
-Three arms (**Slakh**, **sPDMX-matched**, **sPDMX-full**) under a matched step budget.
-Eval: OpenL3/VGGish **FAD** + **CLAP** (no listening).
+sPDMX is a **large MIDI-paired audio corpus**. Separation uses a BDGP-eligible
+subset; SAO compares that subset to the full corpus.
 
-## Setup
+| Arm | Data |
+|-----|------|
+| **slakh** | Slakh train mixes |
+| **spdmx_matched** | Songs with ``subset:bdgp`` in `songs.csv` (same BDGP pool as separation) |
+| **spdmx_full** | All sPDMX songs (`subset:all`) |
+
+Eval: OpenL3/VGGish **FAD** + **CLAP** (no listening).
+`prepare_dataset` indexes mixes directly (Slakh `mix.flac`; sPDMX stem-sums
+cached under `{SPDMX_OUTPUT_DIR}/dev/experiments/sao/datasets/mixes/`).
+Prefer building `songs.csv` first so matched uses ``subset:bdgp``:
 
 ```bash
-# Clone training code (recommended)
-git clone https://github.com/Stability-AI/stable-audio-tools experiments/sao/stable-audio-tools
-# [train] pulls pytorch_lightning and other training deps (not in the base package)
-uv pip install -e "experiments/sao/stable-audio-tools[train]"
-uv pip install laion-clap frechet_audio_distance  # metrics
-
-# Download unwrapped SAO 1.0 checkpoint (HF: stabilityai/stable-audio-open-1.0)
-# export or pass --pretrained-ckpt /path/to/model.ckpt
+uv run python -m synthesis.build_songs_table
+uv run python -m experiments.sao.prepare_dataset -j 8
 ```
 
-Depends on separation manifests for hour-matched / full song lists:
-
 ```bash
-uv run python -m experiments.separation.prepare_stems
-uv run python -m experiments.separation.freeze_manifests
+git clone https://github.com/Stability-AI/stable-audio-tools experiments/sao/stable-audio-tools
+uv pip install -e "experiments/sao/stable-audio-tools[train]"
+uv pip install laion-clap frechet_audio_distance  # metrics
 ```
 
 ## Pipeline
 
 ```bash
-uv run python -m experiments.sao.prepare_dataset
+# Index Slakh + sPDMX; matched = BDGP pool; full = all (-j workers)
+uv run python -m experiments.sao.prepare_dataset -j 8
+
 uv run python -m experiments.sao.train --arm all --pretrained-ckpt /path/to/sao.ckpt
 uv run python -m experiments.sao.generate --arm all
 uv run python -m experiments.sao.metrics --ref-dir /path/to/heldout_mixes

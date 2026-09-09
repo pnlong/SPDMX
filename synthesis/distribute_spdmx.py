@@ -1,11 +1,11 @@
 """Stage Zenodo-ready sPDMX artifacts from a chunked dataset tree.
 
 Input: packaged layout from ``python -m synthesis.build_spdmx``
-(``SPDMX.csv`` with ``chunk``, ``chunks.csv``, ``chunk_NNN/`` dirs).
+(``stems.csv`` with ``chunk``, ``chunks.csv``, ``chunk_NNN/`` dirs).
 
 Output staging directory (separate downloadable files):
 
-* ``LICENSE``, ``README.md``, ``SPDMX.csv``, ``chunks.csv``
+* ``LICENSE``, ``README.md``, ``stems.csv``, ``chunks.csv``
 * ``chunk_NNN.zip`` for each chunk (~25 GiB media)
 * ``SHA256SUMS``
 
@@ -109,7 +109,7 @@ def _zip_directory(source_dir: Path, zip_path: Path, *, compression: int) -> Non
     if zip_path.exists():
         zip_path.unlink()
     # Archive members are relative to the dataset root so unzipping beside
-    # SPDMX.csv reconstructs ./chunk_NNN/audio/... paths.
+    # stems.csv reconstructs ./chunk_NNN/audio/... paths.
     root = source_dir.parent
     with zipfile.ZipFile(zip_path, "w", compression=compression) as zf:
         for path in sorted(source_dir.rglob("*")):
@@ -209,7 +209,7 @@ def stage_zenodo_files(
     chunks["sha256"] = digests
 
     if chunk_ids is not None:
-        # Staging a subset: still ship full SPDMX.csv, but chunks.csv lists
+        # Staging a subset: still ship full stems.csv, but chunks.csv lists
         # only the zips present in this stage directory.
         chunks = chunks[chunks["chunk"].isin(selected)].reset_index(drop=True)
 

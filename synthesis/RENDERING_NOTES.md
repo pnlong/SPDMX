@@ -30,7 +30,7 @@ If an older `slakh_ddsp/` tree exists, rename it to `ddsp_slakh/` (and `*_realif
 {OUTPUT_DIR}/SPDMX_dev/
 ├── LICENSE
 ├── README.md
-├── SPDMX.csv                     # PDMX song_id (./data/{song_id}.json)
+├── stems.csv                     # PDMX song_id (./data/{song_id}.json)
 ├── audio/<song_id>/             # FLAC stems (0.flac, 1.flac, …)
 │   ├── 0.flac
 │   └── …
@@ -230,7 +230,7 @@ uv run python -m synthesis.final --only-pass fluidsynth -y -j 8
 uv run python -m synthesis.final --only-pass layout --ablation-sample
 ```
 
-`--only-pass` is required. `--full` is the default. Stems are always FLAC (`N.flac`). MIDI + `SPDMX.csv` + `LICENSE` + `README.md`: `{OUTPUT_DIR}/SPDMX_dev/` from `prepare_synthesis` (`song_id` joins to PDMX.csv; `path`/`mid` are dataset-relative). Tables: `{OUTPUT_DIR}/dev/final/`. If the recipe sets `*_realify`, SA3 overwrites those stems in the same directory. Do not add `final` to listening `CONDITION_ORDER`. Render passes append `stem_recipe.<engine>.csv`; mix merges those into `stem_recipe.csv` beside `stems.csv` (`path`, `track`, `category`, `ablation`, `method`, `fallback`, `backend`, `realify`).
+`--only-pass` is required. `--full` is the default. Stems are always FLAC (`N.flac`). MIDI + `stems.csv` + `LICENSE` + `README.md`: `{OUTPUT_DIR}/SPDMX_dev/` from `prepare_synthesis` (`song_id` joins to PDMX.csv; `path`/`mid` are dataset-relative). Tables: `{OUTPUT_DIR}/dev/final/`. If the recipe sets `*_realify`, SA3 overwrites those stems in the same directory. Do not add `final` to listening `CONDITION_ORDER`. Render passes append `stem_recipe.<engine>.csv`; mix merges those into `stem_recipe.csv` beside `stems.csv` (`path`, `track`, `category`, `ablation`, `method`, `fallback`, `backend`, `realify`).
 
 Synthesize always uses those dense corrected MIDIs (`prepare_synthesis` is the step-0 setup).
 

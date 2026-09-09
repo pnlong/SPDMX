@@ -140,7 +140,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--arm",
-        choices=("slakh", "spdmx_matched", "spdmx_full", "all"),
+        choices=("slakh", "spdmx", "all"),
         default="all",
     )
     parser.add_argument("--config", type=Path, default=None)
@@ -162,7 +162,7 @@ def main() -> None:
     device = torch.device(args.device)
     musdb_root = args.musdb_root or Path(cfg.get("musdb_root") or MUSDB_ROOT)
 
-    arms = ("slakh", "spdmx_matched", "spdmx_full") if args.arm == "all" else (args.arm,)
+    arms = ("slakh", "spdmx") if args.arm == "all" else (args.arm,)
     all_rows: list[pd.DataFrame] = []
     for arm in arms:
         ckpt_dir = root / "checkpoints" / arm

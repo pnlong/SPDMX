@@ -155,20 +155,23 @@ Per-category patterns, together with the need for timbral variety on piano- and 
 \section{Experiments}
 \label{sec:experiments}
 
-Two objective proof-of-concept studies use a matched optimizer step budget across three training corpora: Slakh2100 train~\cite{manilow2019cutting}, sPDMX hour-matched to that train split, and full sPDMX.
+Two objective proof-of-concept studies use a matched optimizer step budget.
 No preference listening is collected for these arms.
 
 \subsection{Source separation}
 \label{ssec:separation}
 
 Hybrid Demucs~\cite{defossez2021hybrid} is trained to recover bass, drums, guitar, and piano---Slakh's non-vocal benchmark targets---from coherent mixtures.
-sPDMX parts are mapped to those four classes by GM program ranges; songs lacking all four are skipped.
+This is a \emph{derived} use of sPDMX: parts are remapped to those four classes by GM program ranges so the comparison is fair to Slakh; only BDGP-eligible songs are kept.
+Because that filter yields fewer hours than Slakh train, we compare \textbf{Slakh} vs \textbf{sPDMX (BDGP-eligible)} rather than a matched/full split.
 Evaluation reports SI-SDR~\cite{leroux2019sdr} on the Slakh2100 test set (Fig.~\ref{fig:downstream}, left).
 
 \subsection{Generative fine-tuning}
 \label{ssec:sao}
 
-SAO~1.0~\cite{evans2024stable} is fine-tuned from the public checkpoint on loudness-normalized mixtures from the same three corpora with simple instrumental captions.
+Unlike Slakh2100, which is organized around separation targets, sPDMX is primarily a large public-domain audio corpus with paired MIDI.
+A song-level table marks a boolean subset ``subset:bdgp`` (bass/drums/guitar/piano co-occurrence), analogous to PDMX's ``subset:*`` columns.
+SAO~1.0~\cite{evans2024stable} is fine-tuned from the public checkpoint on loudness-normalized song mixtures with simple instrumental captions under three arms: Slakh train, the ``subset:bdgp`` split (shared with separation), and full sPDMX.
 Held-out generations for a fixed prompt set are scored with OpenL3-based Fr\'{e}chet audio distance~\cite{kilgour2018fr,cramer2019look} and LAION-CLAP~\cite{wu2023large} prompt adherence (Fig.~\ref{fig:downstream}, right).
 
 \begin{figure}[t]

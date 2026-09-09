@@ -1387,7 +1387,7 @@ def _work_for_pass(
 
 
 def _preload_track_maps(args) -> None:
-    """Load SPDMX.csv track map once on the parent thread (avoid 4× NFS stampede)."""
+    """Load stems.csv track map once on the parent thread (avoid 4× NFS stampede)."""
     if getattr(args, "track_maps", None):
         return
     from analysis.corrected_midi import load_track_maps, resolve_track_map_csv
@@ -1817,7 +1817,7 @@ def _midi_index_path(output_dir: str) -> Path:
 
 
 def build_midi_index(args) -> pd.DataFrame | None:
-    """One row per SPDMX.csv song: dense MIDI path, n_tracks, and per-pass track counts."""
+    """One row per stems.csv song: dense MIDI path, n_tracks, and per-pass track counts."""
     from analysis.corrected_midi import resolve_track_map_csv
     from synthesis.recipe import hybrid_pass_for_track
 
@@ -1846,7 +1846,7 @@ def build_midi_index(args) -> pd.DataFrame | None:
     })
     recipe = _resolved_recipe(args)
     if recipe is not None and "program" in tracks.columns:
-        print("Counting Fluidsynth / DDSP-piano / MIDI-DDSP tracks from SPDMX.csv ...", flush=True)
+        print("Counting Fluidsynth / DDSP-piano / MIDI-DDSP tracks from stems.csv ...", flush=True)
         programs = tracks["program"].fillna(0).astype(int)
         drum_col = (
             tracks["is_drum"] if "is_drum" in tracks.columns
@@ -1921,7 +1921,7 @@ def load_midi_index(args, output_dir: str) -> pd.DataFrame | None:
 
 
 def _resolve_corrected_midi_slow(dataset: pd.DataFrame, args) -> pd.DataFrame:
-    """Per-song path resolve + exists check (used when SPDMX.csv is missing)."""
+    """Per-song path resolve + exists check (used when stems.csv is missing)."""
     from analysis.corrected_midi import (
         load_track_maps,
         resolve_corrected_midi_path,
@@ -1961,7 +1961,7 @@ def _resolve_corrected_midi_slow(dataset: pd.DataFrame, args) -> pd.DataFrame:
 
 
 def attach_corrected_midi(dataset: pd.DataFrame, args, output_dir: str) -> pd.DataFrame:
-    """Set dense ``mid`` / ``n_tracks`` from midi_index.csv (built from SPDMX.csv)."""
+    """Set dense ``mid`` / ``n_tracks`` from midi_index.csv (built from stems.csv)."""
     from analysis.corrected_midi import song_id_from_mid
 
     index = load_midi_index(args, output_dir)
@@ -1995,7 +1995,7 @@ def attach_corrected_midi(dataset: pd.DataFrame, args, output_dir: str) -> pd.Da
 
 
 def _restrict_dataset_to_spdmx_csv(dataset: pd.DataFrame, song_ids: set[str]) -> pd.DataFrame:
-    """Keep PDMX rows whose song_id is in the released ``SPDMX.csv``."""
+    """Keep PDMX rows whose song_id is in the released ``stems.csv``."""
     from analysis.corrected_midi import song_id_from_mid
 
     mid_col = dataset["mid_pdmx"] if "mid_pdmx" in dataset.columns else dataset["mid"]
@@ -2003,7 +2003,7 @@ def _restrict_dataset_to_spdmx_csv(dataset: pd.DataFrame, song_ids: set[str]) ->
     n_drop = int((~keep).sum())
     if n_drop:
         print(
-            f"Restricting to SPDMX.csv ({len(song_ids)} songs); "
+            f"Restricting to stems.csv ({len(song_ids)} songs); "
             f"dropped {n_drop} PDMX rows",
             flush=True,
         )
@@ -2872,7 +2872,7 @@ def synthesis_is_complete(
     """True when data/stems tables exist and every listed song has stem files on disk.
 
     When ``ddsp_routing.csv`` is present, every song must also have routing rows for
-    all tracks (DDSP ablations). ``expected_n_songs`` (unique songs in SPDMX.csv)
+    all tracks (DDSP ablations). ``expected_n_songs`` (unique songs in stems.csv)
     rejects a partial ``data.csv`` written while Fluidsynth/DDSP are still running.
     ``jobs`` parallelizes per-song completeness checks.
     """

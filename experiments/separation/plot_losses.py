@@ -41,7 +41,7 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument(
         "--arm",
-        choices=("slakh", "spdmx_matched", "spdmx_full", "all"),
+        choices=("slakh", "spdmx", "all"),
         default="all",
     )
     parser.add_argument(
@@ -57,7 +57,7 @@ def main() -> None:
         return
 
     root = resolve_dev_dir(load_config(args.config))
-    arms = ("slakh", "spdmx_matched", "spdmx_full") if args.arm == "all" else (args.arm,)
+    arms = ("slakh", "spdmx") if args.arm == "all" else (args.arm,)
     for arm in arms:
         csv_path = root / "checkpoints" / arm / "losses.csv"
         if not csv_path.is_file():

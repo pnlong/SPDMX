@@ -1,4 +1,5 @@
 # Lite SAO fine-tune PoC — matched step budget across three data arms.
+# Arms: Slakh | sPDMX BDGP-eligible (sep-aligned) | sPDMX full corpus
 
 seed: 43
 max_steps: 10000
@@ -12,14 +13,21 @@ model_config: model_config.json
 # stable-audio-tools logger: none | wandb | comet
 logger: none
 
-# Captions
+# Captions (GM class names for sPDMX; BDGP labels for Slakh when available)
 caption_template: "instrumental music, {instruments}"
+
+# Mix rendering for sPDMX (Slakh already has mix.flac).
+render_jobs: 8
+# Optional cap while indexing sPDMX (null = all songs with on-disk stems).
+# Full release is ~250k songs — rendering all mixes is large on disk/time.
+spdmx_index_max_songs: null
+
+# Optional path overrides (else SPDMX_SLAKH_ROOT / SPDMX_DATASET_ROOT / .env).
+# slakh_root: /deepfreeze/share/pnlong/slakh2100_flac_redux
+# spdmx_root: /deepfreeze/share/SPDMX/SPDMX
 
 # Eval
 n_prompts: 50
 n_seeds_per_prompt: 2
 gen_steps: 100
 guidance_scale: 7.0
-
-# Reuse separation manifests for hour-matched / full song lists when available.
-reuse_separation_manifests: true

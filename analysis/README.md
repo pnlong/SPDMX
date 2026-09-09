@@ -16,7 +16,7 @@ Output symlinked in-repo at [`analysis/output/`](output/) → `{OUTPUT_DIR}/dev/
 | **`analyze_stems`** | PDMX MIDI files | Note count per track (symbolic) | Explore synthesis load / `MAX_N_NOTES_IN_STEM` limits. Not a duration analysis. |
 | **`analyze_gm_programs`** | PDMX MIDI, or `--from-register` | GM program usage counts + bar chart | Raw MIDI inventory, or **corrected** inventory from `register.csv` (`gm_program_*_corrected.*`). |
 
-**`prepare_synthesis` is a synthesis prerequisite**, not optional exploration: run it (or refresh it after editing the alias YAML) before `synthesis.synthesize`. By default it also writes dense corrected MIDIs under `{OUTPUT_DIR}/SPDMX_dev/mid/` and `{OUTPUT_DIR}/SPDMX_dev/SPDMX.csv` (use `--no-write-corrected-midi` to skip). Synthesize always loads those corrected midis.
+**`prepare_synthesis` is a synthesis prerequisite**, not optional exploration: run it (or refresh it after editing the alias YAML) before `synthesis.synthesize`. By default it also writes dense corrected MIDIs under `{OUTPUT_DIR}/SPDMX_dev/mid/` and `{OUTPUT_DIR}/SPDMX_dev/stems.csv` (use `--no-write-corrected-midi` to skip). Synthesize always loads those corrected midis.
 
 **`analyze_song_lengths` vs `analyze_durations`:** both concern time in seconds, but song lengths reads symbolic metadata for the full dataset; analyze durations reads actual audio files from whatever subset you synthesized (e.g. 100-song ablation).
 
@@ -29,7 +29,7 @@ Output symlinked in-repo at [`analysis/output/`](output/) → `{OUTPUT_DIR}/dev/
 | `prepare_synthesis.py` | Preferred CLI: GM register + dense corrected MIDI tree |
 | `analyze_gm_register.py` | Same CLI (alias); register report builders live here |
 | `gm_register.py` | Name→program matcher, report builders, synthesize lookup helpers |
-| `corrected_midi.py` | Dense corrected MIDI writer + `{SPDMX}/SPDMX.csv` |
+| `corrected_midi.py` | Dense corrected MIDI writer + `{SPDMX}/stems.csv` |
 | `gm_register_aliases.yaml` | Curated mislabeling needles (SATB→voice, harpsichord, …) |
 | `analyze_song_lengths.py` | CLI: PDMX song-length analysis, plots, JSON report, repo symlink |
 | `analyze_durations.py` | CLI: measure FLAC stem durations in a synthesized dataset |
@@ -46,7 +46,7 @@ Output symlinked in-repo at [`analysis/output/`](output/) → `{OUTPUT_DIR}/dev/
 # Step 0 — synthesis setup (register + dense corrected MIDIs by default)
 python -m analysis.prepare_synthesis --subset all_valid -j 8
 # → register.csv under instruments/<subset>/
-# → {OUTPUT_DIR}/SPDMX_dev/mid/… + SPDMX.csv
+# → {OUTPUT_DIR}/SPDMX_dev/mid/… + stems.csv
 # Alias (same CLI):
 python -m analysis.analyze_gm_register --subset all_valid -j 8
 # Register/stats only:

@@ -1,7 +1,14 @@
 # Source separation PoC (ICASSP)
 
-Hybrid Demucs quantity ablation: **Slakh** vs **sPDMX-matched** vs **sPDMX-full**.
+Hybrid Demucs: **Slakh** vs **sPDMX (BDGP-eligible)**.
 Targets: Bass / Drums / Guitar / Piano. Metrics: SI-SDR on Slakh2100 test + MUSDB bass/drums.
+
+sPDMX is packed only for songs that contain all four targets (same stem makeup
+as the Slakh protocol). Prefer a release-tree ``songs.csv`` with
+``subset:bdgp`` (from ``synthesis.build_songs_table`` / ``build_spdmx``) so
+indexing skips the full corpus; otherwise BDGP is recomputed from ``stems.csv``.
+There is no matched/full split here — the BDGP-eligible pool is smaller than
+Slakh train, so “full eligible” is the sPDMX arm.
 
 ## Setup
 
@@ -19,26 +26,16 @@ Default sPDMX root: the **chunked release** `{SPDMX_OUTPUT_DIR}/SPDMX/`
 
 ## Pipeline
 
-One-shot (GPU host for train/eval):
-
 ```bash
-./experiments/separation/run_poc.sh
-# SAO: SAO_PRETRAINED_CKPT=/path/to/sao.ckpt ./experiments/separation/run_poc.sh
-```
-
-Or step-by-step:
-
-```bash
-# 1) Remap stems → 4-stem packs (+ mix); -j parallelizes decode/encode
+# 1) Remap stems → 4-stem packs (+ mix); BDGP-eligible only
 uv run python -m experiments.separation.prepare_stems --corpus both -j 8
 
-# 2) Freeze manifests (matched hours ≈ Slakh train)
+# 2) Freeze manifests (slakh | spdmx)
 uv run python -m experiments.separation.freeze_manifests
 
-# 3) Train (matched step budget from config.yaml) — requires GPU
-#    Auto-resumes from checkpoints/<arm>/last.ckpt (model+optimizer+step).
-#    Use --reset to start fresh. Logs append to losses.csv / losses.jsonl.
+# 3) Train — requires GPU; resumes from checkpoints/<arm>/last.ckpt
 uv run python -m experiments.separation.train --arm all
+# or: --arm spdmx   (reuse/rename old spdmx_matched ckpt dir → spdmx if needed)
 
 # 4) Eval → CSV for paper figures
 uv run python -m experiments.separation.eval --arm all --write-paper

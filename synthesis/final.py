@@ -89,7 +89,7 @@ def parse_args(args=None, namespace=None):
             "Synthesize the sPDMX dataset using a per-category recipe. "
             f"Writes raw FLAC stems under {OUTPUT_DIR}/{SPDMX_DEV_DIR_NAME}/raw/ "
             f"(mix writes summable stems to audio/) "
-            "and sanitized MIDI under mid/. Join SPDMX.csv to PDMX.csv on song_id. "
+            "and sanitized MIDI under mid/. Join stems.csv to PDMX.csv on song_id. "
             "Audio format is always FLAC. "
             "Run one pass at a time with --only-pass "
             "(layout → fluidsynth → ddsp_piano → midi_ddsp → verify → mix → verify_mix). "
@@ -179,7 +179,7 @@ def raw_upstream_command(recipe) -> str:
 
 
 def expected_song_count(args, media_dir: str) -> int | None:
-    """Unique songs in SPDMX.csv, or None if that table is missing."""
+    """Unique songs in stems.csv, or None if that table is missing."""
     candidates = [
         Path(media_dir) / f"{SPDMX_FILE_NAME}.csv",
         Path(spdmx_dev_dir(args.output_dir)) / f"{SPDMX_FILE_NAME}.csv",

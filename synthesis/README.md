@@ -29,6 +29,7 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 | `listening/serve.py` | Localhost viewer for A1–CB2 ablation comparison |
 | `listening/make_clips.py` | Aligned 10s clips (windows from A1) for listening |
 | `build_spdmx.py` | Post-render: build `{OUTPUT}/SPDMX/` chunks from flat `SPDMX_dev/` (no mutate) |
+| `build_songs_table.py` | Song-level `songs.csv` + `subset:*` from `stems.csv` (also invoked by `build_spdmx`) |
 | `distribute_spdmx.py` | Stage Zenodo files (metadata + `chunk_NNN.zip`) |
 
 ## Source files
@@ -36,8 +37,10 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 | File | Description |
 |------|-------------|
 | `synthesize.py` | MIDI → fluidsynth → mono FLAC stems; optional SA3 realify pass |
-| `build_spdmx.py` | Post-render chunking of flat `SPDMX/` into download chunks |
+| `build_spdmx.py` | Post-render chunking of flat `SPDMX_dev/` into download chunks + `songs.csv` |
+| `build_songs_table.py` | Aggregate `stems.csv` → `songs.csv` (`subset:all`, `subset:bdgp`, …) |
 | `distribute_spdmx.py` | Stage Zenodo upload files (CSVs + per-chunk zips) |
+| `spdmx_release/README.md` | **Public dataset schema** (stems/songs/chunks joins) — ships on Zenodo |
 | `chunking.py` | Song→chunk assignment (~25 GiB) and packaged CSV helpers |
 | `audio.py` | fluidsynth rendering, mono downmix, BS.1770-4 loudness, FLAC I/O, mixture build |
 | `velocity.py` | MIDI max-velocity → per-track dynamics scales for mix |
@@ -71,7 +74,7 @@ Post-render packaging for Zenodo:
 ```bash
 # 1. Build chunked release in a NEW dir (flat SPDMX/ untouched; hardlinks by default)
 uv run python -m synthesis.build_spdmx -o "$SPDMX_OUTPUT_DIR"
-# → {OUTPUT}/SPDMX/chunk_N/ + SPDMX.csv + chunks.csv
+# → {OUTPUT}/SPDMX/chunk_N/ + stems.csv + songs.csv + chunks.csv
 
 # 2. Stage loose metadata + chunk_N.zip for upload
 uv run python -m synthesis.distribute_spdmx -o "$SPDMX_OUTPUT_DIR" \

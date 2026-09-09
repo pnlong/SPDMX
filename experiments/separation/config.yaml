@@ -1,8 +1,8 @@
-# ICASSP PoC — Hybrid Demucs quantity ablation (Slakh / sPDMX-matched / sPDMX-full)
+# ICASSP PoC — Hybrid Demucs: Slakh vs sPDMX (BDGP-eligible)
 
 seed: 43
 sample_rate: 44100
-# Matched optimizer step budget across all three train arms.
+# Matched optimizer step budget across train arms.
 max_steps: 32000
 batch_size: 8
 segment_seconds: 10.0
@@ -23,8 +23,9 @@ sources:
   - guitar
   - piano
 
-# Skip songs that do not contain all four targets (plan policy).
+# Separation packs require all four BDGP targets (Slakh-comparable protocol).
 require_all_targets: true
+spdmx_require_all_targets: true
 
 # Paths (override with env SPDMX_SLAKH_ROOT / SPDMX_DATASET_ROOT / SPDMX_MUSDB_ROOT).
 # slakh_root: /deepfreeze/share/pnlong/slakh2100_flac_redux
@@ -32,10 +33,5 @@ require_all_targets: true
 spdmx_root: /deepfreeze/share/SPDMX/SPDMX
 # musdb_root: /deepfreeze/share/pnlong/musdb18hq
 
-# Hour matching: sPDMX-matched total mixture hours ≈ Slakh train hours.
-# Set null to auto-measure Slakh train from metadata / audio.
-slakh_train_hours: null
-match_tolerance_hours: 0.5
-
-# Held-out fraction of eligible sPDMX songs for validation (shared by matched + full).
+# Held-out fraction of BDGP-eligible sPDMX songs for validation.
 spdmx_val_fraction: 0.05

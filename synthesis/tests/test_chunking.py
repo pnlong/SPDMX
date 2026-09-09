@@ -195,11 +195,16 @@ def test_chunk_dataset_builds_separate_release_tree(tmp_path: Path):
     assert (dest / f"{SPDMX_FILE_NAME}.csv").is_file()
     assert (dest / CHUNKS_FILE_NAME).is_file()
     assert (dest / "LICENSE").is_file()
+    songs = pd.read_csv(dest / "songs.csv")
+    assert set(songs["song_id"]) == {"0/1/QmA", "0/2/QmB"}
+    assert "subset:all" in songs.columns and "subset:bdgp" in songs.columns
+    assert bool(songs["subset:all"].all())
 
     # Flat production tree untouched.
     assert (source / SPDMX_AUDIO_DIR_NAME / "0/1/QmA" / "0.flac").is_file()
     assert (source / SPDMX_MID_DIR_NAME / "0/1/QmA.mid").is_file()
     assert "chunk" not in pd.read_csv(source / f"{SPDMX_FILE_NAME}.csv").columns
+    assert not (source / "songs.csv").is_file()
 
     for song_id, chunk_id in assignment.items():
         assert (

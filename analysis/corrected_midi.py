@@ -102,7 +102,7 @@ def spdmx_mid_rel(song_id: str) -> str:
 
 
 def track_map_csv_path(corrected_midi_dir: str | Path) -> Path:
-    """Preferred global track map: ``{SPDMX}/SPDMX.csv`` when mid is ``{SPDMX}/mid/``."""
+    """Preferred global track map: ``{SPDMX}/stems.csv`` when mid is ``{SPDMX}/mid/``."""
     root = Path(corrected_midi_dir)
     if root.name == SPDMX_MID_DIR_NAME:
         return root.parent / TRACK_MAP_FILE_NAME
@@ -223,7 +223,7 @@ def load_track_map(
     corrected_midi_dir: str | Path,
     track_maps: dict[str, dict[int, dict]] | None = None,
 ) -> dict[int, dict]:
-    """Map dense ``track`` → row dict from the global ``SPDMX.csv``."""
+    """Map dense ``track`` → row dict from the global ``stems.csv``."""
     csv_path = resolve_track_map_csv(corrected_midi_dir)
     key = dest_rel_for_midi(midi_path, corrected_midi_dir)
     maps = track_maps if track_maps is not None else load_track_maps(csv_path)
@@ -304,7 +304,7 @@ def write_corrected_midi(
     leftover dest is removed), and the returned row list is empty.
 
     Returns track-map rows (``TRACK_MAP_COLUMNS``). The batch writer stores them
-    in a single ``SPDMX.csv``; this function does not write a per-file map.
+    in a single ``stems.csv``; this function does not write a per-file map.
     """
     src_mid = Path(src_mid)
     dest_mid = Path(dest_mid)
@@ -463,7 +463,7 @@ def write_corrected_midis_from_register(
         maybe_write_spdmx_release_docs(out_csv.parent)
     if skipped:
         print(
-            f"Skipped {skipped} songs with no sounding notes (no MIDI / SPDMX.csv rows)",
+            f"Skipped {skipped} songs with no sounding notes (no MIDI / stems.csv rows)",
             flush=True,
         )
     return ok, failed

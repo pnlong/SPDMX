@@ -15,6 +15,6 @@ Set machine paths in repo-root `.env` (see `.env.example`). Key paths imported f
 
 - `OUTPUT_DIR` — from `SPDMX_OUTPUT_DIR`
 - `{OUTPUT_DIR}/dev/` — development artifacts (ablations, analysis, interim stems)
-- `{OUTPUT_DIR}/SPDMX_dev/` — flat production render (`LICENSE`, `README.md`, `SPDMX.csv`, `raw/`, `audio/`, `mid/`). Untouched by packaging.
-- `{OUTPUT_DIR}/SPDMX/` — chunked distributable from `build_spdmx` (`chunk_N/`, packaged `SPDMX.csv` with `chunk`, `chunks.csv`).
+- `{OUTPUT_DIR}/SPDMX_dev/` — flat production render (`LICENSE`, `README.md`, `stems.csv`, `raw/`, `audio/`, `mid/`). Untouched by packaging.
+- `{OUTPUT_DIR}/SPDMX/` — chunked distributable from `build_spdmx` (`chunk_N/`, packaged `stems.csv` with `chunk`, `chunks.csv`).
 - `{OUTPUT_DIR}/dev/final/` — production synthesis tables (`data.csv`, `stems.csv`, per-pass `stems.<engine>.csv`)

@@ -96,8 +96,8 @@ uv run python -m experiments.ablation_listening.aggregate \
 
 ## ICASSP PoC (objective, no listening)
 
-- [`separation/`](separation/) — Hybrid Demucs × Slakh / sPDMX-matched / sPDMX-full (SI-SDR)
-- [`sao/`](sao/) — lite Stable Audio Open fine-tunes (FAD + CLAP)
+- [`separation/`](separation/) — Hybrid Demucs × Slakh / sPDMX-BDGP (SI-SDR)
+- [`sao/`](sao/) — SAO fine-tunes: Slakh / sPDMX-BDGP / sPDMX-full (FAD + CLAP)
 
 Shared UI and ngrok notes: [`listening_shared/README.md`](listening_shared/README.md).
 

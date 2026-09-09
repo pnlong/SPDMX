@@ -9,6 +9,7 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 from tqdm import tqdm
@@ -45,8 +46,13 @@ def _write_pack(
     split: str,
     song_id: str,
     out_root: Path,
+    allow_missing: bool = False,
 ) -> dict | None:
-    """Decode/sum/write one song pack. Returns index row or None on failure."""
+    """Decode/sum/write one song pack. Returns index row or None on failure.
+
+    When ``allow_missing`` is True, absent targets are written as silence (mix
+    is still the sum of present stems). When False, all four targets are required.
+    """
     dest = Path(dest)
     out_root = Path(out_root)
     if all((dest / f"{t}.flac").is_file() for t in TARGETS) and (dest / "mix.flac").is_file():
@@ -60,23 +66,42 @@ def _write_pack(
             "hours": dur / 3600.0,
         }
 
+    present = [t for t in TARGETS if buckets.get(t)]
+    if not present:
+        return None
+    if not allow_missing and any(not buckets.get(t) for t in TARGETS):
+        return None
+
     dest.mkdir(parents=True, exist_ok=True)
     audio_by_target: dict[str, object] = {}
     try:
-        for target in TARGETS:
-            paths = buckets.get(target) or []
-            if not paths:
-                return None
+        # Decode present stems first to establish length; missing → zeros.
+        for target in present:
             arrays = []
-            for p in paths:
+            for p in buckets[target]:
                 a, _ = load_mono(Path(p), sample_rate=sample_rate)
                 arrays.append(a)
-            merged = sum_stems(arrays)
-            write_flac(dest / f"{target}.flac", merged, sample_rate)
-            audio_by_target[target] = merged
-        mix = sum_stems([audio_by_target[t] for t in TARGETS])  # type: ignore[index]
+            audio_by_target[target] = sum_stems(arrays)
+        n = max(int(a.shape[0]) for a in audio_by_target.values())  # type: ignore[attr-defined]
+
+        for target in TARGETS:
+            if target in audio_by_target:
+                a = audio_by_target[target]
+                if a.shape[0] < n:  # type: ignore[attr-defined]
+                    a = np.pad(a, (0, n - a.shape[0]))  # type: ignore[attr-defined]
+                elif a.shape[0] > n:  # type: ignore[attr-defined]
+                    a = a[:n]  # type: ignore[index]
+                audio_by_target[target] = a
+            else:
+                audio_by_target[target] = np.zeros(n, dtype=np.float32)
+            write_flac(dest / f"{target}.flac", audio_by_target[target], sample_rate)  # type: ignore[arg-type]
+        mix = sum_stems([audio_by_target[t] for t in present])  # type: ignore[index]
+        if mix.shape[0] < n:
+            mix = np.pad(mix, (0, n - mix.shape[0]))
+        elif mix.shape[0] > n:
+            mix = mix[:n]
         write_flac(dest / "mix.flac", mix, sample_rate)
-        dur = float(mix.shape[0]) / float(sample_rate)
+        dur = float(n) / float(sample_rate)
     except Exception as exc:  # noqa: BLE001
         print(f"skip {song_id}: {exc}")
         return None
@@ -124,8 +149,6 @@ def _slakh_job(payload: dict) -> dict | None:
 
     if not _eligible_from_targets(set(buckets), require_all=require_all):
         return None
-    if any(not buckets.get(t) for t in TARGETS):
-        return None
 
     dest = out_root / "slakh" / split / track_dir.name
     return _write_pack(
@@ -136,6 +159,7 @@ def _slakh_job(payload: dict) -> dict | None:
         split=split,
         song_id=track_dir.name,
         out_root=out_root,
+        allow_missing=not require_all,
     )
 
 
@@ -153,6 +177,7 @@ def _spdmx_job(payload: dict) -> dict | None:
         split="all",
         song_id=str(payload["song_id"]),
         out_root=Path(payload["out_root"]),
+        allow_missing=bool(payload.get("allow_missing", False)),
     )
 
 
@@ -221,16 +246,25 @@ def prepare_spdmx(
     *,
     sample_rate: int,
     require_all: bool,
-    csv_name: str = "SPDMX.csv",
+    min_targets: int = 1,
+    csv_name: str = "stems.csv",
     max_songs: int | None = None,
     jobs: int = 1,
 ) -> list[dict]:
     """Remap sPDMX GM stems into out_root/spdmx/all/{song_id}/…
 
-    Expects the **chunked release** layout by default (``SPDMX.csv`` with
+    Expects the **chunked release** layout by default (``stems.csv`` with
     ``path`` / ``chunk`` pointing at ``chunk_N/audio/…``). Flat ``SPDMX_dev``
     trees still work as a fallback.
+
+    When ``require_all`` is True (default), songs are taken from
+    ``songs.csv`` ``subset:bdgp`` when that table exists; otherwise BDGP
+    eligibility is recomputed from stem programs. When ``require_all`` is
+    False, missing BDGP stems are packed as silence and ``min_targets``
+    keeps only songs with at least that many of the four targets present.
     """
+    from synthesis.build_songs_table import load_bdgp_song_ids
+
     csv_path = spdmx_root / csv_name
     if not csv_path.is_file():
         raise FileNotFoundError(csv_path)
@@ -239,6 +273,19 @@ def prepare_spdmx(
         df["chunk"] = df["chunk"].map(lambda x: x if pd.isna(x) else str(int(x)))
     if "is_drum" in df.columns:
         df["is_drum"] = df["is_drum"].astype(str).str.lower().isin(("true", "1", "yes"))
+
+    allow_missing = not require_all
+    min_targets = max(1, int(min_targets))
+    bdgp_ids = load_bdgp_song_ids(spdmx_root) if require_all else None
+    if bdgp_ids is not None:
+        before = int(df["song_id"].nunique())
+        df = df[df["song_id"].astype(str).isin(bdgp_ids)]
+        print(
+            f"spdmx: using songs.csv subset:bdgp "
+            f"({len(bdgp_ids)} songs; stems rows cover {df['song_id'].nunique()}/{before})"
+        )
+    elif require_all:
+        print("spdmx: songs.csv subset:bdgp missing; recomputing BDGP from stems")
 
     job_list: list[dict] = []
     grouped = df.groupby("song_id", sort=False)
@@ -259,10 +306,14 @@ def prepare_spdmx(
                 continue
             buckets[target].append(str(stem_path))
 
-        if not _eligible_from_targets(set(buckets), require_all=require_all):
-            continue
-        if any(not buckets.get(t) for t in TARGETS):
-            continue
+        present = set(buckets)
+        if require_all:
+            # Safety net if songs.csv was built with --no-check-files.
+            if not set(TARGETS).issubset(present):
+                continue
+        else:
+            if len(present) < min_targets:
+                continue
 
         dest = out_root / "spdmx" / "all" / str(song_id)
         job_list.append(
@@ -272,9 +323,15 @@ def prepare_spdmx(
                 "sample_rate": sample_rate,
                 "song_id": str(song_id),
                 "out_root": str(out_root),
+                "allow_missing": allow_missing,
             }
         )
 
+    print(
+        f"spdmx: queued {len(job_list)} songs "
+        f"(require_all={require_all}, min_targets={min_targets}, "
+        f"songs_csv_bdgp={'yes' if bdgp_ids is not None else 'no'})"
+    )
     return _run_pool(job_list, _spdmx_job, jobs_n=jobs, desc="spdmx:pack")
 
 
@@ -302,7 +359,12 @@ def main() -> None:
 
     cfg = load_config(args.config)
     sample_rate = int(cfg.get("sample_rate", 44100))
-    require_all = bool(cfg.get("require_all_targets", True))
+    # Slakh keeps all-four by default; sPDMX can opt into partial packs.
+    require_all_slakh = bool(cfg.get("require_all_targets", True))
+    require_all_spdmx = bool(
+        cfg.get("spdmx_require_all_targets", cfg.get("require_all_targets", True))
+    )
+    spdmx_min_targets = int(cfg.get("spdmx_min_targets", 1))
     out_root = args.out or (resolve_dev_dir(cfg) / "packs")
     out_root.mkdir(parents=True, exist_ok=True)
     jobs = max(1, int(args.jobs))
@@ -316,7 +378,7 @@ def main() -> None:
                 slakh_root,
                 out_root,
                 sample_rate=sample_rate,
-                require_all=require_all,
+                require_all=require_all_slakh,
                 max_songs=args.max_songs,
                 jobs=jobs,
             )
@@ -328,22 +390,35 @@ def main() -> None:
                 spdmx_root,
                 out_root,
                 sample_rate=sample_rate,
-                require_all=require_all,
+                require_all=require_all_spdmx,
+                min_targets=spdmx_min_targets,
                 max_songs=args.max_songs,
                 jobs=jobs,
             )
         )
 
     index_path = out_root / "pack_index.csv"
-    pd.DataFrame(all_rows).to_csv(index_path, index=False)
+    new_df = pd.DataFrame(all_rows)
+    # When packing a single corpus, keep the other corpus's existing rows.
+    if index_path.is_file() and args.corpus in ("slakh", "spdmx") and not new_df.empty:
+        old = pd.read_csv(index_path)
+        keep = old[old["corpus"] != args.corpus]
+        new_df = pd.concat([keep, new_df], ignore_index=True)
+    elif index_path.is_file() and args.corpus in ("slakh", "spdmx") and new_df.empty:
+        new_df = pd.read_csv(index_path)
+
+    new_df.to_csv(index_path, index=False)
     summary = {
-        "n_rows": len(all_rows),
+        "n_rows": int(len(new_df)),
         "by_corpus": {
-            c: float(pd.DataFrame(all_rows).query("corpus == @c")["hours"].sum())
-            for c in sorted({r["corpus"] for r in all_rows})
+            c: float(new_df.query("corpus == @c")["hours"].sum())
+            for c in sorted(new_df["corpus"].unique())
         },
         "index": str(index_path),
         "jobs": jobs,
+        "require_all_slakh": require_all_slakh,
+        "require_all_spdmx": require_all_spdmx,
+        "spdmx_min_targets": spdmx_min_targets,
     }
     with open(out_root / "pack_summary.json", "w") as f:
         json.dump(summary, f, indent=2)

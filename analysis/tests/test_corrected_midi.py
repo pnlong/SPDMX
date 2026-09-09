@@ -71,7 +71,7 @@ def test_write_corrected_midi_drops_empty_and_applies_register(tmp_path: Path):
 
     csv_path = track_map_csv_path(mid_dir)
     pd.DataFrame(rows, columns=TRACK_MAP_COLUMNS).to_csv(csv_path, index=False)
-    assert csv_path == tmp_path / "SPDMX" / "SPDMX.csv"
+    assert csv_path == tmp_path / "SPDMX" / "stems.csv"
     assert load_track_map(dest, corrected_midi_dir=mid_dir)[0]["original_track"] == 2
 
 
@@ -117,7 +117,7 @@ def test_write_corrected_midis_writes_global_track_map(tmp_path: Path):
         corrected_midi_dir=corrected_root,
     )
     assert (ok, failed) == (1, 0)
-    csv_path = tmp_path / "SPDMX" / "SPDMX.csv"
+    csv_path = tmp_path / "SPDMX" / "stems.csv"
     assert csv_path.is_file()
     assert not (corrected_root / "track_map.csv").is_file()
     assert not (tmp_path / "SPDMX" / "track_map.csv").is_file()

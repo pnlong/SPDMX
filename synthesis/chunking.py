@@ -166,9 +166,9 @@ def rewrite_track_map_for_chunks(
     table: pd.DataFrame,
     song_to_chunk: Mapping[str, str],
 ) -> pd.DataFrame:
-    """Return a packaged SPDMX.csv with ``chunk`` and root-relative paths."""
+    """Return a packaged stems.csv with ``chunk`` and root-relative paths."""
     if "song_id" not in table.columns:
-        raise ValueError("SPDMX.csv missing required column: song_id")
+        raise ValueError("stems.csv missing required column: song_id")
     missing = sorted(set(table["song_id"].astype(str)) - set(song_to_chunk))
     if missing:
         preview = ", ".join(missing[:5])

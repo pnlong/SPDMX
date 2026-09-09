@@ -1,13 +1,14 @@
 """Post-render packaging: flat ``SPDMX_dev/`` → chunked ``SPDMX/`` release tree.
 
 Does **not** run synthesis and does **not** mutate the flat production tree.
-After ``synthesis.final`` has written ``audio/``, ``mid/``, and ``SPDMX.csv``
+After ``synthesis.final`` has written ``audio/``, ``mid/``, and ``stems.csv``
 under ``SPDMX_dev/``, this script builds a **separate** distributable directory
 (default ``{OUTPUT_DIR}/SPDMX/``):
 
 1. Assigns songs to ~25 GiB download chunks.
 2. Hardlinks (or copies) ``audio/`` and ``mid/`` into ``chunk_N/{audio,mid}/``.
-3. Writes packaged ``SPDMX.csv`` (with ``chunk``) + ``chunks.csv`` + LICENSE/README.
+3. Writes packaged ``stems.csv`` (with ``chunk``) + ``chunks.csv`` + LICENSE/README.
+4. Builds song-level ``songs.csv`` (``subset:all``, ``subset:bdgp``, …).
 
 The flat ``{OUTPUT_DIR}/SPDMX_dev/`` render stays intact for lab use.
 """
@@ -30,7 +31,9 @@ from shared.config import (
     SPDMX_AUDIO_DIR_NAME,
     SPDMX_FILE_NAME,
     SPDMX_MID_DIR_NAME,
+    SPDMX_SONGS_FILE_NAME,
 )
+from synthesis.build_songs_table import write_songs_table
 from synthesis.chunking import (
     CHUNK_ASSIGNMENT_SEED,
     CHUNK_BYTES_TARGET,
@@ -389,6 +392,8 @@ def chunk_dataset(
     packaged.to_csv(dest / f"{SPDMX_FILE_NAME}.csv", index=False)
     chunks.to_csv(dest / CHUNKS_FILE_NAME, index=False)
     write_spdmx_release_docs(dest)
+    # Media just published; trust packaged stems.csv paths (no second disk scan).
+    write_songs_table(dest, check_files=False)
     return packaged, chunks, assignment
 
 
@@ -431,6 +436,7 @@ def main(argv=None) -> int:
     )
     if not args.dry_run:
         print(f"  {package_dir / f'{SPDMX_FILE_NAME}.csv'}")
+        print(f"  {package_dir / SPDMX_SONGS_FILE_NAME}")
         print(f"  {package_dir / CHUNKS_FILE_NAME}")
         print(f"  flat production tree left untouched: {dataset_dir}")
     return 0

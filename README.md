@@ -82,7 +82,7 @@ uv run python -m synthesis.final --only-pass mix
 `fluidsynth`, `ddsp_piano`, `midi_ddsp`, or `realify` (one unique index per
 machine). See [`synthesis/FINAL_SETUP.md`](synthesis/FINAL_SETUP.md).
 
-Writes raw FLAC stems to `{OUTPUT_DIR}/SPDMX_dev/raw/` (mix writes summable stems to `audio/`). Sanitized MIDIs, `SPDMX.csv`, `LICENSE`, and `README.md` come from `prepare_synthesis` / layout. Mix is `sum(stems)` (no `mixture.*`). Pipeline tables live under `{OUTPUT_DIR}/dev/final/` (`stems.fluidsynth.csv` etc. during render; `stems.csv` / `data.csv` after mix or `--only-pass merge`).
+Writes raw FLAC stems to `{OUTPUT_DIR}/SPDMX_dev/raw/` (mix writes summable stems to `audio/`). Sanitized MIDIs, `stems.csv`, `LICENSE`, and `README.md` come from `prepare_synthesis` / layout. Mix is `sum(stems)` (no `mixture.*`). Pipeline tables live under `{OUTPUT_DIR}/dev/final/` (`stems.fluidsynth.csv` etc. during render; `stems.csv` / `data.csv` after mix or `--only-pass merge`).
 
 ### Per-song layout
 
@@ -90,7 +90,7 @@ Writes raw FLAC stems to `{OUTPUT_DIR}/SPDMX_dev/raw/` (mix writes summable stem
 {OUTPUT_DIR}/SPDMX_dev/
 ├── LICENSE
 ├── README.md
-├── SPDMX.csv                     # join to PDMX.csv on song_id; row key (song_id, track)
+├── stems.csv                     # join to PDMX.csv on song_id; row key (song_id, track)
 ├── raw/<song_id>/                # pre-mix hybrid stems
 │   ├── 0.flac
 │   └── …
@@ -100,6 +100,9 @@ Writes raw FLAC stems to `{OUTPUT_DIR}/SPDMX_dev/raw/` (mix writes summable stem
 └── mid/<song_id>.mid
 ```
 
+Chunked **release** tree `{OUTPUT_DIR}/SPDMX/` adds `chunk_N/`, `chunks.csv`, and song-level
+`songs.csv` (`subset:all` / `subset:bdgp`). Schema and joins:
+[`synthesis/spdmx_release/README.md`](synthesis/spdmx_release/README.md).
 ### Analysis
 
 **GM register (prerequisite for synthesis):** corrects mismatched GM program ids from MIDI track names:

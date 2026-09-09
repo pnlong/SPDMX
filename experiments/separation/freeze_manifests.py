@@ -1,4 +1,8 @@
-"""Freeze Slakh / sPDMX-matched / sPDMX-full train manifests from pack_index.csv."""
+"""Freeze Slakh vs sPDMX (BDGP-eligible) manifests from pack_index.csv.
+
+Packs are already filtered to songs with bass/drums/guitar/piano, so the
+sPDMX arm is that full eligible pool (no hour-matched vs full split).
+"""
 
 from __future__ import annotations
 
@@ -11,28 +15,14 @@ import pandas as pd
 from experiments.separation.paths import load_config, resolve_dev_dir
 
 
-def _slakh_train_hours(index: pd.DataFrame, cfg: dict) -> float:
-    override = cfg.get("slakh_train_hours")
-    if override is not None:
-        return float(override)
-    train = index[(index["corpus"] == "slakh") & (index["split"] == "train")]
-    if train.empty:
-        raise RuntimeError("no slakh train rows in pack_index; run prepare_stems first")
-    return float(train["hours"].sum())
-
-
 def freeze_manifests(
     index: pd.DataFrame,
     out_dir: Path,
     *,
     seed: int,
     val_fraction: float,
-    match_hours: float,
-    tolerance_hours: float,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
-    rng = pd.Series(dtype=float)  # placate type checkers
-    del rng
 
     slakh_train = index[(index["corpus"] == "slakh") & (index["split"] == "train")].copy()
     slakh_val = index[(index["corpus"] == "slakh") & (index["split"] == "validation")].copy()
@@ -44,19 +34,7 @@ def freeze_manifests(
     spdmx = spdmx.sample(frac=1.0, random_state=seed).reset_index(drop=True)
     n_val = max(1, int(round(len(spdmx) * val_fraction)))
     spdmx_val = spdmx.iloc[:n_val].copy()
-    spdmx_pool = spdmx.iloc[n_val:].copy()
-
-    # Greedy fill matched subset until hours ≈ match_hours.
-    matched_rows: list[pd.Series] = []
-    hours = 0.0
-    for _, row in spdmx_pool.iterrows():
-        if hours >= match_hours - tolerance_hours and matched_rows:
-            break
-        matched_rows.append(row)
-        hours += float(row["hours"])
-        if hours >= match_hours + tolerance_hours:
-            break
-    spdmx_matched = pd.DataFrame(matched_rows)
+    spdmx_train = spdmx.iloc[n_val:].copy()
 
     manifests = {
         "slakh": {
@@ -64,24 +42,18 @@ def freeze_manifests(
             "val": slakh_val,
             "test": slakh_test,
         },
-        "spdmx_matched": {
-            "train": spdmx_matched,
+        "spdmx": {
+            "train": spdmx_train,
             "val": spdmx_val,
             "test": slakh_test,  # primary eval is Slakh2100 test for all arms
-        },
-        "spdmx_full": {
-            "train": spdmx_pool,
-            "val": spdmx_val,
-            "test": slakh_test,
         },
     }
 
     summary: dict = {
         "seed": seed,
-        "match_hours_target": match_hours,
-        "spdmx_matched_hours": float(spdmx_matched["hours"].sum()) if len(spdmx_matched) else 0.0,
-        "spdmx_full_hours": float(spdmx_pool["hours"].sum()),
-        "slakh_train_hours": float(slakh_train["hours"].sum()),
+        "slakh_train_hours": float(slakh_train["hours"].sum()) if len(slakh_train) else 0.0,
+        "spdmx_train_hours": float(spdmx_train["hours"].sum()) if len(spdmx_train) else 0.0,
+        "note": "sPDMX arm = BDGP-eligible packs only (same filter as prepare_stems)",
         "arms": {},
     }
 
@@ -118,14 +90,11 @@ def main() -> None:
         raise SystemExit(f"missing pack index: {index_path}")
     index = pd.read_csv(index_path)
     out_dir = args.out or (resolve_dev_dir(cfg) / "manifests")
-    match_hours = _slakh_train_hours(index, cfg)
     summary = freeze_manifests(
         index,
         out_dir,
         seed=int(cfg.get("seed", 43)),
         val_fraction=float(cfg.get("spdmx_val_fraction", 0.05)),
-        match_hours=match_hours,
-        tolerance_hours=float(cfg.get("match_tolerance_hours", 0.5)),
     )
     print(json.dumps(summary, indent=2))
 
