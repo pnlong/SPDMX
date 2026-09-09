@@ -64,39 +64,42 @@ def train_arm(
     batch_size = int(cfg.get("batch_size", 2))
     run_name = name or f"sao_{arm}"
 
+    # prefigure reads defaults.ini from CWD (must be the stable-audio-tools root).
+    tools_root = train_py.resolve().parent
     cmd = [
         sys.executable,
         str(train_py),
         "--model-config",
-        str(model_cfg),
+        str(model_cfg.resolve()),
         "--dataset-config",
-        str(ds_cfg),
+        str(ds_cfg.resolve()),
         "--pretrained-ckpt-path",
-        str(pretrained_ckpt),
+        str(pretrained_ckpt.resolve()),
         "--name",
         run_name,
         "--save-dir",
-        str(save_dir),
+        str(save_dir.resolve()),
         "--batch-size",
         str(batch_size),
         "--checkpoint-every",
         "2000",
         "--num-workers",
         "4",
+        "--max-steps",
+        str(max_steps),
     ]
-    # stable-audio-tools uses Lightning; pass max_steps via env file sidecar.
     meta = {
         "arm": arm,
         "max_steps": max_steps,
         "cmd": cmd,
+        "cwd": str(tools_root),
         "pretrained_ckpt": str(pretrained_ckpt),
     }
     with open(save_dir / "launch_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
 
-    print("Launching:", " ".join(cmd))
-    print(f"Stop at ~{max_steps} optimizer steps (monitor Lightning progress).")
-    subprocess.check_call(cmd)
+    print("Launching (cwd=%s):" % tools_root, " ".join(cmd))
+    subprocess.check_call(cmd, cwd=tools_root)
 
 
 def main() -> None:
