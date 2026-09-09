@@ -5,7 +5,7 @@ seed: 43
 max_steps: 10000
 sample_rate: 44100
 sample_size: 2097152  # ~47s at 44.1kHz (SAO default-ish crop)
-batch_size: 2
+batch_size: 8
 
 # HuggingFace / local unwrapped Stable Audio Open checkpoint.
 pretrained_ckpt: null  # set after download, or pass --pretrained-ckpt
