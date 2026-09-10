@@ -19,7 +19,8 @@ no stem re-sum. Prefer building `songs.csv` first so matched uses ``subset:bdgp`
 load time (duplicate L/R). Do not convert mixes to stereo in the dataset.
 
 ```bash
-uv run python -m synthesis.build_songs_table
+# Ensure songs.csv has song_length (mix FLAC duration). After packaging:
+#   uv run python -m synthesis.build_songs_table --enrich-lengths-only -j 32
 uv run python -m experiments.sao.prepare_dataset
 ```
 
@@ -32,8 +33,8 @@ uv pip install laion-clap frechet_audio_distance  # metrics
 ## Pipeline
 
 ```bash
-# Index Slakh + sPDMX; matched = BDGP pool; full = all (-j workers)
-uv run python -m experiments.sao.prepare_dataset -j 8
+# Index Slakh + sPDMX (reads songs.csv song_length / subset:bdgp when present)
+uv run python -m experiments.sao.prepare_dataset
 
 uv run python -m experiments.sao.train --arm all --pretrained-ckpt /path/to/sao.ckpt
 uv run python -m experiments.sao.generate --arm all

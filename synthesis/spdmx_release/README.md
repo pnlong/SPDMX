@@ -109,6 +109,7 @@ Built from `stems.csv` by `synthesis.build_songs_table` (also run at the end of
 | `chunk` | int | Same as stem rows (one chunk per song) |
 | `n_tracks` | int | Number of stem rows in `stems.csv` for this song |
 | `n_stems_on_disk` | int | Rows whose FLAC resolved at songs-table build time |
+| `song_length` | float | Mix duration in seconds (`soundfile.info` on `mix.flac`) |
 | `tracks` | str | Pipe-delimited dense track indices (`0\|1\|2`) |
 | `original_tracks` | str | Pipe-delimited PDMX original track indices |
 | `programs` | str | Pipe-delimited **sorted unique** MIDI programs (`0\|24\|32`) |

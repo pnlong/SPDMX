@@ -79,12 +79,63 @@ def index_slakh_train(*, slakh_root: Path, template: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _spdmx_song_dir(spdmx_root: Path, row: pd.Series) -> Path | None:
-    path_col = row.get("path")
-    if path_col is None or (isinstance(path_col, float) and pd.isna(path_col)):
+def _mix_path_from_songs_row(spdmx_root: Path, row: pd.Series) -> Path | None:
+    """Resolve mix path from a songs.csv row."""
+    from experiments.separation.spdmx_io import resolve_spdmx_mix
+
+    return resolve_spdmx_mix(spdmx_root, row, song_id=str(row["song_id"]))
+
+
+def _index_spdmx_from_songs(
+    *,
+    spdmx_root: Path,
+    template: str,
+    max_songs: int | None = None,
+) -> pd.DataFrame | None:
+    """Fast path: read ``songs.csv`` (needs ``song_length`` + ``mix`` / ``path``)."""
+    from synthesis.build_songs_table import SONG_LENGTH_COLUMN, SUBSET_BDGP
+
+    songs_path = spdmx_root / "songs.csv"
+    if not songs_path.is_file():
         return None
-    rel = str(path_col).replace("\\", "/").lstrip("./")
-    return spdmx_root / rel
+    songs = pd.read_csv(songs_path)
+    if SONG_LENGTH_COLUMN not in songs.columns:
+        return None
+    if "chunk" in songs.columns:
+        songs["chunk"] = songs["chunk"].map(lambda x: x if pd.isna(x) else str(int(x)))
+
+    rows: list[dict] = []
+    for _, row in tqdm(songs.iterrows(), total=len(songs), desc="sao:index-spdmx"):
+        if max_songs is not None and len(rows) >= max_songs:
+            break
+        dur = pd.to_numeric(row.get(SONG_LENGTH_COLUMN), errors="coerce")
+        if pd.isna(dur) or float(dur) <= 0:
+            continue
+        mix = _mix_path_from_songs_row(spdmx_root, row)
+        if mix is None:
+            continue
+        gm_raw = row.get("gm_classes")
+        instruments = (
+            [p for p in str(gm_raw).split("|") if p and p.lower() != "nan"]
+            if pd.notna(gm_raw)
+            else []
+        )
+        bdgp = row.get(SUBSET_BDGP, False)
+        if isinstance(bdgp, str):
+            bdgp = bdgp.lower() in ("true", "1", "yes")
+        rows.append(
+            {
+                "corpus": "spdmx",
+                "song_id": str(row["song_id"]),
+                "mix_path": str(mix.resolve()),
+                "caption": _caption(instruments, template),
+                "duration_sec": float(dur),
+                "hours": float(dur) / 3600.0,
+                "bdgp_eligible": bool(bdgp),
+            }
+        )
+    print(f"sao: indexed {len(rows)} songs from songs.csv (song_length)")
+    return pd.DataFrame(rows)
 
 
 def index_spdmx(
@@ -96,14 +147,21 @@ def index_spdmx(
 ) -> pd.DataFrame:
     """Index sPDMX songs that already have a shipped mix.
 
-    Requires ``mix.flac`` (release) or ``SPDMX_dev/mix/<song_id>.flac`` (lab).
-    Stem paths are only used for captions / BDGP flags.
+    Prefers ``songs.csv`` when ``song_length`` is present (no FLAC opens). Falls
+    back to scanning ``stems.csv`` + mix headers otherwise.
     """
-    from experiments.separation.spdmx_io import resolve_spdmx_mix, resolve_spdmx_stem
+    from experiments.separation.spdmx_io import resolve_spdmx_mix
+
+    fast = _index_spdmx_from_songs(
+        spdmx_root=spdmx_root, template=template, max_songs=max_songs,
+    )
+    if fast is not None and not fast.empty:
+        return fast
 
     csv_path = spdmx_root / csv_name
     if not csv_path.is_file():
         raise FileNotFoundError(csv_path)
+    print("sao: songs.csv missing song_length; falling back to stems.csv + mix headers")
     df = pd.read_csv(csv_path)
     if "chunk" in df.columns:
         df["chunk"] = df["chunk"].map(lambda x: x if pd.isna(x) else str(int(x)))
@@ -128,29 +186,17 @@ def index_spdmx(
         if dur <= 0:
             continue
 
-        song_dir = _spdmx_song_dir(spdmx_root, head)
-        bdgp_present: set[str] = set()
-        for _, r in g.iterrows():
-            track = int(r["track"])
-            cand = resolve_spdmx_stem(
-                spdmx_root, r, song_id=song_id_s, track=track,
-            )
-            if cand is None and song_dir is not None:
-                cand = song_dir / f"{track}.flac"
-                if not cand.is_file():
-                    cand = None
-            if cand is None:
-                continue
-            t = gm_to_target(int(r["program"]), bool(r["is_drum"]))
-            if t is not None:
-                bdgp_present.add(t)
-
         instruments = sorted(
             {
                 patch_group_key(int(r["program"]), bool(r["is_drum"]))
                 for _, r in g.iterrows()
             }
         )
+        bdgp_present: set[str] = set()
+        for _, r in g.iterrows():
+            t = gm_to_target(int(r["program"]), bool(r["is_drum"]))
+            if t is not None:
+                bdgp_present.add(t)
         rows.append(
             {
                 "corpus": "spdmx",

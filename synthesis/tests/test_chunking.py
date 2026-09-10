@@ -127,12 +127,20 @@ def test_build_chunks_manifest_counts():
 
 
 def _write_flat_fixture(root: Path) -> None:
+    import numpy as np
+    import soundfile as sf
+
     rows = []
     for song_id, tracks in (("0/1/QmA", 2), ("0/2/QmB", 1)):
         audio = root / SPDMX_AUDIO_DIR_NAME / song_id
         audio.mkdir(parents=True)
         for track in range(tracks):
-            (audio / f"{track}.flac").write_bytes(b"flac" * (20 if song_id.endswith("A") else 5))
+            sf.write(
+                str(audio / f"{track}.flac"),
+                np.zeros(1000, dtype=np.float32),
+                44100,
+                format="FLAC",
+            )
             rows.append(
                 {
                     "song_id": song_id,
@@ -151,7 +159,9 @@ def _write_flat_fixture(root: Path) -> None:
         mid.write_bytes(b"MThd")
         mix = root / "mix" / f"{song_id}.flac"
         mix.parent.mkdir(parents=True, exist_ok=True)
-        mix.write_bytes(b"mix" * 10)
+        # Distinct lengths so song_length is a real mix-header value.
+        n = 2000 if song_id.endswith("A") else 1000
+        sf.write(str(mix), np.zeros(n, dtype=np.float32), 44100, format="FLAC")
     pd.DataFrame(rows).to_csv(root / f"{SPDMX_FILE_NAME}.csv", index=False)
     write_spdmx_release_docs(root)
 
@@ -202,7 +212,10 @@ def test_chunk_dataset_builds_separate_release_tree(tmp_path: Path):
     songs = pd.read_csv(dest / "songs.csv")
     assert set(songs["song_id"]) == {"0/1/QmA", "0/2/QmB"}
     assert "subset:all" in songs.columns and "subset:bdgp" in songs.columns
+    assert "song_length" in songs.columns
     assert bool(songs["subset:all"].all())
+    assert songs["song_length"].notna().all()
+    assert (songs["song_length"] > 0).all()
 
     # Flat production tree untouched.
     assert (source / SPDMX_AUDIO_DIR_NAME / "0/1/QmA" / "0.flac").is_file()
