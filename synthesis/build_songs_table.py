@@ -73,6 +73,7 @@ def build_songs_table(
         head = g.iloc[0]
         path = head.get("path")
         mid = head.get("mid")
+        mix = head.get("mix") if "mix" in head.index else None
         chunk = head.get("chunk")
         present: set[str] = set()
         programs: set[int] = set()
@@ -108,6 +109,7 @@ def build_songs_table(
                 "song_id": song_id_s,
                 "path": path,
                 "mid": mid,
+                "mix": mix,
                 "chunk": chunk,
                 "n_tracks": int(len(g)),
                 "n_stems_on_disk": int(n_stems_on_disk),

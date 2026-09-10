@@ -22,15 +22,15 @@ def test_prepare_spdmx_filters_to_songs_csv_bdgp(tmp_path: Path):
     _write_stems(
         root,
         [
-            {"song_id": "A", "path": "./chunk_0/audio/A", "chunk": 0, "track": 0,
+            {"song_id": "A", "path": "./chunk_0/A", "chunk": 0, "track": 0,
              "program": 32, "is_drum": False},  # bass
-            {"song_id": "A", "path": "./chunk_0/audio/A", "chunk": 0, "track": 1,
+            {"song_id": "A", "path": "./chunk_0/A", "chunk": 0, "track": 1,
              "program": 0, "is_drum": True},  # drums
-            {"song_id": "A", "path": "./chunk_0/audio/A", "chunk": 0, "track": 2,
+            {"song_id": "A", "path": "./chunk_0/A", "chunk": 0, "track": 2,
              "program": 24, "is_drum": False},  # guitar
-            {"song_id": "A", "path": "./chunk_0/audio/A", "chunk": 0, "track": 3,
+            {"song_id": "A", "path": "./chunk_0/A", "chunk": 0, "track": 3,
              "program": 0, "is_drum": False},  # piano
-            {"song_id": "B", "path": "./chunk_0/audio/B", "chunk": 0, "track": 0,
+            {"song_id": "B", "path": "./chunk_0/B", "chunk": 0, "track": 0,
              "program": 0, "is_drum": False},  # piano only
         ],
     )

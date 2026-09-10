@@ -1,0 +1,41 @@
+{
+  "labels": [
+    "piano",
+    "ensemble",
+    "strings",
+    "pipe",
+    "brass",
+    "reed",
+    "drums",
+    "organ",
+    "guitar",
+    "synth_pad",
+    "bass",
+    "chromatic_percussion",
+    "synth_lead",
+    "ethnic",
+    "synth_effects",
+    "percussive",
+    "sound_effects"
+  ],
+  "counts": [
+    219977,
+    25265,
+    11503,
+    10027,
+    8636,
+    8523,
+    6533,
+    4235,
+    4043,
+    3696,
+    2715,
+    2356,
+    352,
+    256,
+    235,
+    208,
+    22
+  ],
+  "note": "Song-level: a song contributes once per distinct GM class present."
+}

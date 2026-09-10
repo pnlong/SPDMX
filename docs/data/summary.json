@@ -1,0 +1,22 @@
+{
+  "release_songs": 253982,
+  "release_stems": 490159,
+  "release_hours_approx": 6248.0,
+  "sample_rate_hz": 44100,
+  "channels": 1,
+  "audio_format": "flac",
+  "target_lufs": -23.0,
+  "n_chunks": 64,
+  "chunk_target_gib": 26.828552935112384,
+  "default_num_chunks": 64,
+  "mean_stems_per_song": 1.93,
+  "median_stems_per_song": 1.0,
+  "max_stems_per_song": 66,
+  "songs_with_gt1_stem_frac": 0.348,
+  "subset_bdgp_songs": 632,
+  "backends": {
+    "basic": 59395,
+    "slakh": 373225,
+    "midi_ddsp": 57539
+  }
+}

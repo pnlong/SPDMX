@@ -366,12 +366,55 @@ def _mixed_stem_path_ok_indexed(item: tuple[int, str]) -> tuple[int, bool]:
     return idx, _mixed_stem_path_ok(path_str)
 
 
+def _song_id_from_stem_path(path: str) -> str | None:
+    """Extract ``song_id`` from a raw/audio song directory path."""
+    text = str(path).replace("\\", "/")
+    for marker in ("/audio/", "/raw/"):
+        if marker in text:
+            return text.split(marker, 1)[1].rstrip("/")
+    for marker in ("./audio/", "./raw/"):
+        if text.startswith(marker):
+            return text[len(marker) :].rstrip("/")
+    return None
+
+
 def mixed_stem_paths_from_tables(
     tables_dir: str | Path,
     audio_format: str = DEFAULT_AUDIO_FORMAT,
+    *,
+    media_dir: str | Path | None = None,
 ) -> list[str]:
-    """Absolute mixed-stem paths under ``audio/`` implied by ``stems.csv``."""
+    """Absolute mixed-stem paths under ``audio/`` implied by ``stems.csv``.
+
+    When ``media_dir`` is set (production ``SPDMX_dev/``), paths are resolved
+    under that tree. Bookkeeping ``dev/final/stems.csv`` often still has absolute
+    ``…/SPDMX/raw/…`` paths from an older layout; those must not be trusted as
+    on-disk locations.
+    """
+    from shared.config import SPDMX_AUDIO_DIR_NAME, SPDMX_FILE_NAME
     from synthesis.paths import raw_path_to_audio
+
+    media = Path(media_dir) if media_dir is not None else None
+
+    # Prefer the flat production track map when present (has song_id).
+    if media is not None:
+        media_csv = media / f"{SPDMX_FILE_NAME}.csv"
+        if media_csv.is_file() and media_csv.stat().st_size > 0:
+            table = pd.read_csv(media_csv, low_memory=False)
+            if {"song_id", "track"}.issubset(table.columns):
+                return [
+                    str(
+                        media
+                        / SPDMX_AUDIO_DIR_NAME
+                        / str(song_id)
+                        / f"{int(track)}.{audio_format}"
+                    )
+                    for song_id, track in zip(
+                        table["song_id"].tolist(),
+                        table["track"].tolist(),
+                        strict=False,
+                    )
+                ]
 
     root = Path(tables_dir)
     stems_csv = root / f"{STEMS_FILE_NAME}.csv"
@@ -383,13 +426,52 @@ def mixed_stem_paths_from_tables(
     out: list[str] = []
     for path, track in zip(stems["path"].tolist(), stems["track"].tolist(), strict=False):
         song = str(path)
-        try:
-            if "/raw/" in song.replace("\\", "/") or song.replace("\\", "/").startswith("./raw/"):
-                song = raw_path_to_audio(song)
-        except ValueError:
-            pass
+        if media is not None:
+            song_id = _song_id_from_stem_path(song)
+            if song_id is None:
+                raise ValueError(
+                    f"Cannot map stems path to song_id under media_dir={media}: {song}"
+                )
+            song = str(media / SPDMX_AUDIO_DIR_NAME / song_id)
+        else:
+            try:
+                if "/raw/" in song.replace("\\", "/") or song.replace("\\", "/").startswith(
+                    "./raw/"
+                ):
+                    song = raw_path_to_audio(song)
+            except ValueError:
+                pass
         out.append(str(stem_path(Path(song), int(track), audio_format)))
     return out
+
+
+def song_mix_paths_from_media(
+    media_dir: str | Path,
+    tables_dir: str | Path | None = None,
+) -> list[str]:
+    """Absolute ``mix/<song_id>.flac`` paths for songs in the track map / stems table."""
+    from shared.config import SPDMX_FILE_NAME, SPDMX_MIX_DIR_NAME
+
+    media = Path(media_dir)
+    mix_root = media / SPDMX_MIX_DIR_NAME
+    song_ids: list[str] = []
+
+    media_csv = media / f"{SPDMX_FILE_NAME}.csv"
+    if media_csv.is_file():
+        table = pd.read_csv(media_csv, low_memory=False)
+        if "song_id" in table.columns:
+            song_ids = sorted(table["song_id"].astype(str).unique())
+    if not song_ids and tables_dir is not None:
+        stems_csv = Path(tables_dir) / f"{STEMS_FILE_NAME}.csv"
+        if stems_csv.is_file():
+            stems = pd.read_csv(stems_csv, usecols=["path"], low_memory=False)
+            ids: set[str] = set()
+            for path in stems["path"].astype(str):
+                song_id = _song_id_from_stem_path(path)
+                if song_id is not None:
+                    ids.add(song_id)
+            song_ids = sorted(ids)
+    return [str(mix_root / f"{song_id}.flac") for song_id in song_ids]
 
 
 def verify_mixed_stems_on_disk(
@@ -398,28 +480,33 @@ def verify_mixed_stems_on_disk(
     audio_format: str = DEFAULT_AUDIO_FORMAT,
     jobs: int = 1,
     limit: int = 25,
+    media_dir: str | Path | None = None,
 ) -> None:
-    """Require every mixed ``audio/`` stem to exist and fully FLAC-decode.
+    """Require mixed ``audio/`` stems (and optional ``mix/`` song mixes) to FLAC-decode.
 
     Raises ``RuntimeError`` listing up to ``limit`` failures. Intended as
-    ``--only-pass verify_mix`` after the mix pass.
+    ``--only-pass verify_mix`` after ``mix`` and ``song_mix``.
     """
-    paths = mixed_stem_paths_from_tables(tables_dir, audio_format=audio_format)
+    paths = mixed_stem_paths_from_tables(
+        tables_dir, audio_format=audio_format, media_dir=media_dir,
+    )
+    if media_dir is not None:
+        paths.extend(song_mix_paths_from_media(media_dir, tables_dir=tables_dir))
     if not paths:
-        raise RuntimeError(f"No stems to verify under {tables_dir}")
+        raise RuntimeError(f"No stems/mixes to verify under {tables_dir}")
 
     n_jobs = max(1, int(jobs))
     label = f"verify_mix decode (-j {n_jobs})" if n_jobs > 1 else "verify_mix decode"
     bad: list[str] = []
     if n_jobs <= 1 or len(paths) <= 1:
-        for path_str in tqdm(paths, total=len(paths), desc=label, unit="stem"):
+        for path_str in tqdm(paths, total=len(paths), desc=label, unit="file"):
             if not _mixed_stem_path_ok(path_str):
                 bad.append(path_str)
                 if len(bad) >= limit:
                     break
     else:
         chunksize = max(4, min(32, len(paths) // (n_jobs * 8) or 4))
-        pbar = tqdm(total=len(paths), desc=label, unit="stem", miniters=1, smoothing=0.05)
+        pbar = tqdm(total=len(paths), desc=label, unit="file", miniters=1, smoothing=0.05)
         try:
             with multiprocessing.Pool(processes=n_jobs) as pool:
                 for idx, ok in pool.imap_unordered(
@@ -438,20 +525,19 @@ def verify_mixed_stems_on_disk(
         bad.sort()
 
     if bad:
-        # Recount failures without early stop for accurate total when we hit limit.
         n_bad = len(bad)
         if n_bad >= limit and len(paths) > limit:
-            # Approximate: at least limit; optional full recount is expensive.
             extra = f" (showing first {limit}; scan stopped early)"
         else:
             extra = ""
         lines = "\n".join(f"  {p}" for p in bad[:limit])
         raise RuntimeError(
-            f"Mixed stems failed FLAC decode or are missing ({n_bad}{extra}):\n{lines}\n"
+            f"Mixed stems/mixes failed FLAC decode or are missing ({n_bad}{extra}):\n{lines}\n"
             "Re-run: uv run python -m synthesis.final --only-pass mix -j 8\n"
+            "Then:    uv run python -m synthesis.final --only-pass song_mix -j 8\n"
             "Then:    uv run python -m synthesis.final --only-pass verify_mix -j 8"
         )
-    print(f"verify_mix ok: {len(paths)} stem(s) fully decoded.", flush=True)
+    print(f"verify_mix ok: {len(paths)} file(s) fully decoded.", flush=True)
 
 
 def resolve_stems_dir(

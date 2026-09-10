@@ -36,7 +36,7 @@ from synthesis.synthesize import (
     run_synthesis,
     verify_claimed_stems_on_disk,
 )
-GLOBAL_ONLY_PASSES = ("layout", "merge", "verify", "mix", "verify_mix")
+GLOBAL_ONLY_PASSES = ("layout", "merge", "verify", "mix", "song_mix", "verify_mix")
 
 
 def _reject_sharded_global_pass(args) -> None:
@@ -77,7 +77,7 @@ def _realify_allowed_song_ids(args, tables_dir: str) -> set[str] | None:
 FINAL_CONDITION = "final"
 ONLY_PASSES = (
     "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "merge", "realify",
-    "verify", "mix", "verify_mix",
+    "verify", "mix", "song_mix", "verify_mix",
 )
 DDSP_PASSES = ("ddsp_piano", "midi_ddsp")
 
@@ -92,9 +92,10 @@ def parse_args(args=None, namespace=None):
             "and sanitized MIDI under mid/. Join stems.csv to PDMX.csv on song_id. "
             "Audio format is always FLAC. "
             "Run one pass at a time with --only-pass "
-            "(layout → fluidsynth → ddsp_piano → midi_ddsp → verify → mix → verify_mix). "
+            "(layout → fluidsynth → ddsp_piano → midi_ddsp → verify → mix → "
+            "song_mix → verify_mix). "
             "Fluidsynth, ddsp_piano, and midi_ddsp may run in parallel. "
-            "Realify, verify, mix, and verify_mix merge per-pass CSVs first."
+            "Realify, verify, mix, song_mix, and verify_mix merge per-pass CSVs first."
         ),
     )
     add_synthesis_args(
@@ -117,10 +118,12 @@ def parse_args(args=None, namespace=None):
         required=True,
         help=(
             "Required. One method pass: layout, fluidsynth, ddsp_piano, midi_ddsp, "
-            "merge, realify, verify, mix, or verify_mix. Fluidsynth, ddsp_piano, and "
-            "midi_ddsp may run in parallel. Verify checks claimed raw stems before mix. "
-            "verify_mix fully FLAC-decodes every stem under audio/ after mix. "
-            "Mix/realify/verify/verify_mix merge per-pass tables first."
+            "merge, realify, verify, mix, song_mix, or verify_mix. Fluidsynth, "
+            "ddsp_piano, and midi_ddsp may run in parallel. Verify checks claimed "
+            "raw stems before mix. song_mix writes mix/<song_id>.flac via ffmpeg. "
+            "verify_mix fully FLAC-decodes every stem under audio/ and every "
+            "song mix under mix/. "
+            "Mix/realify/verify/song_mix/verify_mix merge per-pass tables first."
         ),
     )
     parser.add_argument(
@@ -164,7 +167,7 @@ def pass_sequence(recipe) -> tuple[str, ...]:
         steps.append("midi_ddsp")
     if recipe.uses_realify():
         steps.append("realify")
-    steps.extend(["verify", "mix", "verify_mix"])
+    steps.extend(["verify", "mix", "song_mix", "verify_mix"])
     return tuple(steps)
 
 
@@ -213,7 +216,7 @@ def log_next_pass(recipe, only: str) -> None:
     plan = pass_sequence(recipe)
 
     def _extra(nxt: str) -> str:
-        return " -j 8" if nxt in ("fluidsynth", "verify", "mix", "verify_mix") else ""
+        return " -j 8" if nxt in ("fluidsynth", "verify", "mix", "verify_mix", "song_mix") else ""
 
     if only == "merge":
         nxt = "realify" if recipe.uses_realify() else "verify"
@@ -226,6 +229,12 @@ def log_next_pass(recipe, only: str) -> None:
         return
     idx = plan.index(only)
     if idx + 1 >= len(plan):
+        if only == "verify_mix":
+            print(
+                "After verify_mix, run: uv run python -m synthesis.build_spdmx "
+                "to publish flattened chunk_N/<song_id>/ trees.",
+                flush=True,
+            )
         print("All passes complete.", flush=True)
         return
     nxt = plan[idx + 1]
@@ -260,8 +269,14 @@ def log_next_pass(recipe, only: str) -> None:
         )
     if only == "mix":
         print(
-            "After mix, run --only-pass verify_mix -j N to fully FLAC-decode "
-            "every stem under SPDMX/audio/.",
+            "After mix, run --only-pass song_mix -j N to write "
+            "SPDMX_dev/mix/<song_id>.flac (ffmpeg stem sum, process pool).",
+            flush=True,
+        )
+    if only == "song_mix":
+        print(
+            "After song_mix, run --only-pass verify_mix -j N to fully FLAC-decode "
+            "audio/ stems and mix/<song_id>.flac.",
             flush=True,
         )
     print(f"Next: uv run python -m synthesis.final --only-pass {nxt}{extra}", flush=True)
@@ -387,6 +402,23 @@ def main(argv=None):
             jobs=args.jobs,
         )
         run_summable_mix(args, tables_dir, media_dir=media_dir)
+    elif only == "song_mix":
+        from synthesis.render_mixes import render_dataset_mixes
+
+        counts = render_dataset_mixes(
+            media_dir,
+            jobs=args.jobs,
+            force=bool(getattr(args, "reset", False)),
+        )
+        print(
+            f"song_mix: wrote={counts.get('wrote', 0)} "
+            f"skip_exists={counts.get('skip_exists', 0)} "
+            f"skip_no_stems={counts.get('skip_no_stems', 0)} "
+            f"error={counts.get('error', 0)}",
+            flush=True,
+        )
+        if counts.get("error", 0):
+            raise SystemExit(1)
     elif only == "verify_mix":
         merge_pass_tables(tables_dir)
         from synthesis.mix import verify_mixed_stems_on_disk
@@ -395,6 +427,7 @@ def main(argv=None):
             tables_dir,
             audio_format=audio_format,
             jobs=args.jobs,
+            media_dir=media_dir,
         )
 
     log_next_pass(recipe, only)

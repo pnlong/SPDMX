@@ -77,13 +77,18 @@ PATCH_SWEEP_DIR_NAME = "patch_sweep"
 
 # {OUTPUT_DIR}/SPDMX_dev/ — flat production render (synthesis.final):
 # Flat production render lives at {OUTPUT_DIR}/SPDMX_dev/ with LICENSE,
-# README, stems.csv, raw/, audio/, mid/. Packaging never mutates this tree.
-# {OUTPUT_DIR}/SPDMX/ — chunked distributable (build_spdmx): chunk_N/, packaged CSVs.
+# README, stems.csv, raw/, audio/, mid/, mix/. Packaging never mutates this tree.
+# {OUTPUT_DIR}/SPDMX/ — chunked distributable (build_spdmx): chunk_N/<song_id>/…
 SPDMX_DEV_DIR_NAME = "SPDMX_dev"
 SPDMX_DATASET_DIR_NAME = "SPDMX"
 SPDMX_RAW_DIR_NAME = "raw"
 SPDMX_AUDIO_DIR_NAME = "audio"
 SPDMX_MID_DIR_NAME = "mid"
+# Full-song mixes (ffmpeg stem sum); mirrors mid/ as mix/<song_id>.flac.
+SPDMX_MIX_DIR_NAME = "mix"
+# Filenames inside a flattened release song directory (chunk_N/<song_id>/).
+SPDMX_RELEASE_MIX_AUDIO_NAME = "mix.flac"
+SPDMX_RELEASE_MIX_MIDI_NAME = "mix.mid"
 
 ABLATION_SUBSET_COLUMN = "subset:rated_deduplicated"
 # sPDMX song-level subset (PDMX-style boolean on songs.csv): all four BDGP classes.

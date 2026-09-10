@@ -1,0 +1,18 @@
+{
+  "labels": [
+    "Basic (FluidSynth)",
+    "Varied soundfonts",
+    "MIDI-DDSP"
+  ],
+  "ids": [
+    "basic",
+    "slakh",
+    "midi_ddsp"
+  ],
+  "counts": [
+    59395,
+    373225,
+    57539
+  ],
+  "note": "Soundfont stems: basic (single bank) vs varied (per-category pools); MIDI-DDSP is neural."
+}

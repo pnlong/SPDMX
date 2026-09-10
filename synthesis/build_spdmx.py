@@ -1,12 +1,14 @@
 """Post-render packaging: flat ``SPDMX_dev/`` → chunked ``SPDMX/`` release tree.
 
 Does **not** run synthesis and does **not** mutate the flat production tree.
-After ``synthesis.final`` has written ``audio/``, ``mid/``, and ``stems.csv``
-under ``SPDMX_dev/``, this script builds a **separate** distributable directory
-(default ``{OUTPUT_DIR}/SPDMX/``):
+After ``synthesis.final`` has written ``audio/``, ``mid/``, ``mix/``, and
+``stems.csv`` under ``SPDMX_dev/``, this script builds a **separate**
+distributable directory (default ``{OUTPUT_DIR}/SPDMX/``):
 
-1. Assigns songs to ~25 GiB download chunks.
-2. Hardlinks (or copies) ``audio/`` and ``mid/`` into ``chunk_N/{audio,mid}/``.
+1. Assigns songs to a fixed number of roughly equal-sized download chunks
+   (default 64, LPT bin packing).
+2. Hardlinks (or copies) stems + mix audio + dense MIDI into
+   ``chunk_N/<song_id>/{k.flac,mix.flac,mix.mid}``.
 3. Writes packaged ``stems.csv`` (with ``chunk``) + ``chunks.csv`` + LICENSE/README.
 4. Builds song-level ``songs.csv`` (``subset:all``, ``subset:bdgp``, …).
 
@@ -31,12 +33,15 @@ from shared.config import (
     SPDMX_AUDIO_DIR_NAME,
     SPDMX_FILE_NAME,
     SPDMX_MID_DIR_NAME,
+    SPDMX_MIX_DIR_NAME,
+    SPDMX_RELEASE_MIX_AUDIO_NAME,
+    SPDMX_RELEASE_MIX_MIDI_NAME,
     SPDMX_SONGS_FILE_NAME,
 )
 from synthesis.build_songs_table import write_songs_table
 from synthesis.chunking import (
     CHUNK_ASSIGNMENT_SEED,
-    CHUNK_BYTES_TARGET,
+    DEFAULT_NUM_CHUNKS,
     CHUNKS_FILE_NAME,
     assign_songs_to_chunks,
     build_chunks_manifest,
@@ -79,10 +84,13 @@ def parse_args(args=None, namespace=None):
         ),
     )
     parser.add_argument(
-        "--target-bytes",
+        "--num-chunks",
         type=int,
-        default=CHUNK_BYTES_TARGET,
-        help=f"Soft size budget per chunk in bytes (default: {CHUNK_BYTES_TARGET}).",
+        default=DEFAULT_NUM_CHUNKS,
+        help=(
+            "Number of roughly equal-sized download chunks "
+            f"(default: {DEFAULT_NUM_CHUNKS})."
+        ),
     )
     parser.add_argument(
         "--seed",
@@ -141,11 +149,15 @@ def _measure_sizes_parallel(
     *,
     audio_root: Path,
     mid_root: Path,
+    mix_root: Path,
     jobs: int,
 ) -> dict[str, int]:
     def _one(song_id: str) -> tuple[str, int]:
         return song_id, song_media_bytes(
-            song_id, audio_root=audio_root, mid_root=mid_root,
+            song_id,
+            audio_root=audio_root,
+            mid_root=mid_root,
+            mix_root=mix_root,
         )
 
     pairs = _parallel_map(_one, song_ids, jobs=jobs, desc="Measure song sizes")
@@ -180,6 +192,16 @@ def _inventories_match(src: Path, dst: Path) -> bool:
     return _file_inventory(src) == _file_inventory(dst)
 
 
+def _inventory_covers(src: Path, dst: Path) -> bool:
+    """True if every file in *src* exists in *dst* with the same size.
+
+    Dest may contain extras (e.g. ``mix.flac`` / ``mix.mid`` beside stems).
+    """
+    src_inv = _file_inventory(src)
+    dst_inv = _file_inventory(dst)
+    return all(dst_inv.get(rel) == size for rel, size in src_inv.items())
+
+
 def _mirror_files(src: Path, dst: Path, *, copy: bool) -> None:
     """Hardlink (or copy) every file from *src* into *dst* without deleting *src*."""
     dst.mkdir(parents=True, exist_ok=True)
@@ -207,15 +229,19 @@ def _mirror_files(src: Path, dst: Path, *, copy: bool) -> None:
 
 
 def _publish_dir(src: Path, dst: Path, *, copy: bool) -> None:
-    """Mirror *src* → *dst* and verify; never deletes *src*."""
+    """Mirror *src* → *dst* and verify; never deletes *src*.
+
+    Verification is cover-based so flattened song dirs may already contain
+    ``mix.flac`` / ``mix.mid`` beside the stem FLACs.
+    """
     if not src.exists():
         raise FileNotFoundError(f"missing source: {src}")
     if src.resolve() == dst.resolve():
         return
-    if _inventories_match(src, dst):
+    if _inventory_covers(src, dst):
         return
     _mirror_files(src, dst, copy=copy)
-    if not _inventories_match(src, dst):
+    if not _inventory_covers(src, dst):
         raise RuntimeError(
             f"publish verify failed for {src} → {dst}: "
             f"source={_file_inventory(src)} dest={_file_inventory(dst)}"
@@ -266,25 +292,48 @@ def _place_song_media(
     *,
     source_audio: Path,
     source_mid: Path,
+    source_mix: Path,
     package_dir: Path,
     copy: bool,
 ) -> None:
-    chunk_root = package_dir / chunk_dir_name(chunk_id)
+    """Publish stems + mix.flac + mix.mid into ``chunk_N/<song_id>/``."""
+    song_dst = package_dir / chunk_dir_name(chunk_id) / song_id
     audio_src = source_audio / song_id
     mid_src = source_mid / f"{song_id}.mid"
+    mix_src = source_mix / f"{song_id}.flac"
     if not audio_src.is_dir():
         raise FileNotFoundError(f"Missing flat audio for song_id={song_id}: {audio_src}")
-    _publish_dir(
-        audio_src,
-        chunk_root / SPDMX_AUDIO_DIR_NAME / song_id,
-        copy=copy,
-    )
+    _publish_dir(audio_src, song_dst, copy=copy)
     if mid_src.is_file():
         _publish_file(
             mid_src,
-            chunk_root / SPDMX_MID_DIR_NAME / f"{song_id}.mid",
+            song_dst / SPDMX_RELEASE_MIX_MIDI_NAME,
             copy=copy,
         )
+    if mix_src.is_file():
+        _publish_file(
+            mix_src,
+            song_dst / SPDMX_RELEASE_MIX_AUDIO_NAME,
+            copy=copy,
+        )
+
+
+def _is_song_media_dir(path: Path) -> bool:
+    """True when *path* looks like a packaged song folder (stems and/or mix)."""
+    if not path.is_dir():
+        return False
+    try:
+        children = list(path.iterdir())
+    except OSError:
+        return False
+    for child in children:
+        if not child.is_file():
+            continue
+        if child.name in (SPDMX_RELEASE_MIX_AUDIO_NAME, SPDMX_RELEASE_MIX_MIDI_NAME):
+            return True
+        if child.suffix.lower() == ".flac" and child.stem.isdigit():
+            return True
+    return False
 
 
 def _cleanup_obsolete_chunk_dirs(
@@ -299,29 +348,30 @@ def _cleanup_obsolete_chunk_dirs(
         if chunk_dir.name not in songs_by_chunk:
             shutil.rmtree(chunk_dir)
             continue
-        audio_root = chunk_dir / SPDMX_AUDIO_DIR_NAME
-        if not audio_root.is_dir():
-            continue
         keep = songs_by_chunk[chunk_dir.name]
-        for path in sorted(audio_root.rglob("*"), reverse=True):
+        # Drop legacy nested audio/ / mid/ wrappers from earlier releases.
+        for legacy in (SPDMX_AUDIO_DIR_NAME, SPDMX_MID_DIR_NAME):
+            legacy_path = chunk_dir / legacy
+            if legacy_path.is_dir():
+                shutil.rmtree(legacy_path)
+        for path in sorted(chunk_dir.rglob("*"), reverse=True):
             if not path.is_dir():
                 continue
             try:
-                rel = path.relative_to(audio_root).as_posix()
+                rel = path.relative_to(chunk_dir).as_posix()
             except ValueError:
                 continue
-            if rel.count("/") != 2:
+            if rel in keep or not _is_song_media_dir(path):
                 continue
-            if rel not in keep:
-                shutil.rmtree(path)
-                _prune_empty_parents(path.parent, stop_at=audio_root)
+            shutil.rmtree(path)
+            _prune_empty_parents(path.parent, stop_at=chunk_dir)
 
 
 def chunk_dataset(
     *,
     dataset_dir: str | Path,
     package_dir: str | Path,
-    target_bytes: int = CHUNK_BYTES_TARGET,
+    num_chunks: int = DEFAULT_NUM_CHUNKS,
     seed: int = CHUNK_ASSIGNMENT_SEED,
     copy: bool = False,
     dry_run: bool = False,
@@ -330,7 +380,7 @@ def chunk_dataset(
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
     """Build a chunked release tree under *package_dir* from flat *dataset_dir*.
 
-    Flat ``audio/`` / ``mid/`` under *dataset_dir* are never deleted.
+    Flat ``audio/`` / ``mid/`` / ``mix/`` under *dataset_dir* are never deleted.
     """
     source = Path(dataset_dir)
     dest = Path(package_dir)
@@ -347,13 +397,18 @@ def chunk_dataset(
     song_ids = sorted(table["song_id"].astype(str).unique())
     audio_root = source / SPDMX_AUDIO_DIR_NAME
     mid_root = source / SPDMX_MID_DIR_NAME
+    mix_root = source / SPDMX_MIX_DIR_NAME
     if not audio_root.is_dir():
         raise FileNotFoundError(f"Missing flat audio tree: {audio_root}")
     if not mid_root.is_dir():
         raise FileNotFoundError(f"Missing flat mid tree: {mid_root}")
 
     song_sizes = _measure_sizes_parallel(
-        song_ids, audio_root=audio_root, mid_root=mid_root, jobs=jobs,
+        song_ids,
+        audio_root=audio_root,
+        mid_root=mid_root,
+        mix_root=mix_root,
+        jobs=jobs,
     )
     missing_audio = [
         s for s in song_ids if not (audio_root / s).is_dir()
@@ -364,7 +419,7 @@ def chunk_dataset(
         raise FileNotFoundError(f"Missing audio for song_id(s): {preview}{more}")
 
     assignment = assign_songs_to_chunks(
-        song_sizes, target_bytes=target_bytes, seed=seed,
+        song_sizes, num_chunks=num_chunks, seed=seed,
     )
     packaged = rewrite_track_map_for_chunks(table, assignment)
     chunks = build_chunks_manifest(packaged, assignment, song_sizes)
@@ -381,6 +436,7 @@ def chunk_dataset(
             chunk_id,
             source_audio=audio_root,
             source_mid=mid_root,
+            source_mix=mix_root,
             package_dir=dest,
             copy=copy,
         )
@@ -395,7 +451,6 @@ def chunk_dataset(
     # Media just published; trust packaged stems.csv paths (no second disk scan).
     write_songs_table(dest, check_files=False)
     return packaged, chunks, assignment
-
 
 def main(argv=None) -> int:
     args = parse_args(argv)
@@ -414,7 +469,7 @@ def main(argv=None) -> int:
         packaged, chunks, assignment = chunk_dataset(
             dataset_dir=dataset_dir,
             package_dir=package_dir,
-            target_bytes=args.target_bytes,
+            num_chunks=args.num_chunks,
             seed=args.seed,
             copy=args.copy,
             dry_run=args.dry_run,

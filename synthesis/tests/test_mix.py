@@ -247,3 +247,47 @@ def test_verify_mixed_stems_decodes_audio_tree(tmp_path: Path):
     (audio_song / "1.flac").write_bytes(b"")
     with pytest.raises(RuntimeError, match="FLAC decode"):
         verify_mixed_stems_on_disk(tables, audio_format="flac", jobs=1)
+
+
+def test_verify_mix_resolves_stale_paths_via_media_dir(tmp_path: Path):
+    """Bookkeeping CSV may still say …/SPDMX/raw; media lives under SPDMX_dev."""
+    from synthesis.mix import mixed_stem_paths_from_tables, verify_mixed_stems_on_disk
+
+    tables = tmp_path / "final"
+    media = tmp_path / "SPDMX_dev"
+    tables.mkdir()
+    stale_raw = tmp_path / "SPDMX" / "raw" / "1" / "2" / "QmX"
+    audio_song = media / "audio" / "1" / "2" / "QmX"
+    mix = media / "mix" / "1" / "2" / "QmX.flac"
+    audio_song.mkdir(parents=True)
+    mix.parent.mkdir(parents=True)
+    pd.DataFrame({
+        "path": [str(stale_raw), str(stale_raw)],
+        "track": [0, 1],
+    }).to_csv(tables / "stems.csv", index=False)
+    # Production track map under media_dir (preferred).
+    pd.DataFrame({
+        "song_id": ["1/2/QmX", "1/2/QmX"],
+        "path": ["./audio/1/2/QmX", "./audio/1/2/QmX"],
+        "mid": ["./mid/1/2/QmX.mid", "./mid/1/2/QmX.mid"],
+        "track": [0, 1],
+        "original_track": [0, 1],
+        "program": [0, 0],
+        "is_drum": [False, False],
+        "name": ["Piano", "Piano"],
+    }).to_csv(media / "stems.csv", index=False)
+    for track in (0, 1):
+        sf.write(
+            str(audio_song / f"{track}.flac"),
+            np.full(200, 0.05, np.float32),
+            SAMPLE_RATE,
+            format="FLAC",
+        )
+    sf.write(str(mix), np.full((200, 2), 0.05, np.float32), SAMPLE_RATE, format="FLAC")
+
+    paths = mixed_stem_paths_from_tables(tables, audio_format="flac", media_dir=media)
+    assert all(str(media / "audio") in p for p in paths)
+    assert not any("/SPDMX/audio/" in p.replace(str(media), "") for p in paths)
+    verify_mixed_stems_on_disk(
+        tables, audio_format="flac", jobs=1, media_dir=media,
+    )

@@ -1,4 +1,4 @@
-"""Regenerate ICASSP paper figures as transparent PDFs under submission/figures/."""
+"""Regenerate ICASSP paper figures as transparent PDFs under submission/figs/."""
 
 from __future__ import annotations
 
@@ -9,20 +9,23 @@ import pandas as pd
 
 from analysis.plots import (
     plot_ablation_listening,
+    plot_chunk_layout,
     plot_downstream_poc,
     plot_gm_program_compare,
     plot_sao_metrics,
     plot_separation_sisdr,
 )
 from shared.config import OUTPUT_DIR
+from synthesis.chunking import CHUNKS_FILE_NAME
 
-FIGURES_DIR = Path(__file__).resolve().parent / "figures"
+FIGURES_DIR = Path(__file__).resolve().parent / "figs"
 DATA_DIR = Path(__file__).resolve().parent / "data"
 INSTRUMENTS_DIR = (
     Path(OUTPUT_DIR) / "dev" / "analysis" / "instruments" / "all_valid"
 )
 ORIGINAL_STEMS = INSTRUMENTS_DIR / "gm_program_stems.csv"
 CORRECTED_STEMS = INSTRUMENTS_DIR / "gm_program_stems_corrected.csv"
+CHUNKS_CSV = Path(OUTPUT_DIR) / "SPDMX" / CHUNKS_FILE_NAME
 
 
 def make_gm_program_compare_figure(
@@ -103,6 +106,15 @@ def make_downstream_figure() -> Path:
     return out
 
 
+def make_chunk_layout_figure() -> Path | None:
+    if not CHUNKS_CSV.is_file():
+        print(f"skip chunk layout figure: missing {CHUNKS_CSV}")
+        return None
+    out = FIGURES_DIR / "chunk_layout.pdf"
+    plot_chunk_layout(pd.read_csv(CHUNKS_CSV), out)
+    return out
+
+
 def _placeholder_figure(path: Path, message: str) -> None:
     import matplotlib.pyplot as plt
 
@@ -125,7 +137,7 @@ def main() -> None:
     parser.add_argument("--show-percentages", action="store_true")
     parser.add_argument(
         "--only",
-        choices=("gm", "ablation", "separation", "sao", "downstream", "all"),
+        choices=("gm", "ablation", "separation", "sao", "downstream", "chunk", "all"),
         default="all",
     )
     args = parser.parse_args()
@@ -162,6 +174,11 @@ def main() -> None:
 
     if args.only in ("downstream", "all"):
         written.append(make_downstream_figure())
+
+    if args.only in ("chunk", "all"):
+        p = make_chunk_layout_figure()
+        if p:
+            written.append(p)
 
     for path in written:
         print(f"Wrote {path}")

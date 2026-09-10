@@ -1,7 +1,8 @@
 """Post-render song→chunk assignment and packaged CSV helpers.
 
-Production render stays flat (``audio/``, ``mid/``). These helpers support the
-``build_spdmx`` packaging step that lays out ``chunk_N/`` trees.
+Production render stays flat (``audio/``, ``mid/``, ``mix/``). These helpers
+support the ``build_spdmx`` packaging step that lays out flattened
+``chunk_N/<song_id>/`` trees (stems + ``mix.flac`` + ``mix.mid``).
 """
 
 from __future__ import annotations
@@ -12,9 +13,15 @@ from typing import Mapping, Sequence
 
 import pandas as pd
 
-from shared.config import SPDMX_AUDIO_DIR_NAME, SPDMX_MID_DIR_NAME
+from shared.config import (
+    SPDMX_MIX_DIR_NAME,
+    SPDMX_RELEASE_MIX_AUDIO_NAME,
+    SPDMX_RELEASE_MIX_MIDI_NAME,
+)
 
-# ~25 GiB target per download chunk (on-disk FLAC + MIDI).
+# Fixed number of roughly equal-sized download chunks (LPT bin packing).
+DEFAULT_NUM_CHUNKS = 64
+# Legacy soft budget (plots / docs may still mention ~GiB scale).
 CHUNK_BYTES_TARGET = 25 * 1024**3
 CHUNK_ASSIGNMENT_SEED = 43
 CHUNK_DIR_PREFIX = "chunk_"
@@ -25,6 +32,7 @@ FLAT_TRACK_MAP_COLUMNS = [
     "song_id",
     "path",
     "mid",
+    "mix",
     "track",
     "original_track",
     "program",
@@ -69,13 +77,26 @@ def parse_chunk_id(chunk_dir: str) -> str:
     return normalize_chunk_id(name[len(CHUNK_DIR_PREFIX) :])
 
 
+def packaged_song_rel(chunk_id: str | int, song_id: str) -> str:
+    """Release-relative song directory: ``./chunk_N/<song_id>``."""
+    return f"./{chunk_dir_name(chunk_id)}/{song_id}"
+
+
 def packaged_audio_rel(chunk_id: str | int, song_id: str) -> str:
-    return f"./{chunk_dir_name(chunk_id)}/{SPDMX_AUDIO_DIR_NAME}/{song_id}"
+    """Stem directory (same as song dir in the flattened layout)."""
+    return packaged_song_rel(chunk_id, song_id)
 
 
 def packaged_mid_rel(chunk_id: str | int, song_id: str) -> str:
-    return f"./{chunk_dir_name(chunk_id)}/{SPDMX_MID_DIR_NAME}/{song_id}.mid"
+    return f"{packaged_song_rel(chunk_id, song_id)}/{SPDMX_RELEASE_MIX_MIDI_NAME}"
 
+
+def packaged_mix_rel(chunk_id: str | int, song_id: str) -> str:
+    return f"{packaged_song_rel(chunk_id, song_id)}/{SPDMX_RELEASE_MIX_AUDIO_NAME}"
+
+
+def flat_mix_rel(song_id: str) -> str:
+    return f"./{SPDMX_MIX_DIR_NAME}/{song_id}.flac"
 
 
 def directory_size_bytes(path: Path) -> int:
@@ -95,10 +116,14 @@ def song_media_bytes(
     *,
     audio_root: str | Path,
     mid_root: str | Path,
+    mix_root: str | Path | None = None,
 ) -> int:
     audio_dir = Path(audio_root) / song_id
     mid_path = Path(mid_root) / f"{song_id}.mid"
-    return directory_size_bytes(audio_dir) + directory_size_bytes(mid_path)
+    total = directory_size_bytes(audio_dir) + directory_size_bytes(mid_path)
+    if mix_root is not None:
+        total += directory_size_bytes(Path(mix_root) / f"{song_id}.flac")
+    return total
 
 
 def measure_song_sizes(
@@ -106,10 +131,14 @@ def measure_song_sizes(
     *,
     audio_root: str | Path,
     mid_root: str | Path,
+    mix_root: str | Path | None = None,
 ) -> dict[str, int]:
     return {
         str(song_id): song_media_bytes(
-            str(song_id), audio_root=audio_root, mid_root=mid_root,
+            str(song_id),
+            audio_root=audio_root,
+            mid_root=mid_root,
+            mix_root=mix_root,
         )
         for song_id in song_ids
     }
@@ -118,46 +147,44 @@ def measure_song_sizes(
 def assign_songs_to_chunks(
     song_sizes: Mapping[str, int],
     *,
-    target_bytes: int = CHUNK_BYTES_TARGET,
+    num_chunks: int = DEFAULT_NUM_CHUNKS,
     seed: int = CHUNK_ASSIGNMENT_SEED,
 ) -> dict[str, str]:
-    """Greedy-pack songs into ~``target_bytes`` chunks after a seeded shuffle.
+    """Pack songs into ``num_chunks`` roughly equal-sized bins (LPT).
 
-    Songs larger than ``target_bytes`` each get their own chunk. Returns
+    After a seeded shuffle (tie-break), songs are placed largest-first into the
+    currently lightest chunk so loads stay balanced. Returns
     ``{song_id: chunk_id}`` with unpadded chunk ids (``0``, ``1``, …).
+
+    If there are fewer songs than ``num_chunks``, uses one chunk per song.
     """
-    if target_bytes <= 0:
-        raise ValueError(f"target_bytes must be > 0, got {target_bytes}")
+    import heapq
+
+    if num_chunks <= 0:
+        raise ValueError(f"num_chunks must be > 0, got {num_chunks}")
     if not song_sizes:
         return {}
 
-    items = sorted(str(s) for s in song_sizes)
-    rng = random.Random(seed)
-    rng.shuffle(items)
-
-    assignment: dict[str, str] = {}
-    chunk_index = 0
-    current_bytes = 0
-
-    for song_id in items:
-        size = int(song_sizes[song_id])
-        if size < 0:
+    for song_id, size in song_sizes.items():
+        if int(size) < 0:
             raise ValueError(f"negative size for song {song_id}: {size}")
 
-        # Start a new chunk when adding would exceed the budget (and the
-        # current chunk is non-empty). Oversized songs always open a chunk.
-        if current_bytes > 0 and current_bytes + size > target_bytes:
-            chunk_index += 1
-            current_bytes = 0
+    items = [(str(s), int(song_sizes[s])) for s in song_sizes]
+    rng = random.Random(seed)
+    rng.shuffle(items)
+    # Longest-processing-time: largest first; song_id breaks remaining ties.
+    items.sort(key=lambda pair: (-pair[1], pair[0]))
 
-        chunk_id = format_chunk_id(chunk_index)
-        assignment[song_id] = chunk_id
-        current_bytes += size
+    n = min(int(num_chunks), len(items))
+    # Min-heap of (load_bytes, chunk_index).
+    loads: list[tuple[int, int]] = [(0, i) for i in range(n)]
+    heapq.heapify(loads)
 
-        if size > target_bytes:
-            # Isolate the oversized song; next song starts a fresh chunk.
-            chunk_index += 1
-            current_bytes = 0
+    assignment: dict[str, str] = {}
+    for song_id, size in items:
+        cur, idx = heapq.heappop(loads)
+        assignment[song_id] = format_chunk_id(idx)
+        heapq.heappush(loads, (cur + size, idx))
 
     return assignment
 
@@ -185,6 +212,10 @@ def rewrite_track_map_for_chunks(
     ]
     out["mid"] = [
         packaged_mid_rel(chunk, song)
+        for song, chunk in zip(song_ids, chunks, strict=True)
+    ]
+    out["mix"] = [
+        packaged_mix_rel(chunk, song)
         for song, chunk in zip(song_ids, chunks, strict=True)
     ]
     # Stable column order for the packaged product.

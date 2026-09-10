@@ -3,20 +3,20 @@
 Arms:
   - slakh: Slakh train mixes
   - spdmx_matched: same BDGP-eligible sPDMX song pool as separation
-  - spdmx_full: all sPDMX songs with on-disk stems (corpus view)
+  - spdmx_full: all sPDMX songs with a shipped mix
+
+sPDMX arms use dataset mixes (``mix.flac`` / ``SPDMX_dev/mix/``) directly —
+they do **not** re-sum stems. Mixes are **mono**; SAO training duplicates to
+stereo (L=R) via stable-audio-tools ``Stereo()`` when ``audio_channels: 2``.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-import soundfile as sf
 import yaml
 from tqdm import tqdm
 
@@ -27,7 +27,7 @@ from experiments.sao.paths import (
     load_config,
     resolve_dev_dir,
 )
-from experiments.separation.audio_io import audio_duration_seconds, load_mono, sum_stems
+from experiments.separation.audio_io import audio_duration_seconds
 from experiments.separation.paths import TARGETS, resolve_dev_dir as sep_dev_dir
 from experiments.separation.targets import gm_to_target, slakh_inst_class_to_target
 from synthesis.patches import patch_group_key
@@ -36,13 +36,6 @@ from synthesis.patches import patch_group_key
 def _caption(instruments: list[str], template: str) -> str:
     uniq = sorted(set(instruments)) or ["ensemble"]
     return template.format(instruments=", ".join(uniq))
-
-
-def _write_stereo_flac(path: Path, mono: np.ndarray, sample_rate: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    mono = np.asarray(mono, dtype=np.float32)
-    stereo = np.stack([mono, mono], axis=1)  # (T, 2)
-    sf.write(str(path), stereo, sample_rate, format="FLAC")
 
 
 def _slakh_mix_and_instruments(track_dir: Path) -> tuple[Path | None, list[str], float]:
@@ -78,7 +71,6 @@ def index_slakh_train(*, slakh_root: Path, template: str) -> pd.DataFrame:
                 "corpus": "slakh",
                 "song_id": track_dir.name,
                 "mix_path": str(mix.resolve()),
-                "stem_paths": "",
                 "caption": _caption(instruments, template),
                 "duration_sec": dur,
                 "hours": dur / 3600.0,
@@ -102,7 +94,13 @@ def index_spdmx(
     csv_name: str = "stems.csv",
     max_songs: int | None = None,
 ) -> pd.DataFrame:
-    """Index every sPDMX song with on-disk stems; flag BDGP-eligible rows."""
+    """Index sPDMX songs that already have a shipped mix.
+
+    Requires ``mix.flac`` (release) or ``SPDMX_dev/mix/<song_id>.flac`` (lab).
+    Stem paths are only used for captions / BDGP flags.
+    """
+    from experiments.separation.spdmx_io import resolve_spdmx_mix, resolve_spdmx_stem
+
     csv_path = spdmx_root / csv_name
     if not csv_path.is_file():
         raise FileNotFoundError(csv_path)
@@ -118,29 +116,35 @@ def index_spdmx(
     for song_id, g in tqdm(grouped, desc="sao:index-spdmx", total=n_songs):
         if max_songs is not None and len(rows) >= max_songs:
             break
-        song_dir = _spdmx_song_dir(spdmx_root, g.iloc[0])
-        if song_dir is None or not song_dir.is_dir():
-            continue
-        stem_paths: list[Path] = []
-        bdgp_present: set[str] = set()
-        for _, r in g.iterrows():
-            cand = song_dir / f"{int(r['track'])}.flac"
-            if not cand.is_file():
-                continue
-            stem_paths.append(cand)
-            t = gm_to_target(int(r["program"]), bool(r["is_drum"]))
-            if t is not None:
-                bdgp_present.add(t)
-        if not stem_paths:
-            stem_paths = sorted(song_dir.glob("*.flac"))
-        if not stem_paths:
+        song_id_s = str(song_id)
+        head = g.iloc[0]
+        shipped = resolve_spdmx_mix(spdmx_root, head, song_id=song_id_s)
+        if shipped is None:
             continue
         try:
-            dur = audio_duration_seconds(stem_paths[0])
+            dur = audio_duration_seconds(shipped)
         except Exception:  # noqa: BLE001
             continue
         if dur <= 0:
             continue
+
+        song_dir = _spdmx_song_dir(spdmx_root, head)
+        bdgp_present: set[str] = set()
+        for _, r in g.iterrows():
+            track = int(r["track"])
+            cand = resolve_spdmx_stem(
+                spdmx_root, r, song_id=song_id_s, track=track,
+            )
+            if cand is None and song_dir is not None:
+                cand = song_dir / f"{track}.flac"
+                if not cand.is_file():
+                    cand = None
+            if cand is None:
+                continue
+            t = gm_to_target(int(r["program"]), bool(r["is_drum"]))
+            if t is not None:
+                bdgp_present.add(t)
+
         instruments = sorted(
             {
                 patch_group_key(int(r["program"]), bool(r["is_drum"]))
@@ -150,9 +154,8 @@ def index_spdmx(
         rows.append(
             {
                 "corpus": "spdmx",
-                "song_id": str(song_id),
-                "mix_path": "",
-                "stem_paths": json.dumps([str(p) for p in stem_paths]),
+                "song_id": song_id_s,
+                "mix_path": str(shipped.resolve()),
                 "caption": _caption(instruments, template),
                 "duration_sec": dur,
                 "hours": dur / 3600.0,
@@ -192,88 +195,6 @@ def _bdgp_matched_pool(spdmx: pd.DataFrame, *, seed: int, spdmx_root: Path) -> p
     if matched.empty:
         return matched
     return matched.sample(frac=1.0, random_state=seed).reset_index(drop=True)
-
-
-def _render_one_mix(payload: dict) -> dict | None:
-    """Worker: sum sPDMX stems → stereo mix.flac."""
-    dest = Path(payload["dest"])
-    stems = [Path(p) for p in payload["stems"]]
-    sample_rate = int(payload["sample_rate"])
-    song_id = payload["song_id"]
-    if dest.is_file():
-        return {
-            "song_id": song_id,
-            "mix_path": str(dest.resolve()),
-            "duration_sec": audio_duration_seconds(dest),
-        }
-    try:
-        arrays = []
-        for p in stems:
-            a, _ = load_mono(p, sample_rate=sample_rate)
-            arrays.append(a)
-        mix = sum_stems(arrays)
-        _write_stereo_flac(dest, mix, sample_rate)
-        return {
-            "song_id": song_id,
-            "mix_path": str(dest.resolve()),
-            "duration_sec": float(mix.shape[0]) / float(sample_rate),
-        }
-    except Exception as exc:  # noqa: BLE001
-        print(f"skip mix {song_id}: {exc}")
-        return None
-
-
-def render_spdmx_mixes(
-    df: pd.DataFrame,
-    *,
-    mixes_root: Path,
-    sample_rate: int,
-    jobs: int,
-) -> pd.DataFrame:
-    """Render missing mixes for the given sPDMX rows; return df with mix_path set."""
-    if df.empty:
-        return df
-    jobs_payload: list[dict] = []
-    for _, row in df.iterrows():
-        song_id = str(row["song_id"])
-        dest = mixes_root / song_id / "mix.flac"
-        stems = json.loads(row["stem_paths"]) if row["stem_paths"] else []
-        if not stems:
-            continue
-        jobs_payload.append(
-            {
-                "dest": str(dest),
-                "stems": stems,
-                "sample_rate": sample_rate,
-                "song_id": song_id,
-            }
-        )
-
-    results: dict[str, dict] = {}
-    if jobs <= 1:
-        for payload in tqdm(jobs_payload, desc="sao:render-mixes"):
-            row = _render_one_mix(payload)
-            if row:
-                results[row["song_id"]] = row
-    else:
-        with ProcessPoolExecutor(max_workers=jobs) as pool:
-            futs = [pool.submit(_render_one_mix, p) for p in jobs_payload]
-            for fut in tqdm(as_completed(futs), total=len(futs), desc="sao:render-mixes"):
-                row = fut.result()
-                if row:
-                    results[row["song_id"]] = row
-
-    out_rows = []
-    for _, row in df.iterrows():
-        sid = str(row["song_id"])
-        if sid not in results:
-            continue
-        rec = row.to_dict()
-        rec["mix_path"] = results[sid]["mix_path"]
-        rec["duration_sec"] = float(results[sid]["duration_sec"])
-        rec["hours"] = rec["duration_sec"] / 3600.0
-        out_rows.append(rec)
-    return pd.DataFrame(out_rows)
 
 
 def _write_arm(
@@ -354,16 +275,12 @@ def _write_arm(
 def prepare_all(cfg: dict, out_dir: Path) -> dict:
     template = str(cfg.get("caption_template") or "instrumental music, {instruments}")
     seed = int(cfg.get("seed", 43))
-    sample_rate = int(cfg.get("sample_rate", 44100))
-    jobs = max(1, int(cfg.get("render_jobs") or min(8, (os.cpu_count() or 4))))
     slakh_root = Path(cfg.get("slakh_root") or SLAKH_ROOT)
     spdmx_root = Path(cfg.get("spdmx_root") or SPDMX_ROOT)
     max_spdmx = cfg.get("spdmx_index_max_songs")
     max_spdmx_i = int(max_spdmx) if max_spdmx is not None else None
 
     custom_meta = Path(__file__).resolve().parent / "custom_metadata.py"
-    mixes_root = out_dir / "mixes" / "spdmx"
-    mixes_root.mkdir(parents=True, exist_ok=True)
 
     slakh = index_slakh_train(slakh_root=slakh_root, template=template)
     if slakh.empty:
@@ -376,49 +293,39 @@ def prepare_all(cfg: dict, out_dir: Path) -> dict:
         max_songs=max_spdmx_i,
     )
     if spdmx.empty:
-        raise RuntimeError(f"no sPDMX songs found under {spdmx_root}")
+        raise RuntimeError(
+            f"no sPDMX songs with shipped mixes under {spdmx_root}; "
+            "run synthesis.final --only-pass song_mix (or build_spdmx) first"
+        )
 
     matched = _bdgp_matched_pool(spdmx, seed=seed, spdmx_root=spdmx_root)
     if matched.empty:
         raise RuntimeError(
-            "no BDGP-eligible sPDMX songs for matched arm; "
-            "run separation prepare_stems/freeze_manifests or check indexing"
+            "no BDGP-eligible sPDMX songs with shipped mixes for matched arm; "
+            "check songs.csv subset:bdgp and mix/ files"
         )
     matched_ids = set(matched["song_id"].astype(str))
-
-    print(f"sao: rendering BDGP-matched mixes ({len(matched)} songs, jobs={jobs})")
-    matched_rendered = render_spdmx_mixes(
-        matched,
-        mixes_root=mixes_root,
-        sample_rate=sample_rate,
-        jobs=jobs,
-    )
-    if matched_rendered.empty:
-        raise RuntimeError("failed to render any matched sPDMX mixes")
-
     remaining = spdmx[~spdmx["song_id"].astype(str).isin(matched_ids)].copy()
-    print(f"sao: rendering remaining full-pool mixes ({len(remaining)} songs)")
-    rest_rendered = render_spdmx_mixes(
-        remaining,
-        mixes_root=mixes_root,
-        sample_rate=sample_rate,
-        jobs=jobs,
+    print(
+        f"sao: using shipped mixes "
+        f"(matched={len(matched)}, full={len(spdmx)}, remaining={len(remaining)})"
     )
-    full_rendered = pd.concat([matched_rendered, rest_rendered], ignore_index=True)
 
     arms = {
         "slakh": slakh,
-        "spdmx_matched": matched_rendered,
-        "spdmx_full": full_rendered,
+        "spdmx_matched": matched,
+        "spdmx_full": spdmx,
     }
     summary: dict = {
         "slakh_train_hours": slakh_hours,
         "spdmx_indexed": int(len(spdmx)),
         "spdmx_bdgp_eligible": int(spdmx["bdgp_eligible"].sum()) if "bdgp_eligible" in spdmx else None,
-        "spdmx_matched_hours": float(matched_rendered["hours"].sum()),
-        "spdmx_full_hours": float(full_rendered["hours"].sum()),
-        "spdmx_rendered": int(len(full_rendered)),
-        "note": "spdmx_matched = BDGP-eligible (sep-aligned); spdmx_full = all songs",
+        "spdmx_matched_hours": float(matched["hours"].sum()),
+        "spdmx_full_hours": float(spdmx["hours"].sum()),
+        "note": (
+            "spdmx_matched = BDGP-eligible; spdmx_full = all songs with shipped "
+            "mix.flac / SPDMX_dev/mix/ (no stem re-sum)"
+        ),
         "arms": {},
     }
     for arm in ARMS:
@@ -432,17 +339,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=None)
-    parser.add_argument(
-        "--jobs",
-        "-j",
-        type=int,
-        default=None,
-        help="Parallel mix-render workers (overrides config render_jobs)",
-    )
     args = parser.parse_args()
     cfg = load_config(args.config)
-    if args.jobs is not None:
-        cfg = {**cfg, "render_jobs": args.jobs}
     out_dir = args.out or (resolve_dev_dir(cfg) / "datasets")
     out_dir.mkdir(parents=True, exist_ok=True)
 

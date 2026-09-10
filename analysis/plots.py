@@ -17,12 +17,17 @@ def _savefig(
     dpi: int = 150,
     pad_inches: float = 0.1,
 ) -> None:
-    """Save a figure; PDFs use a transparent background for paper inclusion."""
+    """Save a figure with a transparent background (PDF/PNG/SVG)."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    kwargs: dict = {"dpi": dpi, "bbox_inches": "tight", "pad_inches": pad_inches}
-    if output_path.suffix.lower() == ".pdf":
-        kwargs.update(transparent=True, facecolor="none", edgecolor="none")
+    kwargs: dict = {
+        "dpi": dpi,
+        "bbox_inches": "tight",
+        "pad_inches": pad_inches,
+        "transparent": True,
+        "facecolor": "none",
+        "edgecolor": "none",
+    }
     fig.savefig(output_path, **kwargs)
 
 
@@ -530,6 +535,410 @@ def plot_sao_metrics(
         plt.close(fig)
     finally:
         sns.reset_defaults()
+
+
+def plot_chunk_layout(
+    chunks: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    target_bytes: int | None = None,
+    figsize: tuple[float, float] = (13.0, 5.3),
+    n_chunk_preview: int = 7,
+) -> None:
+    """Wide schematic of the SPDMX release tree (metadata → chunks → song files)."""
+    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, PathPatch
+    from matplotlib.path import Path as MplPath
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    df = chunks.copy()
+    df["chunk"] = df["chunk"].map(lambda c: int(str(c).strip()))
+    n_chunks = len(df)
+    if target_bytes is None and "bytes" in df.columns and len(df):
+        target_bytes = int(df["bytes"].mean())
+    if target_bytes is None:
+        from synthesis.chunking import CHUNK_BYTES_TARGET
+
+        target_bytes = CHUNK_BYTES_TARGET
+    target_gib = target_bytes / float(1024**3)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    fig.patch.set_alpha(0.0)
+    ax.set_xlim(0, 32)
+    ax.set_ylim(0, 13.2)
+    ax.axis("off")
+    ax.set_facecolor("none")
+
+    mono = "DejaVu Sans Mono"
+    ink = "#1a1510"
+    muted = "#6a5a48"
+
+    def _frame(x: float, y: float, w: float, h: float, *, fc: str, ec: str = ink):
+        ax.add_patch(
+            FancyBboxPatch(
+                (x, y),
+                w,
+                h,
+                boxstyle="round,pad=0.012,rounding_size=0.16",
+                linewidth=1.1,
+                facecolor=fc,
+                edgecolor=ec,
+            )
+        )
+
+    def _caption(x: float, y: float, text: str, *, fontsize: float = 7.5):
+        ax.text(
+            x,
+            y,
+            text,
+            ha="center",
+            va="center",
+            fontsize=fontsize,
+            fontstyle="italic",
+            color=muted,
+        )
+
+    def _title_box(
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        title: str,
+        *,
+        fc: str,
+        ec: str = ink,
+        fontsize: float = 9,
+        family: str | None = None,
+        weight: str = "bold",
+        color: str = ink,
+    ):
+        _frame(x, y, w, h, fc=fc, ec=ec)
+        ax.text(
+            x + w / 2,
+            y + h / 2,
+            title,
+            ha="center",
+            va="center",
+            fontsize=fontsize,
+            fontfamily=family,
+            fontweight=weight,
+            color=color,
+            clip_on=True,
+        )
+
+    def _meta_box(
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        filename: str,
+        subtitle: str,
+        *,
+        fc: str,
+    ):
+        _frame(x, y, w, h, fc=fc)
+        cy = y + h / 2
+        ax.text(
+            x + w / 2,
+            cy + 0.2,
+            filename,
+            ha="center",
+            va="center",
+            fontsize=9,
+            fontfamily=mono,
+            fontweight="bold",
+            color=ink,
+            clip_on=True,
+        )
+        ax.text(
+            x + w / 2,
+            cy - 0.28,
+            subtitle,
+            ha="center",
+            va="center",
+            fontsize=7.5,
+            fontstyle="italic",
+            color=muted,
+            clip_on=True,
+        )
+
+    def _chunk_box(
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        name: str | None,
+        size: str | None,
+        *,
+        fc: str,
+    ):
+        _frame(x, y, w, h, fc=fc)
+        if name is None:
+            ax.text(
+                x + w / 2,
+                y + h / 2,
+                "···",
+                ha="center",
+                va="center",
+                fontsize=10,
+                color=ink,
+            )
+            return
+        cy = y + h / 2
+        ax.text(
+            x + w / 2,
+            cy + 0.18,
+            name,
+            ha="center",
+            va="center",
+            fontsize=7.5,
+            fontfamily=mono,
+            fontweight="bold",
+            color=ink,
+            clip_on=True,
+        )
+        if size:
+            ax.text(
+                x + w / 2,
+                cy - 0.28,
+                size,
+                ha="center",
+                va="center",
+                fontsize=7,
+                fontstyle="italic",
+                color=muted,
+                clip_on=True,
+            )
+
+    def _arrow(x1: float, y1: float, x2: float, y2: float):
+        ax.add_patch(
+            FancyArrowPatch(
+                (x1, y1),
+                (x2, y2),
+                arrowstyle="-|>",
+                mutation_scale=11,
+                linewidth=1.1,
+                color=muted,
+            )
+        )
+
+    def _curly_brace(x: float, y0: float, y1: float, *, tip: float = 0.55):
+        """Right-opening brace spanning [y0, y1] with spine near x."""
+        mid = 0.5 * (y0 + y1)
+        tip_x = x + tip
+        spine = x + tip * 0.18
+        cusp = x
+        verts = [
+            (tip_x, y1),
+            (spine, y1),
+            (spine, mid + (y1 - mid) * 0.55),
+            (cusp, mid),
+            (spine, mid - (mid - y0) * 0.55),
+            (spine, y0),
+            (tip_x, y0),
+        ]
+        codes = [
+            MplPath.MOVETO,
+            MplPath.CURVE3,
+            MplPath.CURVE3,
+            MplPath.CURVE3,
+            MplPath.CURVE3,
+            MplPath.CURVE3,
+            MplPath.CURVE3,
+        ]
+        ax.add_patch(
+            PathPatch(
+                MplPath(verts, codes),
+                facecolor="none",
+                edgecolor=ink,
+                linewidth=2.0,
+                joinstyle="round",
+                capstyle="round",
+            )
+        )
+
+    # Row 1: root
+    _title_box(
+        10.5,
+        11.55,
+        11.0,
+        1.05,
+        "SPDMX release",
+        fc="#e8922e",
+        ec="#e8922e",
+        fontsize=13,
+        weight="bold",
+    )
+    _arrow(16.0, 11.55, 16.0, 10.85)
+    _caption(16.0, 10.35, "filter CSVs first, then download only the media you need")
+    _arrow(16.0, 9.85, 16.0, 9.15)
+
+    # Row 2: metadata CSVs
+    csv_w, csv_h, csv_y = 8.4, 1.15, 7.85
+    for x, name, sub in (
+        (1.8, "stems.csv", "one row per stem"),
+        (11.8, "songs.csv", "one row per song"),
+        (21.8, "chunks.csv", "archive index"),
+    ):
+        _meta_box(x, csv_y, csv_w, csv_h, name, sub, fc="#ffe2b8")
+    _arrow(16.0, 7.85, 16.0, 7.0)
+
+    # Row 3: chunk archives
+    preview = min(n_chunk_preview, max(n_chunks, 1))
+    gap = 0.3
+    total_w = 28.4
+    box_w = (total_w - gap * (preview - 1)) / preview
+    chunk_y, chunk_h = 5.7, 1.15
+    size_lbl = f"~{target_gib:.0f} GiB"
+    zoom_center_x = 1.8 + box_w / 2
+    for i in range(preview):
+        x = 1.8 + i * (box_w + gap)
+        if n_chunks <= preview:
+            _chunk_box(x, chunk_y, box_w, chunk_h, f"chunk_{i}", size_lbl, fc="#f0b068")
+        elif i < preview - 2:
+            _chunk_box(x, chunk_y, box_w, chunk_h, f"chunk_{i}", size_lbl, fc="#f0b068")
+        elif i == preview - 2:
+            _chunk_box(x, chunk_y, box_w, chunk_h, None, None, fc="#f0b068")
+        else:
+            _chunk_box(
+                x,
+                chunk_y,
+                box_w,
+                chunk_h,
+                f"chunk_{n_chunks - 1}",
+                size_lbl,
+                fc="#f0b068",
+            )
+        if i == 0:
+            zoom_center_x = x + box_w / 2
+    _caption(16.0, 5.2, f"{n_chunks} zip archives · ≈ {target_gib:.0f} GiB each")
+    _arrow(zoom_center_x, 4.7, zoom_center_x, 3.95)
+
+    # Bottom: song directory → MIDI derives stems; stems sum to mix
+    song_x, song_y, song_w, song_h = 1.8, 1.15, 7.0, 2.5
+    _title_box(
+        song_x,
+        song_y,
+        song_w,
+        song_h,
+        "chunk_N/<song_id>/",
+        fc="#ffd9a0",
+        fontsize=11,
+        family=mono,
+        weight="bold",
+    )
+
+    brace_x = song_x + song_w + 0.35
+    _curly_brace(brace_x, song_y + 0.15, song_y + song_h - 0.15, tip=0.5)
+
+    cy = song_y + song_h / 2
+    box_h = 0.78
+    box_y = cy - box_h / 2
+    x = brace_x + 0.85
+
+    def _name_box(x0: float, w: float, name: str, *, fc: str, fontsize: float = 8):
+        _frame(x0, box_y, w, box_h, fc=fc)
+        ax.text(
+            x0 + w / 2,
+            cy,
+            name,
+            ha="center",
+            va="center",
+            fontsize=fontsize,
+            fontfamily=mono,
+            fontweight="bold",
+            color=ink,
+            clip_on=True,
+        )
+
+    def _op(x0: float, glyph: str, *, fontsize: float = 12) -> float:
+        ax.text(
+            x0,
+            cy,
+            glyph,
+            ha="center",
+            va="center",
+            fontsize=fontsize,
+            fontweight="bold",
+            color=ink,
+        )
+        return x0
+
+    # mix.mid is the source
+    mid_w = 3.4
+    _name_box(x, mid_w, "mix.mid", fc="#e8c9a0", fontsize=8.5)
+    ax.text(
+        x + mid_w / 2,
+        box_y - 0.28,
+        "paired MIDI",
+        ha="center",
+        va="top",
+        fontsize=7,
+        fontstyle="italic",
+        color=muted,
+    )
+    x += mid_w + 0.35
+    _arrow(x - 0.28, cy, x + 0.15, cy)
+    x += 0.35
+
+    # stems combined with +
+    stem_w = 2.15
+    stems = ("0.flac", "1.flac", "···", "K.flac")
+    stem_left = x
+    for i, name in enumerate(stems):
+        if name == "···":
+            _frame(x, box_y, stem_w * 0.7, box_h, fc="#fff6ea")
+            ax.text(
+                x + stem_w * 0.35,
+                cy,
+                "···",
+                ha="center",
+                va="center",
+                fontsize=10,
+                color=ink,
+            )
+            x += stem_w * 0.7
+        else:
+            _name_box(x, stem_w, name, fc="#fff6ea", fontsize=7.5)
+            x += stem_w
+        if i < len(stems) - 1:
+            x += 0.28
+            _op(x, "+")
+            x += 0.28
+    stem_right = x
+    ax.text(
+        0.5 * (stem_left + stem_right),
+        box_y - 0.28,
+        "stems",
+        ha="center",
+        va="top",
+        fontsize=7,
+        fontstyle="italic",
+        color=muted,
+    )
+
+    x += 0.35
+    _op(x, "=")
+    x += 0.45
+
+    mix_w = 3.4
+    _name_box(x, mix_w, "mix.flac", fc="#f5c98a", fontsize=8.5)
+    ax.text(
+        x + mix_w / 2,
+        box_y - 0.28,
+        "linear sum",
+        ha="center",
+        va="top",
+        fontsize=7,
+        fontstyle="italic",
+        color=muted,
+    )
+
+    fig.tight_layout()
+    _savefig(fig, output_path, pad_inches=0.08)
+    plt.close(fig)
+
 
 
 def plot_downstream_poc(

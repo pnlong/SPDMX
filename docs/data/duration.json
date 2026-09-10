@@ -1,0 +1,25 @@
+{
+  "percentiles": {
+    "p50": 47.5,
+    "p75": 89.75,
+    "p90": 177.0,
+    "p95": 264.6,
+    "p99": 625.55,
+    "p99_9": 1800.0
+  },
+  "summary": {
+    "recommended_model": "medium",
+    "reason": "only 81.9% of songs fit within 120s; use medium (up to 380s)",
+    "pct_songs_under_120s": 81.88,
+    "pct_songs_under_380s": 97.41,
+    "n_songs_over_380s": 6578,
+    "median_song_duration_seconds": 47.5,
+    "p95_song_duration_seconds": 264.6,
+    "p99_song_duration_seconds": 625.55
+  },
+  "sa3_limits": {
+    "pct_at_120s_limit": 81.88,
+    "pct_at_380s_limit": 97.41,
+    "n_songs_over_380s": 6578
+  }
+}

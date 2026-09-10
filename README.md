@@ -2,6 +2,8 @@
 
 Turn the [PDMX](https://zenodo.org/records/13763756) symbolic music dataset into audio stems, captions, and SA3-realified audio.
 
+**Project page:** [pnlong.github.io/SPDMX](https://pnlong.github.io/SPDMX/) (sources in [`docs/`](docs/))
+
 ## Pipeline
 
 1. **Synthesis setup** — `python -m analysis.prepare_synthesis` (GM register + dense corrected MIDIs; **required before any ablation**)
@@ -97,12 +99,21 @@ Writes raw FLAC stems to `{OUTPUT_DIR}/SPDMX_dev/raw/` (mix writes summable stem
 ├── audio/<song_id>/              # mixable stems (after --only-pass mix)
 │   ├── 0.flac
 │   └── …
-└── mid/<song_id>.mid
+├── mid/<song_id>.mid
+└── mix/<song_id>.flac            # full-song mix (after --only-pass song_mix)
 ```
 
-Chunked **release** tree `{OUTPUT_DIR}/SPDMX/` adds `chunk_N/`, `chunks.csv`, and song-level
+Chunked **release** tree `{OUTPUT_DIR}/SPDMX/` uses flattened
+`chunk_N/<song_id>/{k.flac,mix.flac,mix.mid}` plus `chunks.csv` and song-level
 `songs.csv` (`subset:all` / `subset:bdgp`). Schema and joins:
 [`synthesis/spdmx_release/README.md`](synthesis/spdmx_release/README.md).
+
+Rebuild release after mixes exist::
+
+```bash
+uv run python -m synthesis.final --only-pass song_mix -j 8
+uv run python -m synthesis.build_spdmx -j 8
+```
 ### Analysis
 
 **GM register (prerequisite for synthesis):** corrects mismatched GM program ids from MIDI track names:

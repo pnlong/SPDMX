@@ -26,9 +26,10 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 |--------|---------|
 | `synthesize.py` | Main CLI: ablation sample (default) or `--full` PDMX, `--render-mode`, `--realify` |
 | `mix.py` | Post-hoc LUFS × velocity dynamics × peak gain so stems remain summable |
+| `render_mixes.py` | ffmpeg stem→`mix/<song_id>.flac` (raw sum, mono); also `--only-pass song_mix` |
 | `listening/serve.py` | Localhost viewer for A1–CB2 ablation comparison |
 | `listening/make_clips.py` | Aligned 10s clips (windows from A1) for listening |
-| `build_spdmx.py` | Post-render: build `{OUTPUT}/SPDMX/` chunks from flat `SPDMX_dev/` (no mutate) |
+| `build_spdmx.py` | Post-render: flattened `{OUTPUT}/SPDMX/chunk_N/<song_id>/` from `SPDMX_dev/` |
 | `build_songs_table.py` | Song-level `songs.csv` + `subset:*` from `stems.csv` (also invoked by `build_spdmx`) |
 | `distribute_spdmx.py` | Stage Zenodo files (metadata + `chunk_NNN.zip`) |
 
@@ -37,11 +38,12 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 | File | Description |
 |------|-------------|
 | `synthesize.py` | MIDI → fluidsynth → mono FLAC stems; optional SA3 realify pass |
-| `build_spdmx.py` | Post-render chunking of flat `SPDMX_dev/` into download chunks + `songs.csv` |
+| `build_spdmx.py` | Post-render flattened chunking of `SPDMX_dev/` into download chunks + `songs.csv` |
+| `render_mixes.py` | ffmpeg full-song mixes under `SPDMX_dev/mix/` |
 | `build_songs_table.py` | Aggregate `stems.csv` → `songs.csv` (`subset:all`, `subset:bdgp`, …) |
 | `distribute_spdmx.py` | Stage Zenodo upload files (CSVs + per-chunk zips) |
 | `spdmx_release/README.md` | **Public dataset schema** (stems/songs/chunks joins) — ships on Zenodo |
-| `chunking.py` | Song→chunk assignment (~25 GiB) and packaged CSV helpers |
+| `chunking.py` | Song→chunk assignment (fixed N equal-ish bins) and packaged CSV helpers |
 | `audio.py` | fluidsynth rendering, mono downmix, BS.1770-4 loudness, FLAC I/O, mixture build |
 | `velocity.py` | MIDI max-velocity → per-track dynamics scales for mix |
 | `mix.py` | Dataset-level stem normalization (summability) |
@@ -72,9 +74,13 @@ Chunked release: `{OUTPUT_DIR}/SPDMX/` via `build_spdmx`.
 Post-render packaging for Zenodo:
 
 ```bash
-# 1. Build chunked release in a NEW dir (flat SPDMX/ untouched; hardlinks by default)
+# 0. Full-song mixes (after summable audio/ stems exist)
+uv run python -m synthesis.final --only-pass song_mix -j 8
+# → {OUTPUT}/SPDMX_dev/mix/<song_id>.flac
+
+# 1. Build flattened chunked release in a NEW dir (flat SPDMX_dev untouched)
 uv run python -m synthesis.build_spdmx -o "$SPDMX_OUTPUT_DIR"
-# → {OUTPUT}/SPDMX/chunk_N/ + stems.csv + songs.csv + chunks.csv
+# → {OUTPUT}/SPDMX/chunk_N/<song_id>/{k.flac,mix.flac,mix.mid} + CSVs
 
 # 2. Stage loose metadata + chunk_N.zip for upload
 uv run python -m synthesis.distribute_spdmx -o "$SPDMX_OUTPUT_DIR" \

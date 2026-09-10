@@ -35,36 +35,31 @@ def test_format_chunk_id_and_dir_name():
     assert chunk_dir_name("007") == "chunk_7"
 
 
-def test_assign_songs_to_chunks_respects_budget_and_seed():
+def test_assign_songs_to_chunks_balanced_and_seeded():
     sizes = {
         "a/1/QmA": 10,
         "b/1/QmB": 10,
         "c/1/QmC": 10,
         "d/1/QmD": 5,
+        "e/1/QmE": 5,
+        "f/1/QmF": 8,
     }
-    first = assign_songs_to_chunks(sizes, target_bytes=20, seed=1)
-    second = assign_songs_to_chunks(sizes, target_bytes=20, seed=1)
+    first = assign_songs_to_chunks(sizes, num_chunks=3, seed=1)
+    second = assign_songs_to_chunks(sizes, num_chunks=3, seed=1)
     assert first == second
     assert set(first) == set(sizes)
-    # Every song lands in some chunk; packing should use more than one chunk.
-    assert len(set(first.values())) >= 2
-    # Bytes per chunk never exceed budget except for a lone oversized song.
-    for chunk_id in set(first.values()):
-        total = sum(sizes[s] for s, c in first.items() if c == chunk_id)
-        songs = [s for s, c in first.items() if c == chunk_id]
-        if len(songs) == 1 and sizes[songs[0]] > 20:
-            assert total == sizes[songs[0]]
-        else:
-            assert total <= 20
+    assert set(first.values()) == {"0", "1", "2"}
+    loads = [
+        sum(sizes[s] for s, c in first.items() if c == chunk_id)
+        for chunk_id in ("0", "1", "2")
+    ]
+    assert max(loads) - min(loads) <= max(sizes.values())
 
 
-def test_oversized_song_gets_own_chunk():
-    sizes = {"big": 100, "small": 5}
-    assignment = assign_songs_to_chunks(sizes, target_bytes=20, seed=0)
-    assert len({c for s, c in assignment.items() if s == "big"}) == 1
-    # big alone in its chunk
-    big_chunk = assignment["big"]
-    assert [s for s, c in assignment.items() if c == big_chunk] == ["big"]
+def test_assign_songs_to_chunks_caps_at_n_songs():
+    sizes = {"a": 1, "b": 2}
+    assignment = assign_songs_to_chunks(sizes, num_chunks=64, seed=0)
+    assert len(set(assignment.values())) == 2
 
 
 def test_rewrite_track_map_for_chunks_updates_paths():
@@ -74,6 +69,7 @@ def test_rewrite_track_map_for_chunks_updates_paths():
                 "song_id": "0/1/QmA",
                 "path": "./audio/0/1/QmA",
                 "mid": "./mid/0/1/QmA.mid",
+                "mix": "./mix/0/1/QmA.flac",
                 "track": 0,
                 "original_track": 0,
                 "program": 0,
@@ -84,6 +80,7 @@ def test_rewrite_track_map_for_chunks_updates_paths():
                 "song_id": "0/1/QmA",
                 "path": "./audio/0/1/QmA",
                 "mid": "./mid/0/1/QmA.mid",
+                "mix": "./mix/0/1/QmA.flac",
                 "track": 1,
                 "original_track": 2,
                 "program": 40,
@@ -100,6 +97,9 @@ def test_rewrite_track_map_for_chunks_updates_paths():
     assert (packaged["chunk"] == "0").all()
     assert packaged.iloc[0]["path"] == packaged_audio_rel("0", "0/1/QmA")
     assert packaged.iloc[0]["mid"] == packaged_mid_rel("0", "0/1/QmA")
+    assert packaged.iloc[0]["mix"] == f"./chunk_0/0/1/QmA/mix.flac"
+    assert packaged.iloc[0]["path"] == "./chunk_0/0/1/QmA"
+    assert packaged.iloc[0]["mid"] == "./chunk_0/0/1/QmA/mix.mid"
 
 
 def test_build_chunks_manifest_counts():
@@ -138,6 +138,7 @@ def _write_flat_fixture(root: Path) -> None:
                     "song_id": song_id,
                     "path": f"./audio/{song_id}",
                     "mid": f"./mid/{song_id}.mid",
+                    "mix": f"./mix/{song_id}.flac",
                     "track": track,
                     "original_track": track,
                     "program": 0,
@@ -148,6 +149,9 @@ def _write_flat_fixture(root: Path) -> None:
         mid = root / SPDMX_MID_DIR_NAME / f"{song_id}.mid"
         mid.parent.mkdir(parents=True, exist_ok=True)
         mid.write_bytes(b"MThd")
+        mix = root / "mix" / f"{song_id}.flac"
+        mix.parent.mkdir(parents=True, exist_ok=True)
+        mix.write_bytes(b"mix" * 10)
     pd.DataFrame(rows).to_csv(root / f"{SPDMX_FILE_NAME}.csv", index=False)
     write_spdmx_release_docs(root)
 
@@ -175,7 +179,7 @@ def test_chunk_dataset_refuses_in_place_by_default(tmp_path: Path):
     source.mkdir()
     _write_flat_fixture(source)
     with pytest.raises(ValueError, match="in-place"):
-        chunk_dataset(dataset_dir=source, package_dir=source, target_bytes=50)
+        chunk_dataset(dataset_dir=source, package_dir=source, num_chunks=2)
 
 
 def test_chunk_dataset_builds_separate_release_tree(tmp_path: Path):
@@ -187,7 +191,7 @@ def test_chunk_dataset_builds_separate_release_tree(tmp_path: Path):
     packaged, chunks, assignment = chunk_dataset(
         dataset_dir=source,
         package_dir=dest,
-        target_bytes=50,
+        num_chunks=2,
         seed=0,
     )
     assert set(assignment) == {"0/1/QmA", "0/2/QmB"}
@@ -207,20 +211,17 @@ def test_chunk_dataset_builds_separate_release_tree(tmp_path: Path):
     assert not (source / "songs.csv").is_file()
 
     for song_id, chunk_id in assignment.items():
-        assert (
-            dest
-            / chunk_dir_name(chunk_id)
-            / SPDMX_AUDIO_DIR_NAME
-            / song_id
-            / "0.flac"
-        ).is_file()
-        assert (
-            dest
-            / chunk_dir_name(chunk_id)
-            / SPDMX_MID_DIR_NAME
-            / f"{song_id}.mid"
-        ).is_file()
+        song_dir = dest / chunk_dir_name(chunk_id) / song_id
+        assert (song_dir / "0.flac").is_file()
+        assert (song_dir / "mix.mid").is_file()
+        assert (song_dir / "mix.flac").is_file()
+        assert not (dest / chunk_dir_name(chunk_id) / SPDMX_AUDIO_DIR_NAME).exists()
+        assert not (dest / chunk_dir_name(chunk_id) / SPDMX_MID_DIR_NAME).exists()
     assert int(chunks["n_songs"].sum()) == 2
+    assert packaged.iloc[0]["path"].startswith("./chunk_")
+    assert packaged.iloc[0]["path"].endswith("QmA") or packaged.iloc[0]["path"].endswith("QmB")
+    assert packaged.iloc[0]["mid"].endswith("/mix.mid")
+    assert packaged.iloc[0]["mix"].endswith("/mix.flac")
 
 
 def test_chunk_dataset_repack_rereads_flat_source(tmp_path: Path):
@@ -228,23 +229,18 @@ def test_chunk_dataset_repack_rereads_flat_source(tmp_path: Path):
     dest = tmp_path / "SPDMX"
     source.mkdir()
     _write_flat_fixture(source)
-    chunk_dataset(dataset_dir=source, package_dir=dest, target_bytes=50, seed=0)
+    chunk_dataset(dataset_dir=source, package_dir=dest, num_chunks=2, seed=0)
     packaged, _chunks, assignment = chunk_dataset(
         dataset_dir=source,
         package_dir=dest,
-        target_bytes=1,
+        num_chunks=2,
         seed=1,
     )
     assert set(assignment) == {"0/1/QmA", "0/2/QmB"}
     assert (source / SPDMX_AUDIO_DIR_NAME / "0/1/QmA" / "0.flac").is_file()
     for song_id, chunk_id in assignment.items():
-        assert (
-            dest
-            / chunk_dir_name(chunk_id)
-            / SPDMX_AUDIO_DIR_NAME
-            / song_id
-            / "0.flac"
-        ).is_file()
+        assert (dest / chunk_dir_name(chunk_id) / song_id / "0.flac").is_file()
+        assert (dest / chunk_dir_name(chunk_id) / song_id / "mix.flac").is_file()
     assert "chunk" in packaged.columns
 
 
@@ -254,7 +250,7 @@ def test_stage_zenodo_files(tmp_path: Path):
     stage = tmp_path / "zenodo"
     source.mkdir()
     _write_flat_fixture(source)
-    chunk_dataset(dataset_dir=source, package_dir=release, target_bytes=50, seed=0)
+    chunk_dataset(dataset_dir=source, package_dir=release, num_chunks=2, seed=0)
 
     manifest = stage_zenodo_files(
         dataset_dir=release,
@@ -274,8 +270,10 @@ def test_stage_zenodo_files(tmp_path: Path):
 
     with zipfile.ZipFile(zips[0]) as zf:
         names = zf.namelist()
-    assert any(n.startswith("chunk_") and "/audio/" in n for n in names)
-    assert any(n.startswith("chunk_") and "/mid/" in n for n in names)
+    assert any(n.startswith("chunk_") and "/mix.flac" in n for n in names)
+    assert any(n.startswith("chunk_") and "/mix.mid" in n for n in names)
+    assert any(n.startswith("chunk_") and n.endswith("/0.flac") for n in names)
+    assert not any("/audio/" in n for n in names)
 
     sums = (stage / SHA256SUMS_FILE_NAME).read_text(encoding="utf-8")
     for path in zips:
@@ -291,7 +289,7 @@ def test_stage_zenodo_subset_chunks(tmp_path: Path):
     _, chunks, assignment = chunk_dataset(
         dataset_dir=source,
         package_dir=release,
-        target_bytes=1,
+        num_chunks=2,
         seed=0,
     )
     assert len(chunks) >= 2
@@ -312,7 +310,7 @@ def test_build_spdmx_cli_defaults_to_release_dir(tmp_path: Path, capsys):
     source = out / "SPDMX_dev"
     source.mkdir(parents=True)
     _write_flat_fixture(source)
-    code = build_main(["-o", str(out), "--target-bytes", "50"])
+    code = build_main(["-o", str(out), "--num-chunks", "2"])
     assert code == 0
     release = out / "SPDMX"
     assert (release / CHUNKS_FILE_NAME).is_file()
@@ -328,7 +326,7 @@ def test_build_spdmx_cli_dry_run(tmp_path: Path, capsys):
     source = out / "SPDMX_dev"
     source.mkdir(parents=True)
     _write_flat_fixture(source)
-    code = build_main(["-o", str(out), "--dry-run", "--target-bytes", "50"])
+    code = build_main(["-o", str(out), "--dry-run", "--num-chunks", "2"])
     assert code == 0
     captured = capsys.readouterr()
     assert "dry-run" in captured.out
@@ -343,7 +341,7 @@ def test_distribute_cli(tmp_path: Path):
     stage = tmp_path / "stage"
     source.mkdir()
     _write_flat_fixture(source)
-    chunk_dataset(dataset_dir=source, package_dir=release, target_bytes=50, seed=0)
+    chunk_dataset(dataset_dir=source, package_dir=release, num_chunks=2, seed=0)
     code = dist_main(
         [
             "--dataset-dir",

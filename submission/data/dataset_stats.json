@@ -12,12 +12,18 @@
   "realify": false,
   "backends": {"fluidsynth": 432620, "midi_ddsp": 57539},
   "mean_stems_per_song": 1.93,
+  "median_stems_per_song": 1,
+  "max_stems_per_song": 66,
+  "songs_with_gt1_stem": 88403,
+  "songs_with_gt1_stem_frac": 0.348,
+  "songs_exactly_1_stem": 165579,
+  "subset_bdgp_songs": 632,
   "comparison_table": {
     "MUSDB18": {"songs": 150, "hours": 10, "type": "recorded"},
     "MedleyDB": {"songs": 122, "hours": 7.2, "type": "recorded"},
     "MoisesDB": {"songs": 240, "hours": 14.4, "type": "recorded"},
     "Slakh2100": {"songs": 2100, "hours": 145, "type": "synth"},
     "PDMX": {"songs": 254035, "hours": 6248, "type": "symbolic"},
-    "sPDMX": {"songs": 253982, "hours": 6248, "type": "synth"}
+    "SPDMX": {"songs": 253982, "hours": 6248, "type": "synth"}
   }
 }

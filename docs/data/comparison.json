@@ -1,0 +1,27 @@
+{
+  "MUSDB18": {
+    "songs": 150,
+    "hours": 10,
+    "type": "recorded"
+  },
+  "MedleyDB": {
+    "songs": 122,
+    "hours": 7.2,
+    "type": "recorded"
+  },
+  "MoisesDB": {
+    "songs": 240,
+    "hours": 14.4,
+    "type": "recorded"
+  },
+  "Slakh2100": {
+    "songs": 2100,
+    "hours": 145,
+    "type": "synth"
+  },
+  "SPDMX": {
+    "songs": 253982,
+    "hours": 6248,
+    "type": "synth"
+  }
+}

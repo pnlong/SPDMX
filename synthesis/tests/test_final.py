@@ -286,16 +286,16 @@ def test_pass_sequence_starts_with_layout():
         specs={"strings": CategorySpec("midi-ddsp", True, "basic", "ddsp_basic_realify")},
     )
     assert pass_sequence(no_realify) == (
-        "layout", "fluidsynth", "verify", "mix", "verify_mix",
+        "layout", "fluidsynth", "verify", "mix", "song_mix", "verify_mix",
     )
     assert pass_sequence(with_ddsp) == (
-        "layout", "fluidsynth", "midi_ddsp", "verify", "mix", "verify_mix",
+        "layout", "fluidsynth", "midi_ddsp", "verify", "mix", "song_mix", "verify_mix",
     )
     assert pass_sequence(with_realify) == (
-        "layout", "fluidsynth", "realify", "verify", "mix", "verify_mix",
+        "layout", "fluidsynth", "realify", "verify", "mix", "song_mix", "verify_mix",
     )
     assert pass_sequence(with_ddsp_realify) == (
-        "layout", "fluidsynth", "midi_ddsp", "realify", "verify", "mix", "verify_mix",
+        "layout", "fluidsynth", "midi_ddsp", "realify", "verify", "mix", "song_mix", "verify_mix",
     )
     with_piano_ddsp = CategoryRecipe(
         specs={
@@ -304,7 +304,7 @@ def test_pass_sequence_starts_with_layout():
         },
     )
     assert pass_sequence(with_piano_ddsp) == (
-        "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "verify", "mix", "verify_mix",
+        "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "verify", "mix", "song_mix", "verify_mix",
     )
 
 

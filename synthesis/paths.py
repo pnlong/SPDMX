@@ -15,6 +15,7 @@ from shared.config import (
     SPDMX_DATASET_DIR_NAME,
     SPDMX_DEV_DIR_NAME,
     SPDMX_MID_DIR_NAME,
+    SPDMX_MIX_DIR_NAME,
     SPDMX_RAW_DIR_NAME,
     STEMS_DIR_NAME,
     STEMS_REALIFY_DIR_NAME,
@@ -117,6 +118,11 @@ def spdmx_raw_dir(output_dir: str) -> str:
 
 def spdmx_mid_dir(output_dir: str) -> str:
     return f"{spdmx_dev_dir(output_dir)}/{SPDMX_MID_DIR_NAME}"
+
+
+def spdmx_mix_dir(output_dir: str) -> str:
+    """Full-song mixes: ``{OUTPUT}/SPDMX_dev/mix/<song_id>.flac``."""
+    return f"{spdmx_dev_dir(output_dir)}/{SPDMX_MIX_DIR_NAME}"
 
 
 def raw_path_to_audio(path: str) -> str:

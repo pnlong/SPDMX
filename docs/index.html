@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SPDMX: Public-Domain Multitrack Stem Audio at Scale</title>
+  <meta name="description" content="sPDMX turns PDMX symbolic scores into open multitrack stem audio at corpus scale.">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="icon" type="image/png" sizes="96x96" href="assets/favicon-96x96.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="assets/site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#top">
+      <img class="brand-mark" src="assets/logo.png" alt="SPDMX" width="40" height="40" onerror="this.style.display='none'">
+      <span class="brand-name">SPDMX</span>
+    </a>
+    <button
+      class="nav-toggle"
+      type="button"
+      aria-label="Open menu"
+      aria-controls="site-nav"
+      aria-expanded="false"
+    >
+      <span class="nav-toggle-bar" aria-hidden="true"></span>
+      <span class="nav-toggle-bar" aria-hidden="true"></span>
+      <span class="nav-toggle-bar" aria-hidden="true"></span>
+    </button>
+    <nav class="nav" id="site-nav">
+      <a href="#paper">📄 Paper</a>
+      <a id="nav-dataset" href="#dataset">📦 Dataset</a>
+      <a href="https://github.com/pnlong/SPDMX">💻 Code</a>
+      <a href="https://zenodo.org/records/13763756">🎼 PDMX</a>
+      <a href="#listen">🎧 Listen</a>
+      <a href="#cite">📚 Cite</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-brand">
+        <img class="hero-logo" src="assets/logo.png" alt="sPDMX" width="88" height="88">
+      </div>
+      <h1 class="paper-title">SPDMX: Public-Domain Multitrack Stem Audio at Scale</h1>
+      <p class="authors">
+        Phillip Long, Eduardo Escoto, Julian McAuley, Zachary Novack
+      </p>
+      <p class="affiliation">University of California, San Diego</p>
+      <div class="cta-row">
+        <!-- Set Paper (arXiv/PDF) and Dataset (Zenodo record) URLs when available. -->
+        <a class="btn" href="#paper">📄 Paper</a>
+        <a class="btn primary" id="link-dataset" href="#dataset">📦 Dataset</a>
+        <a class="btn" href="https://github.com/pnlong/SPDMX">💻 Code</a>
+        <a class="btn" href="https://zenodo.org/records/13763756">🎼 PDMX</a>
+        <a class="btn" href="#listen">🎧 Listen</a>
+        <a class="btn" href="#cite">📚 Cite</a>
+      </div>
+      <ul class="stat-strip" id="stat-strip" aria-label="Dataset scale">
+        <li><strong id="stat-songs">—</strong><span>songs</span></li>
+        <li><strong id="stat-stems">—</strong><span>stems</span></li>
+        <li><strong id="stat-hours">—</strong><span>hours</span></li>
+        <li><strong id="stat-chunks">—</strong><span>chunks</span></li>
+      </ul>
+      <div class="hero-panel">
+        <code>chunk_N / song_id /</code>
+        <ul>
+          <li>0.flac … K.flac</li>
+          <li>mix.flac</li>
+          <li>mix.mid</li>
+        </ul>
+        <p>44.1 kHz · mono stems · mono mix · FLAC · −23 LUFS</p>
+      </div>
+    </section>
+
+    <section id="layout" class="section">
+      <div class="section-head">
+        <h2>What’s on disk</h2>
+        <p>
+          Filter with the CSV tables first, then download only the ~27 GiB chunk
+          archives you need. Each song directory holds stems, a
+          linear-sum mix, and paired MIDI.
+        </p>
+      </div>
+      <figure class="figure-block">
+        <img src="assets/chunk_layout.svg" alt="SPDMX release tree: metadata CSVs, chunk archives, and per-song stems/mix/MIDI" width="1200" height="490">
+        <figcaption>
+          Release tree: filter with the CSVs, download ~27 GiB <code>chunk_N</code> archives,
+          then open <code>chunk_N/&lt;song_id&gt;/</code> for stems, mix, and paired MIDI.
+        </figcaption>
+      </figure>
+      <div class="two-col">
+        <div>
+          <h3>Download recipe</h3>
+          <ol class="steps">
+            <li>Get <code>stems.csv</code>, <code>songs.csv</code>, <code>chunks.csv</code>.</li>
+            <li>Filter songs (e.g. <code>subset:bdgp</code>) then restrict stems.</li>
+            <li>Read distinct <code>chunk</code> ids and fetch those <code>chunk_N.zip</code> files.</li>
+            <li>Unzip beside the CSVs so <code>./chunk_N/&lt;song_id&gt;/…</code> resolves.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Per-song contents</h3>
+          <ul class="plain">
+            <li><strong>track</strong> — contiguous index after dropping empty PDMX tracks (<code>{track}.flac</code>).</li>
+            <li><strong>program / is_drum</strong> — General MIDI identity after name-based correction.</li>
+            <li><strong>mix.flac</strong> — raw linear sum of stems (mono).</li>
+            <li><strong>mix.mid</strong> — paired MIDI aligned to the stems.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Songs per chunk</h3>
+        <canvas id="chart-chunks" height="120"></canvas>
+      </div>
+    </section>
+
+    <section id="stats" class="section alt">
+      <div class="section-head">
+        <h2>Dataset at a glance</h2>
+        <p>Scale and inventory plots that did not fit in the paper.</p>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Scale vs peers</h3>
+          <canvas id="chart-comparison" height="180"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Stems per song (multi-stem)</h3>
+          <canvas id="chart-tracks" height="180"></canvas>
+          <p class="chart-note" id="tracks-note"></p>
+        </div>
+        <div class="chart-card">
+          <h3>GM classes (songs)</h3>
+          <canvas id="chart-gm" height="220"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Top programs (stems)</h3>
+          <canvas id="chart-programs" height="220"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Render recipe</h3>
+          <canvas id="chart-backends" height="160"></canvas>
+          <p class="chart-note" id="backends-note"></p>
+        </div>
+        <div class="chart-card">
+          <h3>Song length (PDMX)</h3>
+          <div id="duration-panel" class="duration-panel"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="listen" class="section">
+      <div class="section-head">
+        <h2>Listen</h2>
+        <p>Stem and mix examples from the release. Solo or mute individual parts.</p>
+      </div>
+      <div id="demo-root" class="demo-root"></div>
+    </section>
+
+    <section id="cite" class="section alt">
+      <div class="section-head">
+        <h2>Citation &amp; license</h2>
+        <p>
+          Cite <strong>SPDMX</strong> if you use the audio (stems or mixes).
+          Also cite <strong>PDMX</strong> if you use anything beyond the paired MIDI
+          shipped with SPDMX (for example MusicXML, PDMX metadata, or other PDMX-only fields).
+        </p>
+      </div>
+      <h3 class="cite-label">SPDMX</h3>
+      <pre class="bib"><code>@inproceedings{long2026spdmx,
+  title={{SPDMX}: Public-Domain Multitrack Stem Audio at Scale},
+  author={Long, Phillip and Escoto, Eduardo and McAuley, Julian and Novack, Zachary},
+  booktitle={ICASSP},
+  year={2026},
+  note={to appear}
+}</code></pre>
+      <h3 class="cite-label">PDMX</h3>
+      <pre class="bib"><code>@inproceedings{long2024pdmx,
+  author={Long, Phillip and Novack, Zachary and Berg-Kirkpatrick, Taylor and McAuley, Julian},
+  booktitle={ICASSP 2025},
+  title={{PDMX}: A Large-Scale Public Domain MusicXML Dataset for Symbolic Music Processing},
+  year={2025},
+  pages={1-5},
+  doi={10.1109/ICASSP49660.2025.10890217}
+}</code></pre>
+      <p class="license">
+        Release license: CC BY 4.0 (PDMX scores are public domain; see the dataset
+        <code>LICENSE</code>). Project page:
+        <a href="https://pnlong.github.io/SPDMX/">pnlong.github.io/SPDMX</a>.
+      </p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>sPDMX · <a href="https://github.com/pnlong/SPDMX">GitHub</a></p>
+  </footer>
+</body>
+</html>

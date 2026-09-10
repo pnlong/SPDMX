@@ -254,8 +254,8 @@ def prepare_spdmx(
     """Remap sPDMX GM stems into out_root/spdmx/all/{song_id}/…
 
     Expects the **chunked release** layout by default (``stems.csv`` with
-    ``path`` / ``chunk`` pointing at ``chunk_N/audio/…``). Flat ``SPDMX_dev``
-    trees still work as a fallback.
+    ``path`` / ``chunk`` pointing at ``chunk_N/<song_id>/``). Flat ``SPDMX_dev``
+    trees (``audio/`` / ``raw/``) work for lab use.
 
     When ``require_all`` is True (default), songs are taken from
     ``songs.csv`` ``subset:bdgp`` when that table exists; otherwise BDGP

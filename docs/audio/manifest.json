@@ -1,0 +1,153 @@
+{
+  "clip_seconds": 18,
+  "demos": [
+    {
+      "id": "solo_piano",
+      "label": "Solo piano",
+      "blurb": "Single-stem Acoustic Grand \u2014 typical of ~65% of the corpus.",
+      "song_id": "0/0/Qma113RUUvApyeCqFzReRGQgzyoTbvx5sgm91MGkokDcMW",
+      "chunk": 45,
+      "n_tracks": 1,
+      "clip_start_s": 5.0,
+      "gm_classes": "piano",
+      "mix": "audio/solo_piano/mix.mp3",
+      "stems": [
+        {
+          "track": 0,
+          "file": "audio/solo_piano/0.mp3",
+          "label": "Acoustic Grand Piano",
+          "gm_class": "piano",
+          "program": 0,
+          "is_drum": false
+        }
+      ]
+    },
+    {
+      "id": "bdgp",
+      "label": "Bass \u00b7 Drums \u00b7 Guitar \u00b7 Piano",
+      "blurb": "Four-stem BDGP subset matching common separation targets (bass, drums, guitar, piano).",
+      "song_id": "1/0/Qmb1snovwcer7En7fZ3JcCLHx4LbPgReGzbJjixng1kK4W",
+      "chunk": 63,
+      "n_tracks": 4,
+      "clip_start_s": 72.0,
+      "gm_classes": "bass|drums|guitar|piano",
+      "mix": "audio/bdgp/mix.mp3",
+      "stems": [
+        {
+          "track": 0,
+          "file": "audio/bdgp/0.mp3",
+          "label": "Acoustic Grand Piano",
+          "gm_class": "piano",
+          "program": 0,
+          "is_drum": false
+        },
+        {
+          "track": 1,
+          "file": "audio/bdgp/1.mp3",
+          "label": "Acoustic Guitar (steel)",
+          "gm_class": "guitar",
+          "program": 25,
+          "is_drum": false
+        },
+        {
+          "track": 2,
+          "file": "audio/bdgp/2.mp3",
+          "label": "Slap Bass 2",
+          "gm_class": "bass",
+          "program": 37,
+          "is_drum": false
+        },
+        {
+          "track": 3,
+          "file": "audio/bdgp/3.mp3",
+          "label": "Drums",
+          "gm_class": "drums",
+          "program": 0,
+          "is_drum": true
+        }
+      ]
+    },
+    {
+      "id": "ensemble",
+      "label": "Choir / ensemble",
+      "blurb": "Multi-stem writing in the GM ensemble family (e.g. choir aahs).",
+      "song_id": "0/0/Qma18FVED5wsWh2EpqKca5b56XeVHMcv6ioSU1TkVFrgXy",
+      "chunk": 55,
+      "n_tracks": 3,
+      "clip_start_s": 67.0,
+      "gm_classes": "ensemble|piano",
+      "mix": "audio/ensemble/mix.mp3",
+      "stems": [
+        {
+          "track": 0,
+          "file": "audio/ensemble/0.mp3",
+          "label": "Choir Aahs",
+          "gm_class": "ensemble",
+          "program": 52,
+          "is_drum": false
+        },
+        {
+          "track": 1,
+          "file": "audio/ensemble/1.mp3",
+          "label": "Acoustic Grand Piano",
+          "gm_class": "piano",
+          "program": 0,
+          "is_drum": false
+        },
+        {
+          "track": 2,
+          "file": "audio/ensemble/2.mp3",
+          "label": "Acoustic Grand Piano",
+          "gm_class": "piano",
+          "program": 0,
+          "is_drum": false
+        }
+      ]
+    },
+    {
+      "id": "orchestral",
+      "label": "Orchestral hybrid",
+      "blurb": "Mixed orchestral families \u2014 strings, brass, reeds, and more.",
+      "song_id": "0/0/Qma1VWM2HvX9FA52cskFDZ2KmdfB1v21FExvyqAFPcMaL7",
+      "chunk": 25,
+      "n_tracks": 4,
+      "clip_start_s": 24.0,
+      "gm_classes": "reed",
+      "mix": "audio/orchestral/mix.mp3",
+      "stems": [
+        {
+          "track": 0,
+          "file": "audio/orchestral/0.mp3",
+          "label": "Soprano Sax",
+          "gm_class": "reed",
+          "program": 64,
+          "is_drum": false
+        },
+        {
+          "track": 1,
+          "file": "audio/orchestral/1.mp3",
+          "label": "Alto Sax",
+          "gm_class": "reed",
+          "program": 65,
+          "is_drum": false
+        },
+        {
+          "track": 2,
+          "file": "audio/orchestral/2.mp3",
+          "label": "Tenor Sax",
+          "gm_class": "reed",
+          "program": 66,
+          "is_drum": false
+        },
+        {
+          "track": 3,
+          "file": "audio/orchestral/3.mp3",
+          "label": "Baritone Sax",
+          "gm_class": "reed",
+          "program": 67,
+          "is_drum": false
+        }
+      ]
+    }
+  ]
+}
