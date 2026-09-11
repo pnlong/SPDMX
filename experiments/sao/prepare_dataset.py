@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -291,13 +292,17 @@ def _write_arm(
         except OSError:
             pass
 
+    # Copy hook into the shared arm dir so dataset_config does not depend on a checkout path.
+    shared_meta = arm_dir / "custom_metadata.py"
+    shutil.copy2(custom_meta, shared_meta)
+
     ds_cfg = {
         "dataset_type": "audio_dir",
         "datasets": [
             {
                 "id": arm,
                 "path": str(link_root),
-                "custom_metadata_module": str(custom_meta),
+                "custom_metadata_module": str(shared_meta.resolve()),
                 "custom_metadata_args": {"meta_json": str(arm_dir / "dataset_meta.json")},
             }
         ],

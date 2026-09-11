@@ -39,6 +39,22 @@ def _find_train_py() -> Path | None:
     return None
 
 
+def _localize_dataset_config(ds_cfg: Path, *, dest: Path) -> Path:
+    """Prefer shared ``custom_metadata.py`` next to dataset_config; else this checkout."""
+    with open(ds_cfg) as f:
+        cfg = json.load(f)
+    shared_meta = ds_cfg.parent / "custom_metadata.py"
+    meta_path = shared_meta if shared_meta.is_file() else (SAO_DIR / "custom_metadata.py")
+    local_meta = str(meta_path.resolve())
+    for ds in cfg.get("datasets") or []:
+        if "custom_metadata_module" in ds:
+            ds["custom_metadata_module"] = local_meta
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "w") as f:
+        json.dump(cfg, f, indent=2)
+    return dest
+
+
 def train_arm(
     arm: str,
     *,
@@ -65,6 +81,11 @@ def train_arm(
     batch_size = int(cfg.get("batch_size", 2))
     run_name = name or f"sao_{arm}"
 
+    # Shared dataset_config may point at another user's checkout for custom_metadata.py.
+    local_ds_cfg = _localize_dataset_config(
+        ds_cfg, dest=save_dir / "dataset_config.local.json"
+    )
+
     # prefigure reads defaults.ini from CWD (must be the stable-audio-tools root).
     tools_root = train_py.resolve().parent
     cmd = [
@@ -73,7 +94,7 @@ def train_arm(
         "--model-config",
         str(model_cfg.resolve()),
         "--dataset-config",
-        str(ds_cfg.resolve()),
+        str(local_ds_cfg.resolve()),
         "--pretrained-ckpt-path",
         str(pretrained_ckpt.resolve()),
         "--name",
