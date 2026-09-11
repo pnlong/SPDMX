@@ -117,11 +117,32 @@ def _program_name(program: int, is_drum: bool) -> str:
     return f"Program {program}"
 
 
+def release_hours_from_songs(songs: pd.DataFrame) -> float | None:
+    """Mixture hours: sum of per-song mix lengths / 3600 (never multiply by stem count)."""
+    if "song_length" not in songs.columns:
+        return None
+    lengths = pd.to_numeric(songs["song_length"], errors="coerce").dropna()
+    lengths = lengths[lengths > 0]
+    if lengths.empty:
+        return None
+    return float(lengths.sum() / 3600.0)
+
+
 def export_summary(stats: dict, songs: pd.DataFrame, chunks: pd.DataFrame) -> dict:
+    hours = release_hours_from_songs(songs)
+    if hours is None:
+        hours = float(stats.get("release_hours_approx", 6248))
     return {
         "release_songs": int(stats.get("release_songs", len(songs))),
         "release_stems": int(stats.get("release_stems", 0)),
-        "release_hours_approx": stats.get("release_hours_approx", 6248),
+        # One mix duration per song (song_length); do not sum stem lengths.
+        "release_hours": round(hours, 1),
+        "release_hours_approx": round(hours, 1),
+        "hours_source": (
+            "sum(songs.csv song_length) / 3600 — mix duration per song, not stems"
+            if "song_length" in songs.columns
+            else "dataset_stats fallback"
+        ),
         "sample_rate_hz": stats.get("sample_rate_hz", 44100),
         "channels": stats.get("channels", 1),
         "audio_format": stats.get("audio_format", "flac"),
@@ -508,11 +529,102 @@ def export_render_backends(recipe_path: Path) -> dict:
     }
 
 
+# Uneven bins emphasize the short-song mass and SA3-relevant cutoffs (120s / 380s).
+DURATION_HIST_EDGES_S = (
+    0,
+    15,
+    30,
+    45,
+    60,
+    90,
+    120,
+    180,
+    240,
+    300,
+    380,
+    600,
+    1200,
+    float("inf"),
+)
+DURATION_HIST_LABELS = (
+    "0–15",
+    "15–30",
+    "30–45",
+    "45–60",
+    "60–90",
+    "90–120",
+    "120–180",
+    "180–240",
+    "240–300",
+    "300–380",
+    "380–600",
+    "600–1200",
+    "1200+",
+)
+
+
+def export_duration_from_songs(songs: pd.DataFrame) -> dict | None:
+    """Histogram + percentiles of mix ``song_length`` (soundfile seconds)."""
+    if "song_length" not in songs.columns:
+        return None
+    lengths = pd.to_numeric(songs["song_length"], errors="coerce").dropna()
+    lengths = lengths[lengths > 0]
+    if lengths.empty:
+        return None
+
+    edges = list(DURATION_HIST_EDGES_S)
+    cats = pd.cut(
+        lengths,
+        bins=edges,
+        labels=list(DURATION_HIST_LABELS),
+        right=False,
+        include_lowest=True,
+    )
+    counts = [int((cats == lab).sum()) for lab in DURATION_HIST_LABELS]
+    n = int(len(lengths))
+    p50 = float(lengths.median())
+    p95 = float(lengths.quantile(0.95))
+    p99 = float(lengths.quantile(0.99))
+    pct_120 = float((lengths <= 120).mean() * 100.0)
+    pct_380 = float((lengths <= 380).mean() * 100.0)
+    hours = float(lengths.sum() / 3600.0)
+    return {
+        "source": "songs.csv song_length (mix soundfile duration)",
+        "unit": "seconds",
+        "labels": list(DURATION_HIST_LABELS),
+        "counts": counts,
+        "bin_edges_seconds": [None if e == float("inf") else e for e in edges],
+        "n_songs": n,
+        "hours": round(hours, 1),
+        "percentiles": {
+            "p50": round(p50, 1),
+            "p75": round(float(lengths.quantile(0.75)), 1),
+            "p90": round(float(lengths.quantile(0.90)), 1),
+            "p95": round(p95, 1),
+            "p99": round(p99, 1),
+        },
+        "summary": {
+            "median_song_duration_seconds": round(p50, 1),
+            "mean_song_duration_seconds": round(float(lengths.mean()), 1),
+            "pct_songs_under_120s": round(pct_120, 1),
+            "pct_songs_under_380s": round(pct_380, 1),
+            "n_songs_over_380s": int((lengths > 380).sum()),
+        },
+        "caption": (
+            f"Mix durations peak under a minute (median {p50:.0f} s); "
+            f"{pct_120:.0f}% of songs are ≤120 s, with a long tail of multi-minute scores "
+            f"({int((lengths > 380).sum()):,} over 380 s)."
+        ),
+    }
+
+
 def export_duration(report_path: Path) -> dict | None:
+    """Legacy PDMX-metadata duration report (fallback if songs lack song_length)."""
     if not report_path.is_file():
         return None
     report = json.loads(report_path.read_text(encoding="utf-8"))
     return {
+        "source": "PDMX song_length.seconds (legacy)",
         "percentiles": report.get("percentiles", {}),
         "summary": report.get("summary", {}),
         "sa3_limits": report.get("sa3_limits", {}),
@@ -553,11 +665,17 @@ def main() -> None:
     _write_json(data_dir / "programs_top.json", export_programs_top(stems))
     _write_json(data_dir / "chunks.json", export_chunks(chunks))
     comparison = {
-        k: v
+        k: dict(v)
         for k, v in stats.get("comparison_table", {}).items()
         if str(k).upper() != "PDMX"
         and str((v or {}).get("type", "")).lower() != "symbolic"
     }
+    # Peer chart: SPDMX hours from mix song_length, not PDMX symbolic duration.
+    if "SPDMX" in comparison and summary.get("release_hours") is not None:
+        comparison["SPDMX"]["hours"] = summary["release_hours"]
+        comparison["SPDMX"]["songs"] = summary.get(
+            "release_songs", comparison["SPDMX"].get("songs")
+        )
     _write_json(data_dir / "comparison.json", comparison)
     backends = export_render_backends(args.stem_recipe)
     _write_json(data_dir / "backends.json", backends)
@@ -567,7 +685,7 @@ def main() -> None:
             i: c for i, c in zip(backends["ids"], backends["counts"], strict=False)
         }
         _write_json(data_dir / "summary.json", summary)
-    duration = export_duration(SONG_LENGTH_REPORT)
+    duration = export_duration_from_songs(songs) or export_duration(SONG_LENGTH_REPORT)
     if duration:
         _write_json(data_dir / "duration.json", duration)
 

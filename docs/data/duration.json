@@ -1,25 +1,67 @@
 {
+  "source": "songs.csv song_length (mix soundfile duration)",
+  "unit": "seconds",
+  "labels": [
+    "0\u201315",
+    "15\u201330",
+    "30\u201345",
+    "45\u201360",
+    "60\u201390",
+    "90\u2013120",
+    "120\u2013180",
+    "180\u2013240",
+    "240\u2013300",
+    "300\u2013380",
+    "380\u2013600",
+    "600\u20131200",
+    "1200+"
+  ],
+  "counts": [
+    5088,
+    33849,
+    71797,
+    42410,
+    46970,
+    16270,
+    17906,
+    8723,
+    4394,
+    2435,
+    2268,
+    1411,
+    461
+  ],
+  "bin_edges_seconds": [
+    0,
+    15,
+    30,
+    45,
+    60,
+    90,
+    120,
+    180,
+    240,
+    300,
+    380,
+    600,
+    1200,
+    null
+  ],
+  "n_songs": 253982,
+  "hours": 5469.0,
   "percentiles": {
-    "p50": 47.5,
-    "p75": 89.75,
-    "p90": 177.0,
-    "p95": 264.6,
-    "p99": 625.55,
-    "p99_9": 1800.0
+    "p50": 48.0,
+    "p75": 77.8,
+    "p90": 153.3,
+    "p95": 223.6,
+    "p99": 506.4
   },
   "summary": {
-    "recommended_model": "medium",
-    "reason": "only 81.9% of songs fit within 120s; use medium (up to 380s)",
-    "pct_songs_under_120s": 81.88,
-    "pct_songs_under_380s": 97.41,
-    "n_songs_over_380s": 6578,
-    "median_song_duration_seconds": 47.5,
-    "p95_song_duration_seconds": 264.6,
-    "p99_song_duration_seconds": 625.55
+    "median_song_duration_seconds": 48.0,
+    "mean_song_duration_seconds": 77.5,
+    "pct_songs_under_120s": 85.2,
+    "pct_songs_under_380s": 98.4,
+    "n_songs_over_380s": 4140
   },
-  "sa3_limits": {
-    "pct_at_120s_limit": 81.88,
-    "pct_at_380s_limit": 97.41,
-    "n_songs_over_380s": 6578
-  }
+  "caption": "Mix durations peak under a minute (median 48 s); 85% of songs are \u2264120 s, with a long tail of multi-minute scores (4,140 over 380 s)."
 }

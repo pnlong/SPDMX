@@ -109,6 +109,14 @@ function barChart(canvasId, labels, data, opts = {}) {
     ...CHART_DEFAULTS.scales,
     [valueAxis]: {
       ...CHART_DEFAULTS.scales[valueAxis],
+      title: opts.valueAxisTitle
+        ? {
+            display: true,
+            text: opts.valueAxisTitle,
+            color: MUTED,
+            font: { size: 11, family: "'IBM Plex Sans', sans-serif" },
+          }
+        : undefined,
       ticks: {
         ...CHART_DEFAULTS.scales[valueAxis].ticks,
         callback: niceTicks ? (v) => fmtCompact(v) : (v) => fmtCount(v),
@@ -116,6 +124,14 @@ function barChart(canvasId, labels, data, opts = {}) {
     },
     [categoryAxis]: {
       ...CHART_DEFAULTS.scales[categoryAxis],
+      title: opts.categoryAxisTitle
+        ? {
+            display: true,
+            text: opts.categoryAxisTitle,
+            color: MUTED,
+            font: { size: 11, family: "'IBM Plex Sans', sans-serif" },
+          }
+        : undefined,
     },
   };
 
@@ -258,10 +274,11 @@ export async function renderCharts() {
     };
     set("stat-songs", fmt(summary.release_songs));
     set("stat-stems", fmt(summary.release_stems));
+    const hours = summary.release_hours ?? summary.release_hours_approx;
     set(
       "stat-hours",
-      summary.release_hours_approx
-        ? `~${Number(summary.release_hours_approx).toLocaleString("en-US")}`
+      hours != null && Number.isFinite(Number(hours))
+        ? Math.round(Number(hours)).toLocaleString("en-US")
         : "—"
     );
     set("stat-chunks", fmt(summary.n_chunks));
@@ -301,7 +318,7 @@ export async function renderCharts() {
       note.textContent =
         `${nSingle.toLocaleString("en-US")} songs (${pct}%) are single-stem` +
         (nTotal ? ` of ${Number(nTotal).toLocaleString("en-US")}` : "") +
-        " — excluded from the bars above.";
+        `. The bars show only multi-stem songs, where most have just a few parts and a long tail reaches dozens of stems.`;
     }
   }
 
@@ -342,23 +359,19 @@ export async function renderCharts() {
     );
   }
 
-  if (duration) {
-    const panel = document.getElementById("duration-panel");
-    if (panel) {
-      const p = duration.percentiles || {};
-      const s = duration.summary || {};
-      const cells = [
-        ["Median", `${p.p50 ?? "—"} s`],
-        ["p95", `${p.p95 ?? "—"} s`],
-        ["≤120 s", `${s.pct_songs_under_120s ?? "—"}%`],
-        ["≤380 s", `${s.pct_songs_under_380s ?? "—"}%`],
-      ];
-      panel.innerHTML = cells
-        .map(
-          ([label, value]) =>
-            `<div><strong>${value}</strong><span>${label}</span></div>`
-        )
-        .join("");
+  if (duration?.labels?.length && duration?.counts?.length) {
+    barChart("chart-duration", duration.labels, duration.counts, {
+      color: PALETTE.marigold,
+      compactTicks: true,
+      valueLabel: "Songs",
+      categoryAxisTitle: "Mix duration (seconds)",
+      valueAxisTitle: "Songs",
+    });
+    const note = document.getElementById("duration-note");
+    if (note) {
+      note.textContent =
+        duration.caption ||
+        "Histogram of mix.flac durations (soundfile headers), in seconds.";
     }
   }
 }

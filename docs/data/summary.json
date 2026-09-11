@@ -1,7 +1,9 @@
 {
   "release_songs": 253982,
   "release_stems": 490159,
-  "release_hours_approx": 6248.0,
+  "release_hours": 5469.0,
+  "release_hours_approx": 5469.0,
+  "hours_source": "songs.csv song_length (mix soundfile duration)",
   "sample_rate_hz": 44100,
   "channels": 1,
   "audio_format": "flac",

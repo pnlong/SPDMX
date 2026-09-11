@@ -69,6 +69,15 @@
         <li><strong id="stat-hours">—</strong><span>hours</span></li>
         <li><strong id="stat-chunks">—</strong><span>chunks</span></li>
       </ul>
+      <p class="hero-abstract">
+        Recorded multitrack stems remain scarce for modern separation and generative
+        audio models, while large synthesized alternatives often depend on closed
+        commercial instruments. <strong>SPDMX</strong> is a public-domain multitrack
+        stem corpus from PDMX: scores are cleaned, rendered with open soundfonts and
+        selective MIDI-DDSP, then loudness- and velocity-aware mixed into mono stems
+        and mixes at 44.1 kHz—sharing song identity with PDMX so symbolic metadata
+        stays usable alongside the audio.
+      </p>
       <div class="hero-panel">
         <code>chunk_N / song_id /</code>
         <ul>
@@ -119,6 +128,11 @@
       <div class="chart-card">
         <h3>Songs per chunk</h3>
         <canvas id="chart-chunks" height="120"></canvas>
+        <p class="chart-note">
+          Archives are sized for ~27 GiB downloads, not equal song counts. Longer or
+          denser songs pack fewer titles into a chunk, so bar heights vary even though
+          download cost stays roughly uniform.
+        </p>
       </div>
     </section>
 
@@ -131,6 +145,11 @@
         <div class="chart-card">
           <h3>Scale vs peers</h3>
           <canvas id="chart-comparison" height="180"></canvas>
+          <p class="chart-note">
+            On mix duration, SPDMX is about an order of magnitude beyond Slakh2100 and
+            two orders beyond recorded multitrack sets: open synth stems at symbolic-corpus
+            scale rather than studio-session scale.
+          </p>
         </div>
         <div class="chart-card">
           <h3>Stems per song (multi-stem)</h3>
@@ -140,10 +159,19 @@
         <div class="chart-card">
           <h3>GM classes (songs)</h3>
           <canvas id="chart-gm" height="220"></canvas>
+          <p class="chart-note">
+            Piano covers most of the catalog; ensemble and orchestral families form a
+            smaller but still substantial second tier, while niche GM classes appear in
+            only a thin slice of songs.
+          </p>
         </div>
         <div class="chart-card">
           <h3>Top programs (stems)</h3>
           <canvas id="chart-programs" height="220"></canvas>
+          <p class="chart-note">
+            Acoustic Grand alone accounts for the majority of stems, mirroring
+            piano-heavy public-domain scores, with choir and drums as the next clear peaks.
+          </p>
         </div>
         <div class="chart-card">
           <h3>Render recipe</h3>
@@ -151,8 +179,9 @@
           <p class="chart-note" id="backends-note"></p>
         </div>
         <div class="chart-card">
-          <h3>Song length (PDMX)</h3>
-          <div id="duration-panel" class="duration-panel"></div>
+          <h3>Song length (mix)</h3>
+          <canvas id="chart-duration" height="180"></canvas>
+          <p class="chart-note" id="duration-note"></p>
         </div>
       </div>
     </section>
@@ -160,7 +189,10 @@
     <section id="listen" class="section">
       <div class="section-head">
         <h2>Listen</h2>
-        <p>Stem and mix examples from the release. Solo or mute individual parts.</p>
+        <p>
+          Clips from the release. Play starts every stem in sync; Mute and Solo change
+          who you hear. Only one demo plays at a time.
+        </p>
       </div>
       <div id="demo-root" class="demo-root"></div>
     </section>
