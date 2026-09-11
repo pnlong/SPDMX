@@ -396,43 +396,67 @@ def plot_ablation_listening(
     output_path: str | Path,
     *,
     figsize: tuple[float, float] = (8.0, 3.6),
+    scales: tuple[str, ...] = ("realism",),
 ) -> None:
-    """Grouped bars: condition × {content, realism} with value labels.
+    """Bars of listening means by condition (default: realism only).
 
-    Expects columns: ``condition``, ``content``, ``realism``.
+    Expects columns: ``condition`` plus each name in ``scales``
+    (e.g. ``content``, ``realism``).
     """
     import seaborn as sns
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    missing = [s for s in scales if s not in scores.columns]
+    if missing:
+        raise ValueError(f"plot_ablation_listening missing columns: {missing}")
     df = scores.copy()
-    df["condition"] = pd.Categorical(df["condition"], categories=list(_CONDITION_ORDER), ordered=True)
+    df["condition"] = pd.Categorical(
+        df["condition"], categories=list(_CONDITION_ORDER), ordered=True
+    )
     long = df.melt(
         id_vars=["condition"],
-        value_vars=["content", "realism"],
+        value_vars=list(scales),
         var_name="scale",
         value_name="score",
     )
     long["scale"] = long["scale"].str.capitalize()
+    hue_order = [s.capitalize() for s in scales]
 
     sns.set_theme(style="ticks", context="paper")
     try:
         fig, ax = plt.subplots(figsize=figsize)
-        sns.barplot(
-            data=long,
-            x="condition",
-            y="score",
-            hue="scale",
-            order=list(_CONDITION_ORDER),
-            hue_order=["Content", "Realism"],
-            ax=ax,
-            saturation=0.9,
-        )
+        if len(scales) == 1:
+            sns.barplot(
+                data=long,
+                x="condition",
+                y="score",
+                order=list(_CONDITION_ORDER),
+                ax=ax,
+                color=sns.color_palette("deep")[0],
+                saturation=0.9,
+            )
+        else:
+            sns.barplot(
+                data=long,
+                x="condition",
+                y="score",
+                hue="scale",
+                order=list(_CONDITION_ORDER),
+                hue_order=hue_order,
+                ax=ax,
+                saturation=0.9,
+            )
+            ax.legend(title=None, frameon=True, fontsize=8)
         _annotate_bars(ax, fmt="{:.1f}")
         ax.set_xlabel("Condition")
-        ax.set_ylabel("Mean score (0–100)")
+        ylabel = (
+            f"Mean {scales[0]} (0–100)"
+            if len(scales) == 1
+            else "Mean score (0–100)"
+        )
+        ax.set_ylabel(ylabel)
         ax.set_ylim(0, 100)
-        ax.legend(title=None, frameon=True, fontsize=8)
         sns.despine(ax=ax)
         fig.tight_layout()
         _savefig(fig, output_path, pad_inches=0.02)

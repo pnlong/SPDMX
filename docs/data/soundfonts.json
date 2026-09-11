@@ -1,0 +1,460 @@
+{
+  "basic": {
+    "name": "SGM-V2.01",
+    "file": "SGM-V2.01.sf2",
+    "note": "Single-bank FluidSynth path for basic / fallback stems."
+  },
+  "source": "experiments/patch_sweep/winners_locked.yaml",
+  "collection": "Archive.org free-soundfonts-sf2-2019-04",
+  "collection_url": "https://archive.org/download/free-soundfonts-sf2-2019-04",
+  "n_varied": 40,
+  "fonts": [
+    {
+      "id": "airfont_320_neo",
+      "file": "airfont_320_neo.sf2"
+    },
+    {
+      "id": "airfont_340",
+      "file": "airfont_340.sf2"
+    },
+    {
+      "id": "airfont_380_final",
+      "file": "airfont_380_final.sf2"
+    },
+    {
+      "id": "arachno_soundfont_version_1_0",
+      "file": "Arachno_SoundFont_Version_1.0.sf2"
+    },
+    {
+      "id": "bennetng_anothergs_v2_1",
+      "file": "bennetng_AnotherGS_v2-1.sf2"
+    },
+    {
+      "id": "cadenza_lp",
+      "file": "cadenza-lp.sf2"
+    },
+    {
+      "id": "choriumreva",
+      "file": "ChoriumRevA.SF2"
+    },
+    {
+      "id": "creative_emu10k1_8mbgmsfx",
+      "file": "Creative (emu10k1)8MBGMSFX.SF2"
+    },
+    {
+      "id": "creative_8mbgm",
+      "file": "CREATIVE_8MBGM.SF2"
+    },
+    {
+      "id": "ct2mgm",
+      "file": "CT2MGM.SF2"
+    },
+    {
+      "id": "dsoundfontv4",
+      "file": "DSoundFontV4.sf2"
+    },
+    {
+      "id": "fatboy_v0_786",
+      "file": "FatBoy-v0.786.sf2"
+    },
+    {
+      "id": "fluidr3_gm2_2",
+      "file": "FluidR3_GM2-2.SF2"
+    },
+    {
+      "id": "generaluser_gs_softsynth_v1_44",
+      "file": "GeneralUser_GS_SoftSynth_v1.44.sf2"
+    },
+    {
+      "id": "gmextbank",
+      "file": "GMExtBank.SF2"
+    },
+    {
+      "id": "gus1live_v12",
+      "file": "Gus1live_v12.sf2"
+    },
+    {
+      "id": "jclive21",
+      "file": "JClive21.sf2"
+    },
+    {
+      "id": "jnsgm",
+      "file": "Jnsgm.sf2"
+    },
+    {
+      "id": "jurgen_gm_gs_bank",
+      "file": "Jurgen_GM_GS_Bank.sf2"
+    },
+    {
+      "id": "magicsfver2",
+      "file": "MagicSFver2.sf2"
+    },
+    {
+      "id": "merlin_audigy_v1_14",
+      "file": "merlin_audigy(v1.14).sf2"
+    },
+    {
+      "id": "merlin_creative_v4_15",
+      "file": "merlin_creative(v4.15).sf2"
+    },
+    {
+      "id": "merlin_gmpro_v3_15",
+      "file": "merlin_GMpro(v3.15).sf2"
+    },
+    {
+      "id": "merlin_grand_v5_37",
+      "file": "merlin_grand(v5.37).sf2"
+    },
+    {
+      "id": "merlin_orchestra_v1_40",
+      "file": "merlin_orchestra(v1.40).sf2"
+    },
+    {
+      "id": "merlin_silver_v4_10",
+      "file": "merlin_silver(v4.10).sf2"
+    },
+    {
+      "id": "merlin_special_v2_05",
+      "file": "merlin_special(v2.05).sf2"
+    },
+    {
+      "id": "merlin_symphony_v1_21",
+      "file": "merlin_symphony(v1.21).sf2"
+    },
+    {
+      "id": "merlin_vienna_v3_20",
+      "file": "merlin_vienna(v3.20).sf2"
+    },
+    {
+      "id": "musica_theoria_v2_gm",
+      "file": "Musica_Theoria_v2_(GM).sf2"
+    },
+    {
+      "id": "ph_gm2",
+      "file": "ph-gm2.SF2"
+    },
+    {
+      "id": "sgm_v2_01_nicepianosguitarsbass_v1_2",
+      "file": "SGM-v2.01-NicePianosGuitarsBass-V1.2.sf2"
+    },
+    {
+      "id": "sgm_v2_01",
+      "file": "SGM-V2.01.sf2"
+    },
+    {
+      "id": "sonivox_gs250",
+      "file": "SONiVOX_GS250.sf2"
+    },
+    {
+      "id": "soundfont_somsak_2016_v2_8",
+      "file": "Soundfont_SOMSAK_2016-V2.8.SF2"
+    },
+    {
+      "id": "tgk3",
+      "file": "tgk3.SF2"
+    },
+    {
+      "id": "the_xioad_bank",
+      "file": "The_Xioad_Bank.sf2"
+    },
+    {
+      "id": "uhd3",
+      "file": "UHD3.sf2"
+    },
+    {
+      "id": "unison",
+      "file": "Unison.SF2"
+    },
+    {
+      "id": "yamaha_tyros_4_just_t4_fixed",
+      "file": "yamaha tyros 4_just_t4_fixed.sf2"
+    }
+  ],
+  "by_category": {
+    "brass": [
+      {
+        "id": "airfont_340",
+        "file": "airfont_340.sf2"
+      },
+      {
+        "id": "cadenza_lp",
+        "file": "cadenza-lp.sf2"
+      },
+      {
+        "id": "creative_8mbgm",
+        "file": "CREATIVE_8MBGM.SF2"
+      },
+      {
+        "id": "gus1live_v12",
+        "file": "Gus1live_v12.sf2"
+      },
+      {
+        "id": "merlin_silver_v4_10",
+        "file": "merlin_silver(v4.10).sf2"
+      },
+      {
+        "id": "the_xioad_bank",
+        "file": "The_Xioad_Bank.sf2"
+      },
+      {
+        "id": "uhd3",
+        "file": "UHD3.sf2"
+      },
+      {
+        "id": "unison",
+        "file": "Unison.SF2"
+      }
+    ],
+    "drums": [
+      {
+        "id": "airfont_380_final",
+        "file": "airfont_380_final.sf2"
+      },
+      {
+        "id": "jclive21",
+        "file": "JClive21.sf2"
+      },
+      {
+        "id": "magicsfver2",
+        "file": "MagicSFver2.sf2"
+      },
+      {
+        "id": "musica_theoria_v2_gm",
+        "file": "Musica_Theoria_v2_(GM).sf2"
+      },
+      {
+        "id": "soundfont_somsak_2016_v2_8",
+        "file": "Soundfont_SOMSAK_2016-V2.8.SF2"
+      },
+      {
+        "id": "yamaha_tyros_4_just_t4_fixed",
+        "file": "yamaha tyros 4_just_t4_fixed.sf2"
+      }
+    ],
+    "guitar": [
+      {
+        "id": "dsoundfontv4",
+        "file": "DSoundFontV4.sf2"
+      },
+      {
+        "id": "ph_gm2",
+        "file": "ph-gm2.SF2"
+      },
+      {
+        "id": "sgm_v2_01_nicepianosguitarsbass_v1_2",
+        "file": "SGM-v2.01-NicePianosGuitarsBass-V1.2.sf2"
+      },
+      {
+        "id": "sonivox_gs250",
+        "file": "SONiVOX_GS250.sf2"
+      }
+    ],
+    "mallet": [
+      {
+        "id": "airfont_380_final",
+        "file": "airfont_380_final.sf2"
+      },
+      {
+        "id": "creative_8mbgm",
+        "file": "CREATIVE_8MBGM.SF2"
+      },
+      {
+        "id": "creative_emu10k1_8mbgmsfx",
+        "file": "Creative (emu10k1)8MBGMSFX.SF2"
+      },
+      {
+        "id": "jnsgm",
+        "file": "Jnsgm.sf2"
+      }
+    ],
+    "organ": [
+      {
+        "id": "arachno_soundfont_version_1_0",
+        "file": "Arachno_SoundFont_Version_1.0.sf2"
+      },
+      {
+        "id": "bennetng_anothergs_v2_1",
+        "file": "bennetng_AnotherGS_v2-1.sf2"
+      },
+      {
+        "id": "creative_emu10k1_8mbgmsfx",
+        "file": "Creative (emu10k1)8MBGMSFX.SF2"
+      },
+      {
+        "id": "ct2mgm",
+        "file": "CT2MGM.SF2"
+      },
+      {
+        "id": "fatboy_v0_786",
+        "file": "FatBoy-v0.786.sf2"
+      },
+      {
+        "id": "magicsfver2",
+        "file": "MagicSFver2.sf2"
+      },
+      {
+        "id": "merlin_audigy_v1_14",
+        "file": "merlin_audigy(v1.14).sf2"
+      },
+      {
+        "id": "merlin_creative_v4_15",
+        "file": "merlin_creative(v4.15).sf2"
+      },
+      {
+        "id": "merlin_gmpro_v3_15",
+        "file": "merlin_GMpro(v3.15).sf2"
+      },
+      {
+        "id": "merlin_special_v2_05",
+        "file": "merlin_special(v2.05).sf2"
+      },
+      {
+        "id": "merlin_symphony_v1_21",
+        "file": "merlin_symphony(v1.21).sf2"
+      },
+      {
+        "id": "ph_gm2",
+        "file": "ph-gm2.SF2"
+      },
+      {
+        "id": "tgk3",
+        "file": "tgk3.SF2"
+      },
+      {
+        "id": "the_xioad_bank",
+        "file": "The_Xioad_Bank.sf2"
+      }
+    ],
+    "piano": [
+      {
+        "id": "airfont_380_final",
+        "file": "airfont_380_final.sf2"
+      },
+      {
+        "id": "sgm_v2_01",
+        "file": "SGM-V2.01.sf2"
+      },
+      {
+        "id": "the_xioad_bank",
+        "file": "The_Xioad_Bank.sf2"
+      }
+    ],
+    "polyphonic": [
+      {
+        "id": "airfont_320_neo",
+        "file": "airfont_320_neo.sf2"
+      },
+      {
+        "id": "gmextbank",
+        "file": "GMExtBank.SF2"
+      },
+      {
+        "id": "jurgen_gm_gs_bank",
+        "file": "Jurgen_GM_GS_Bank.sf2"
+      },
+      {
+        "id": "sgm_v2_01",
+        "file": "SGM-V2.01.sf2"
+      },
+      {
+        "id": "sgm_v2_01_nicepianosguitarsbass_v1_2",
+        "file": "SGM-v2.01-NicePianosGuitarsBass-V1.2.sf2"
+      },
+      {
+        "id": "uhd3",
+        "file": "UHD3.sf2"
+      },
+      {
+        "id": "yamaha_tyros_4_just_t4_fixed",
+        "file": "yamaha tyros 4_just_t4_fixed.sf2"
+      }
+    ],
+    "strings": [
+      {
+        "id": "choriumreva",
+        "file": "ChoriumRevA.SF2"
+      },
+      {
+        "id": "creative_8mbgm",
+        "file": "CREATIVE_8MBGM.SF2"
+      },
+      {
+        "id": "fluidr3_gm2_2",
+        "file": "FluidR3_GM2-2.SF2"
+      },
+      {
+        "id": "generaluser_gs_softsynth_v1_44",
+        "file": "GeneralUser_GS_SoftSynth_v1.44.sf2"
+      },
+      {
+        "id": "merlin_grand_v5_37",
+        "file": "merlin_grand(v5.37).sf2"
+      },
+      {
+        "id": "merlin_orchestra_v1_40",
+        "file": "merlin_orchestra(v1.40).sf2"
+      },
+      {
+        "id": "sgm_v2_01",
+        "file": "SGM-V2.01.sf2"
+      }
+    ],
+    "voice": [
+      {
+        "id": "choriumreva",
+        "file": "ChoriumRevA.SF2"
+      },
+      {
+        "id": "dsoundfontv4",
+        "file": "DSoundFontV4.sf2"
+      },
+      {
+        "id": "fluidr3_gm2_2",
+        "file": "FluidR3_GM2-2.SF2"
+      },
+      {
+        "id": "jurgen_gm_gs_bank",
+        "file": "Jurgen_GM_GS_Bank.sf2"
+      },
+      {
+        "id": "merlin_symphony_v1_21",
+        "file": "merlin_symphony(v1.21).sf2"
+      },
+      {
+        "id": "sgm_v2_01",
+        "file": "SGM-V2.01.sf2"
+      },
+      {
+        "id": "soundfont_somsak_2016_v2_8",
+        "file": "Soundfont_SOMSAK_2016-V2.8.SF2"
+      }
+    ],
+    "wind": [
+      {
+        "id": "choriumreva",
+        "file": "ChoriumRevA.SF2"
+      },
+      {
+        "id": "fluidr3_gm2_2",
+        "file": "FluidR3_GM2-2.SF2"
+      },
+      {
+        "id": "merlin_creative_v4_15",
+        "file": "merlin_creative(v4.15).sf2"
+      },
+      {
+        "id": "merlin_gmpro_v3_15",
+        "file": "merlin_GMpro(v3.15).sf2"
+      },
+      {
+        "id": "merlin_grand_v5_37",
+        "file": "merlin_grand(v5.37).sf2"
+      },
+      {
+        "id": "merlin_vienna_v3_20",
+        "file": "merlin_vienna(v3.20).sf2"
+      }
+    ]
+  },
+  "caption": "Varied renders sample a listening-selected shortlist per instrument category; basic renders use SGM-V2.01."
+}

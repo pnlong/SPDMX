@@ -17,8 +17,8 @@
 \begin{abstract}
 Recorded multitrack stems remain scarce relative to the data needs of modern separation and generative audio models, while large synthesized alternatives often depend on closed commercial instruments.
 We present \textbf{SPDMX}, a public-domain multitrack stem corpus derived from the PDMX symbolic collection.
-Scores are cleaned (General MIDI program correction; empty tracks removed), rendered with open soundfont synthesis and selective MIDI-DDSP for sustained orchestral families, and mixed with per-stem loudness normalization plus MIDI-velocity relative scaling so inter-track dynamics survive loudness matching.
-Render choices are selected with a dual-scale listening study (content adherence and realism).
+Scores are cleaned (General MIDI program correction; empty tracks removed) and rendered with open soundfont synthesis and selective MIDI-DDSP for sustained orchestral families.
+Render choices are selected with a listening study on perceived realism.
 The release comprises approximately $254$K songs and $490$K mono stems at $44.1$\,kHz, sharing song identity with PDMX so symbolic metadata and scores can be used with the audio.
 Matched-budget Hybrid Demucs and Stable Audio Open fine-tunes compare Slakh2100 against four-stem and full SPDMX under objective SI-SDR, FAD, and CLAP.
 \end{abstract}
@@ -30,7 +30,7 @@ Public-domain music, multitrack stems, symbolic-to-audio, source separation, gen
 \section{Introduction}
 \label{sec:intro}
 
-Music source separation, accompaniment generation, and related audio models consume paired mixtures and stems.\footnote{Audio examples are available on the project demo page.}
+Music source separation, accompaniment generation, and related audio models consume paired mixtures and stems.
 Recorded corpora such as MUSDB18~\cite{rafii2019musdb18}, MedleyDB~\cite{bittner2014medleydb}, and MoisesDB~\cite{pereira2023moisesdb} supply realistic multitracks, yet remain small in song count and duration (Table~\ref{tab:datasets}).
 Slakh2100~\cite{manilow2019cutting} enlarges training volume by synthesizing MIDI with professional sample libraries, but those virtual instruments are not redistributable, and the release is far smaller than contemporary public-domain symbolic collections.
 
@@ -42,8 +42,9 @@ We introduce \textbf{SPDMX}, a listening-tuned stem release built from PDMX.
 Contributions:
 (i)~a large public-domain multitrack audio corpus aligned in song identity with PDMX;
 (ii)~an open synthesis protocol combining GM register correction, FluidSynth~\cite{fluidsynth} soundfont variety, and selective MIDI-DDSP~\cite{engel2020ddsp,wu2022midi} where soundfonts underserve sustained instruments, with loudness and velocity-aware mixing;
-(iii)~a dual-scale ablation listening study that selects the production render recipe;
+(iii)~an ablation listening study on perceived realism that selects the production render recipe;
 (iv)~matched-budget Hybrid Demucs~\cite{defossez2021hybrid} and Stable Audio Open (SAO)~\cite{evans2024stable} proof-of-concept evaluations against Slakh2100.
+Upon acceptance, the dataset and all related code will be made publicly available.\footnote{\url{https://pnlong.github.io/SPDMX/}.}
 
 \begin{table}[t]
 \centering
@@ -64,7 +65,7 @@ MedleyDB~\cite{bittner2014medleydb} & 122 & $\sim$7 & Rec. & var. & Research & N
 MoisesDB~\cite{pereira2023moisesdb} & 240 & $\sim$14 & Rec. & hier. & Research & No & R \\
 Slakh2100~\cite{manilow2019cutting} & 2100 & 145 & Synth & 4--48 & Research & Yes & -- \\
 PDMX~\cite{long2024pdmx} & $\sim$254k & $\sim$6250 & Symb. & -- & PD & Yes & -- \\
-\textbf{SPDMX} & 253982 & $\sim$6250 & Synth & var. & Open & Yes & S \\
+\textbf{SPDMX} & 253982 & 5469 & Synth & var. & Open & Yes & S \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -77,18 +78,15 @@ That design yields usable synthetic stems at roughly an order of magnitude beyon
 SPDMX targets a similar stem-and-mixture training interface from public-domain scores and redistributable open synthesizers.
 
 Recorded multitrack sets~\cite{rafii2019musdb18,bittner2014medleydb,pereira2023moisesdb} remain the realism reference for evaluation and augmentation studies.
-On the synthesis side, DDSP~\cite{engel2020ddsp} and MIDI-DDSP~\cite{wu2022midi} (trained on URMP~\cite{li2018creating}) provide neural MIDI-to-audio for selected instruments; the Chamber Ensemble Generator~\cite{wu2022chamber} scales neural ensemble audio for MIR.
-We use MIDI-DDSP only where category-level listening favors it over soundfonts, with FluidSynth covering the remainder of the GM inventory.
+On the synthesis side, MIDI-DDSP~\cite{wu2022midi} (built on DDSP~\cite{engel2020ddsp}; trained on URMP~\cite{li2018creating}) showed that neural MIDI-to-audio can produce high-quality synthetic corpora from symbolic scores to fill gaps in recorded music data, a line continued by the Chamber Ensemble Generator for MIR~\cite{wu2022chamber}.
+We adopt that precedent selectively, employing MIDI-DDSP where category-level listening favors it over soundfonts, while using FluidSynth for the remainder of the GM inventory.
 
 \section{SPDMX}
 \label{sec:dataset}
 
-\subsection{Score preparation}
-\label{ssec:cleaning}
-
 PDMX MIDI often carries program numbers that disagree with track names (e.g., a named violin track encoded as piano).
 We correct GM programs from track-name aliases before rendering.
-Tracks with no note events are dropped so released stems correspond to sounding parts.
+Tracks with no note events are dropped so released stems correspond to parts that actually play.
 Fig.~\ref{fig:gm_programs} compares program mass before and after correction on non-empty tracks.
 After correction, inventory concentrates in acoustic piano, choir/voice, drums, and common orchestral winds, brass, and strings, which motivates concentrating listening effort and neural synthesis on those families.
 
@@ -100,56 +98,44 @@ After correction, inventory concentrates in acoustic piano, choir/voice, drums, 
   \label{fig:gm_programs}
 \end{figure}
 
-\subsection{Open rendering}
-\label{ssec:render}
-
-Each sounding track is rendered to a mono stem at $44.1$\,kHz.
+Each remaining track is rendered to a mono stem at $44.1$\,kHz.
 Two soundfont strategies appear in the ablation:
-\emph{basic} uses a single default GM bank;
-\emph{varied} samples a shortlist of redistributable soundfonts (and a light FX profile) per instrument category, adding timbral variety without commercial VSTs.
-For eligible monophonic strings, brass, and winds, MIDI-DDSP~\cite{wu2022midi} replaces the soundfont when listening selects a neural path; remaining GM programs stay on FluidSynth.
+\emph{basic} uses a single default GM bank (\texttt{SGM-V2.01});
+\emph{varied} samples a listening-selected shortlist of redistributable soundfonts (and a light FX profile) per instrument category, including \texttt{FluidR3\_GM}, \texttt{GeneralUser GS}, \texttt{Arachno}, and \texttt{Airfont} among others, aiming for Slakh-like timbral variety without proprietary sample libraries.
+The complete soundfont inventory is documented with the code and project page.
+For eligible monophonic strings, brass, and winds, MIDI-DDSP~\cite{wu2022midi} replaces the soundfont when listening selects a neural path; we fall back to FluidSynth for polyphonic parts, instruments outside the MIDI-DDSP (URMP) inventory, and all other GM programs.
 Lyric-conditioned singing-voice synthesis is out of scope; voice-class tracks use choir/voice soundfonts.
-
-\subsection{Mixing}
-\label{ssec:mixing}
 
 Independent per-stem loudness matching would erase relative track levels that MIDI velocities encode.
 Each stem is first loudness-normalized toward $-23$\,LUFS~\cite{series2011algorithms} with peak limiting, then scaled by the ratio of that track's maximum note-on velocity to the song-level maximum.
-A single anti-clip peak gain---computed on the sum of scaled stems and applied uniformly---keeps stems linearly summable, so the mixture equals the stem sum~\cite{manilow2019cutting}.
+A single anti-clip peak gain, computed on the sum of scaled stems and applied uniformly, keeps stems linearly summable, so the mixture equals the stem sum~\cite{manilow2019cutting}.
 
-\subsection{Listening-tuned production recipe}
-\label{ssec:recipe}
-
-On a fixed probe set spanning piano, drums, strings, wind, voice, mallet, organ, guitar, brass, and residual polyphonic classes, listeners rated blinded render variants on $1$--$5$ content and realism scales while soundfont shortlists and FX profiles were locked per category.
+On a fixed probe set spanning piano, drums, strings, wind, voice, mallet, organ, guitar, brass, and residual polyphonic classes, listeners rated blinded render variants for perceived realism while soundfont shortlists and FX profiles were locked per category.
 A subsequent formal study compared four non-neural-to-neural render families without audio-to-audio post-enhancement (Sec.~\ref{sec:listening}).
-The frozen release uses a hybrid: varied soundfonts for piano, voice, and mallet; basic soundfonts for drums, organ, guitar, and residual polyphony; MIDI-DDSP (basic or varied fallbacks) for strings, brass, and wind.
-Where MIDI-DDSP cannot cover a part, the soundfont stem is retained so every song remains complete.
+Listening scores inform the frozen hybrid recipe but do not dictate it alone: when basic only narrowly outranks varied, we prefer varied to retain timbral diversity.
+The release uses varied soundfonts for piano, voice, and mallet; basic soundfonts for drums, organ, guitar, and residual polyphony; and MIDI-DDSP (with soundfont fallback as above) for strings, brass, and wind, so every song remains complete.
 
-\subsection{Release}
-\label{ssec:release}
-
-SPDMX contains $253{,}982$ songs and $490{,}159$ mono FLAC stems (about $6{,}250$ hours of score-aligned material under PDMX duration metadata), plus paired MIDI for the sounding tracks.
+SPDMX contains $253{,}982$ songs and $490{,}159$ mono FLAC stems ($5{,}469$ hours of score-aligned material), plus paired MIDI for the released tracks.
 Of these, $88{,}403$ songs ($34.8\%$) have more than one stem (mean $1.93$ stems/song; max $66$), so a large multitrack subset sits alongside abundant single-part material.
 Songs share identity with PDMX: the same works expose MusicXML, symbolic metadata, and audio stems without a separate alignment procedure.
-Released audio does not include closed commercial instrument libraries.
+Unlike Slakh, rendering uses only redistributable open synthesizers rather than closed commercial sample libraries.
 
 \section{Listening study}
 \label{sec:listening}
 
 Four render families were compared: basic soundfont (A1), varied soundfonts (B1), MIDI-DDSP over basic fallbacks (CA1), and MIDI-DDSP over varied fallbacks (CB1).
 The open reference was A1; when present, the same signal also appeared as a hidden reference among shuffled unlabeled conditions.
-Each trial showed a $\sim$10\,s stem excerpt; listeners scored every condition on content adherence and realism ($0$--$100$).
+Each trial showed a 10-second stem excerpt; listeners scored every condition for perceived realism ($0$--$100$).
 The trial set used two stems in each of ten instrument categories ($20$ pages).
-$N{=}8$ listeners scored the full ablation battery; Fig.~\ref{fig:ablation_listening} reports the four families retained for the release (when a neural condition reused a soundfont stem unchanged, that stem inherited the donor condition's score).
+$N{=}8$ listeners scored the full ablation battery; Fig.~\ref{fig:ablation_listening} reports mean realism for the four families retained for the release (when a neural condition reused a soundfont stem unchanged, that stem inherited the donor condition's score).
 
-Fig.~\ref{fig:ablation_listening} reports mean scores.
-A1 attains the highest means on both scales; CA1 is the strongest neural-augmented trade-off.
-Per-category patterns, together with the need for timbral variety on piano- and voice-heavy mass, motivate the hybrid production recipe in Sec.~\ref{ssec:recipe} rather than a single global family.
+A1 attains the highest mean realism; CA1 is the strongest neural-augmented option.
+Per-category patterns guide the hybrid in Sec.~\ref{sec:dataset}, with close calls resolved toward variety rather than strictly maximizing the mean score.
 
 \begin{figure}[t]
   \centering
   \centerline{\includegraphics[width=\linewidth]{figs/ablation_listening.pdf}}
-  \caption{Ablation listening means ($0$--$100$) for content and realism across basic (A1), varied soundfonts (B1), and MIDI-DDSP hybrids (CA1, CB1).}
+  \caption{Ablation listening mean realism ($0$--$100$) for basic (A1), varied soundfonts (B1), and MIDI-DDSP hybrids (CA1, CB1).}
   \label{fig:ablation_listening}
 \end{figure}
 

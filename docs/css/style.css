@@ -599,6 +599,106 @@ figcaption code {
   }
 }
 
+.soundfonts-root {
+  display: grid;
+  gap: 1rem;
+}
+
+.soundfont-basic {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 252, 246, 0.65);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.soundfont-basic code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: rgba(28, 36, 32, 0.06);
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+}
+
+.soundfont-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 252, 246, 0.55);
+  padding: 0.15rem 0;
+}
+
+.soundfont-panel summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.85rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.soundfont-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.soundfont-panel summary::before {
+  content: "";
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-right: 0.55rem;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  vertical-align: 0.15rem;
+  transition: transform 0.15s ease;
+}
+
+.soundfont-panel[open] summary::before {
+  transform: rotate(45deg);
+  vertical-align: 0.05rem;
+}
+
+.soundfont-panel-body {
+  padding: 0 1rem 1rem;
+}
+
+.soundfont-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.35rem 1rem;
+}
+
+.soundfont-grid li {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink);
+  line-height: 1.35;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(26, 21, 16, 0.06);
+}
+
+.soundfont-footnote {
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.soundfont-footnote a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.soundfont-footnote code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+
 .cite-label {
   margin: 1.25rem 0 0.5rem;
   font-size: 0.95rem;

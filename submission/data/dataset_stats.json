@@ -3,8 +3,9 @@
   "release_stems": 490159,
   "pdmx_all_valid_songs": 254035,
   "pdmx_all_valid_hours": 6248.0,
-  "release_hours_approx": 6248.0,
-  "hours_note": "Duration sum over PDMX subset:all_valid (song_length.seconds). Release drops 53 empty-note songs; hours quoted as ~6250.",
+  "release_hours": 5469.0042280171,
+  "release_hours_rounded": 5469,
+  "hours_note": "Release hours = sum(songs.csv song_length)/3600 over 253982 release songs (exact 5469.004…). PDMX all_valid remains ~6248h for the parent symbolic set.",
   "sample_rate_hz": 44100,
   "channels": 1,
   "audio_format": "flac",
@@ -24,6 +25,6 @@
     "MoisesDB": {"songs": 240, "hours": 14.4, "type": "recorded"},
     "Slakh2100": {"songs": 2100, "hours": 145, "type": "synth"},
     "PDMX": {"songs": 254035, "hours": 6248, "type": "symbolic"},
-    "SPDMX": {"songs": 253982, "hours": 6248, "type": "synth"}
+    "SPDMX": {"songs": 253982, "hours": 5469, "type": "synth"}
   }
 }

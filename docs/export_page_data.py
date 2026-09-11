@@ -631,6 +631,59 @@ def export_duration(report_path: Path) -> dict | None:
     }
 
 
+def _soundfont_display_name(entry: dict) -> str:
+    raw = entry.get("archive_name") or entry.get("file") or entry.get("id") or ""
+    return Path(str(raw)).name
+
+
+def export_soundfonts() -> dict:
+    """Unique FluidSynth banks from the locked varied shortlists (+ basic default)."""
+    import yaml
+
+    from experiments.patch_sweep.config import (
+        WINNERS_LOCKED_PATH,
+        load_combined_soundfont_catalog,
+    )
+    from shared.config import SOUNDFONT_PATH
+
+    catalog = {
+        c["id"]: c for c in load_combined_soundfont_catalog().get("candidates", [])
+    }
+    locked = yaml.safe_load(WINNERS_LOCKED_PATH.read_text(encoding="utf-8")) or {}
+    by_category: dict[str, list[dict]] = {}
+    unique: dict[str, dict] = {}
+    for category, cfg in (locked.get("categories") or {}).items():
+        rows: list[dict] = []
+        for sid in cfg.get("soundfont_ids") or []:
+            entry = catalog.get(sid, {"id": sid, "file": sid})
+            name = _soundfont_display_name(entry)
+            row = {"id": sid, "file": name}
+            rows.append(row)
+            unique[sid] = row
+        by_category[str(category)] = rows
+
+    fonts = sorted(unique.values(), key=lambda r: r["file"].lower())
+    basic_file = Path(SOUNDFONT_PATH).name
+    archive_url = "https://archive.org/download/free-soundfonts-sf2-2019-04"
+    return {
+        "basic": {
+            "name": "SGM-V2.01",
+            "file": basic_file,
+            "note": "Single-bank FluidSynth path for basic / fallback stems.",
+        },
+        "source": "experiments/patch_sweep/winners_locked.yaml",
+        "collection": "Archive.org free-soundfonts-sf2-2019-04",
+        "collection_url": archive_url,
+        "n_varied": len(fonts),
+        "fonts": fonts,
+        "by_category": by_category,
+        "caption": (
+            "Varied renders sample a listening-selected shortlist per instrument "
+            "category; basic renders use SGM-V2.01."
+        ),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spdmx-root", type=Path, default=DEFAULT_SPDMX)
@@ -688,6 +741,7 @@ def main() -> None:
     duration = export_duration_from_songs(songs) or export_duration(SONG_LENGTH_REPORT)
     if duration:
         _write_json(data_dir / "duration.json", duration)
+    _write_json(data_dir / "soundfonts.json", export_soundfonts())
 
     if not args.skip_figure:
         for suffix in (".pdf", ".png", ".svg"):

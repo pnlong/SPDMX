@@ -1,5 +1,6 @@
 import { renderCharts } from "./charts.js";
 import { renderDemos } from "./player.js";
+import { renderSoundfonts } from "./soundfonts.js";
 
 function setupNav() {
   const toggle = document.querySelector(".nav-toggle");
@@ -34,6 +35,11 @@ async function boot() {
   }
   try {
     await renderDemos();
+  } catch (err) {
+    console.error(err);
+  }
+  try {
+    await renderSoundfonts();
   } catch (err) {
     console.error(err);
   }
