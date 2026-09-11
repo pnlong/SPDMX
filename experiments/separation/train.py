@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from experiments.separation.dataset import StemPackDataset
-from experiments.separation.paths import TARGETS, load_config, resolve_dev_dir
+from experiments.separation.paths import TARGETS, TRAIN_ARMS, load_config, resolve_dev_dir
 
 
 def build_model(sources: list[str], sample_rate: int):
@@ -315,7 +315,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--arm",
-        choices=("slakh", "spdmx", "all"),
+        choices=(*TRAIN_ARMS, "all"),
         default="all",
     )
     parser.add_argument("--config", type=Path, default=None)
@@ -332,7 +332,7 @@ def main() -> None:
     packs_root = root / "packs"
     manifests = root / "manifests"
     device = torch.device(args.device)
-    arms = ("slakh", "spdmx") if args.arm == "all" else (args.arm,)
+    arms = TRAIN_ARMS if args.arm == "all" else (args.arm,)
     for arm in arms:
         ckpt_dir = root / "checkpoints" / arm
         path = train_arm(

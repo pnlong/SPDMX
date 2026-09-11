@@ -34,7 +34,9 @@ MUSDB_ROOT = Path(_MUSDB_ROOT)
 DEV_SEP_DIR = Path(OUTPUT_DIR) / DEV_DIR_NAME / EXPERIMENTS_DIR_NAME / "separation"
 
 TARGETS = ("bass", "drums", "guitar", "piano")
-MANIFEST_ARMS = ("slakh", "spdmx")
+# Train/eval arms: singles + joint (Slakh ∪ SPDMX) under a matched step budget.
+MANIFEST_ARMS = ("slakh", "spdmx", "both")
+TRAIN_ARMS = MANIFEST_ARMS
 
 DEFAULT_CONFIG_PATH = SEP_DIR / "config.yaml"
 DEFAULT_SEED = 43

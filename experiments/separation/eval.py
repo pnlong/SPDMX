@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -15,11 +17,16 @@ from experiments.separation.audio_io import load_mono, mono_to_stereo
 from experiments.separation.paths import (
     MUSDB_ROOT,
     TARGETS,
+    TRAIN_ARMS,
     load_config,
     resolve_dev_dir,
 )
 from experiments.separation.sisdr import si_sdr
 from experiments.separation.train import build_model
+
+# Paper figures only plot these; spdmx_val is diagnostic.
+PAPER_TEST_SETS = ("slakh2100", "musdb18")
+EVAL_SET_CHOICES = ("slakh", "spdmx_val", "musdb")
 
 
 @torch.no_grad()
@@ -53,17 +60,20 @@ def separate_track(
     return {t: (acc[t] / weight).astype(np.float32) for t in sources}
 
 
-def eval_slakh_test(
+def eval_pack_manifest(
     model: torch.nn.Module,
-    test_csv: Path,
+    manifest_csv: Path,
     packs_root: Path,
     *,
+    test_set: str,
     sample_rate: int,
     device: torch.device,
+    desc: str | None = None,
 ) -> pd.DataFrame:
+    """SI-SDR on packed 4-stem songs listed in a manifest CSV."""
     rows = []
-    df = pd.read_csv(test_csv)
-    for _, row in tqdm(df.iterrows(), total=len(df), desc="eval:slakh"):
+    df = pd.read_csv(manifest_csv)
+    for _, row in tqdm(df.iterrows(), total=len(df), desc=desc or f"eval:{test_set}"):
         song_dir = packs_root / row["path"]
         refs = {}
         for t in TARGETS:
@@ -73,7 +83,7 @@ def eval_slakh_test(
         for t in TARGETS:
             rows.append(
                 {
-                    "test_set": "slakh2100",
+                    "test_set": test_set,
                     "song_id": row["song_id"],
                     "target": t,
                     "si_sdr": si_sdr(est[t], refs[t]),
@@ -81,6 +91,25 @@ def eval_slakh_test(
                 }
             )
     return pd.DataFrame(rows)
+
+
+def eval_slakh_test(
+    model: torch.nn.Module,
+    test_csv: Path,
+    packs_root: Path,
+    *,
+    sample_rate: int,
+    device: torch.device,
+) -> pd.DataFrame:
+    return eval_pack_manifest(
+        model,
+        test_csv,
+        packs_root,
+        test_set="slakh2100",
+        sample_rate=sample_rate,
+        device=device,
+        desc="eval:slakh",
+    )
 
 
 def eval_musdb_bass_drums(
@@ -136,12 +165,61 @@ def load_checkpoint(ckpt_path: Path, device: torch.device):
     return model, sample_rate, blob.get("arm", "unknown")
 
 
+def _atomic_to_csv(df: pd.DataFrame, path: Path) -> None:
+    """Write CSV atomically so parallel merges never read a partial file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as f:
+            df.to_csv(f, index=False)
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _summarize(per_track: pd.DataFrame) -> pd.DataFrame:
+    return (
+        per_track.groupby(["train_arm", "test_set", "target"], as_index=False)["si_sdr"]
+        .mean()
+        .rename(columns={"si_sdr": "si_sdr_mean"})
+    )
+
+
+def _merge_arm_csvs(out_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Concatenate per-arm CSVs written by (possibly parallel) eval runs."""
+    paths = sorted(out_dir.glob("si_sdr_per_track_*.csv"))
+    if not paths:
+        raise FileNotFoundError(f"no per-arm eval CSVs under {out_dir}")
+    frames = [pd.read_csv(p) for p in paths]
+    full = pd.concat(frames, ignore_index=True)
+    # Last write wins if an arm was re-run (drop duplicate song/target rows).
+    full = full.drop_duplicates(
+        subset=["train_arm", "test_set", "song_id", "target"], keep="last"
+    )
+    return full, _summarize(full)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--arm",
-        choices=("slakh", "spdmx", "all"),
+        choices=(*TRAIN_ARMS, "all"),
         default="all",
+    )
+    parser.add_argument(
+        "--eval-sets",
+        nargs="+",
+        choices=EVAL_SET_CHOICES,
+        default=["slakh", "musdb"],
+        help=(
+            "Which test sets to score. slakh=Slakh2100 test; "
+            "spdmx_val=sPDMX val packs (early-stopping set; diagnostic); "
+            "musdb=MUSDB18 bass/drums. Default: slakh musdb."
+        ),
     )
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -150,6 +228,11 @@ def main() -> None:
         "--write-paper",
         action="store_true",
         help="Also write submission/data/separation_sisdr.csv for make_figures.py",
+    )
+    parser.add_argument(
+        "--merge-only",
+        action="store_true",
+        help="Skip inference; only merge existing per-arm CSVs into combined outputs.",
     )
     args = parser.parse_args()
 
@@ -161,55 +244,104 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device(args.device)
     musdb_root = args.musdb_root or Path(cfg.get("musdb_root") or MUSDB_ROOT)
+    eval_sets = set(args.eval_sets)
 
-    arms = ("slakh", "spdmx") if args.arm == "all" else (args.arm,)
-    all_rows: list[pd.DataFrame] = []
-    for arm in arms:
-        ckpt_dir = root / "checkpoints" / arm
-        # Prefer best val, then best train, then last.
-        for name in ("best_val.ckpt", "best_train.ckpt", "last.ckpt", "best.pt", "final.pt"):
-            cand = ckpt_dir / name
-            if cand.is_file():
-                ckpt = cand
-                break
-        else:
-            print(f"missing checkpoint for {arm} under {ckpt_dir}")
-            continue
-        print(f"{arm}: evaluating {ckpt.name}")
-        model, sr, _ = load_checkpoint(ckpt, device)
-        test_csv = manifests / arm / "test.csv"
-        if test_csv.is_file():
-            df = eval_slakh_test(model, test_csv, packs_root, sample_rate=sr, device=device)
-            df["train_arm"] = arm
-            all_rows.append(df)
-        mus = eval_musdb_bass_drums(model, musdb_root, sample_rate=sr, device=device)
-        if len(mus):
-            mus["train_arm"] = arm
-            all_rows.append(mus)
+    if not args.merge_only:
+        arms = TRAIN_ARMS if args.arm == "all" else (args.arm,)
+        for arm in arms:
+            ckpt_dir = root / "checkpoints" / arm
+            # Prefer best val, then best train, then last.
+            for name in ("best_val.ckpt", "best_train.ckpt", "last.ckpt", "best.pt", "final.pt"):
+                cand = ckpt_dir / name
+                if cand.is_file():
+                    ckpt = cand
+                    break
+            else:
+                print(f"missing checkpoint for {arm} under {ckpt_dir}")
+                continue
+            print(f"{arm}: evaluating {ckpt.name} on {sorted(eval_sets)}")
+            model, sr, _ = load_checkpoint(ckpt, device)
+            arm_rows: list[pd.DataFrame] = []
 
-    if not all_rows:
-        raise SystemExit("no eval results; train checkpoints first")
-    full = pd.concat(all_rows, ignore_index=True)
+            if "slakh" in eval_sets:
+                # Shared Slakh2100 test (same file for every train arm).
+                test_csv = manifests / "slakh" / "test.csv"
+                if not test_csv.is_file():
+                    test_csv = manifests / arm / "test.csv"
+                if test_csv.is_file():
+                    df = eval_pack_manifest(
+                        model,
+                        test_csv,
+                        packs_root,
+                        test_set="slakh2100",
+                        sample_rate=sr,
+                        device=device,
+                        desc="eval:slakh",
+                    )
+                    df["train_arm"] = arm
+                    arm_rows.append(df)
+                else:
+                    print(f"{arm}: missing Slakh test CSV; skipping slakh eval set")
+
+            if "spdmx_val" in eval_sets:
+                val_csv = manifests / "spdmx" / "val.csv"
+                if val_csv.is_file():
+                    df = eval_pack_manifest(
+                        model,
+                        val_csv,
+                        packs_root,
+                        test_set="spdmx_val",
+                        sample_rate=sr,
+                        device=device,
+                        desc="eval:spdmx_val",
+                    )
+                    df["train_arm"] = arm
+                    arm_rows.append(df)
+                else:
+                    print(f"missing {val_csv}; skipping spdmx_val")
+
+            if "musdb" in eval_sets:
+                mus = eval_musdb_bass_drums(model, musdb_root, sample_rate=sr, device=device)
+                if len(mus):
+                    mus["train_arm"] = arm
+                    arm_rows.append(mus)
+
+            if not arm_rows:
+                print(f"{arm}: no eval rows; check --eval-sets and manifests")
+                continue
+
+            arm_full = pd.concat(arm_rows, ignore_index=True)
+            arm_summary = _summarize(arm_full)
+            # Per-arm files: parallel --arm runs do not overwrite each other.
+            _atomic_to_csv(arm_full, out_dir / f"si_sdr_per_track_{arm}.csv")
+            _atomic_to_csv(arm_summary, out_dir / f"si_sdr_summary_{arm}.csv")
+            print(arm_summary.to_string(index=False))
+
+    try:
+        full, summary = _merge_arm_csvs(out_dir)
+    except FileNotFoundError as exc:
+        raise SystemExit(str(exc)) from exc
+
     full_path = out_dir / "si_sdr_per_track.csv"
-    full.to_csv(full_path, index=False)
-
-    summary = (
-        full.groupby(["train_arm", "test_set", "target"], as_index=False)["si_sdr"]
-        .mean()
-        .rename(columns={"si_sdr": "si_sdr_mean"})
-    )
     summary_path = out_dir / "si_sdr_summary.csv"
-    summary.to_csv(summary_path, index=False)
+    _atomic_to_csv(full, full_path)
+    _atomic_to_csv(summary, summary_path)
+
     paper_csv = Path(__file__).resolve().parents[2] / "submission" / "data" / "separation_sisdr.csv"
+    paper_path: str | None = None
     if args.write_paper:
+        paper = summary[summary["test_set"].astype(str).isin(PAPER_TEST_SETS)].copy()
         paper_csv.parent.mkdir(parents=True, exist_ok=True)
-        summary.to_csv(paper_csv, index=False)
+        _atomic_to_csv(paper, paper_csv)
+        paper_path = str(paper_csv)
+
     print(
         json.dumps(
             {
                 "per_track": str(full_path),
                 "summary": str(summary_path),
-                "paper": str(paper_csv) if args.write_paper else None,
+                "per_arm": sorted(str(p) for p in out_dir.glob("si_sdr_per_track_*.csv")),
+                "paper": paper_path,
             },
             indent=2,
         )

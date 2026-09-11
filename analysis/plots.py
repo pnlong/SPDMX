@@ -357,18 +357,22 @@ def plot_track_name_bar(
 
 _ARM_LABELS = {
     "slakh": "Slakh",
-    "spdmx": "sPDMX",
-    "spdmx_matched": "sPDMX-BDGP",
-    "spdmx_full": "sPDMX-full",
+    "spdmx": "SPDMX",
+    "both": "Slakh+SPDMX",
+    "spdmx_matched": "SPDMX-BDGP",
+    "spdmx_full": "SPDMX-full",
     "Slakh": "Slakh",
-    "sPDMX": "sPDMX",
-    "sPDMX-matched": "sPDMX-BDGP",
-    "sPDMX-BDGP": "sPDMX-BDGP",
-    "sPDMX-full": "sPDMX-full",
+    "SPDMX": "SPDMX",
+    "Slakh+SPDMX": "Slakh+SPDMX",
+    # Legacy spellings from older CSVs / figures
+    "sPDMX": "SPDMX",
+    "sPDMX-matched": "SPDMX-BDGP",
+    "sPDMX-BDGP": "SPDMX-BDGP",
+    "sPDMX-full": "SPDMX-full",
 }
 
-_ARM_ORDER_SEP = ("Slakh", "sPDMX")
-_ARM_ORDER_SAO = ("Slakh", "sPDMX-BDGP", "sPDMX-full")
+_ARM_ORDER_SEP = ("Slakh", "SPDMX", "Slakh+SPDMX")
+_ARM_ORDER_SAO = ("Slakh", "SPDMX-BDGP", "SPDMX-full")
 _ARM_ORDER = _ARM_ORDER_SAO  # default for combined/legacy callers
 _TARGET_ORDER = ("bass", "drums", "guitar", "piano")
 # Non-realify ablation arms reported in the ICASSP draft (SA3 omitted).

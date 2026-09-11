@@ -164,7 +164,7 @@ No preference listening is collected for these arms.
 
 Hybrid Demucs~\cite{defossez2021hybrid} is trained to recover bass, drums, guitar, and piano---Slakh's non-vocal benchmark targets---from coherent mixtures.
 For a fair head-to-head with Slakh, we map SPDMX parts onto those four classes and keep only songs that contain all four.
-That slice is much smaller than the full multitrack release, so the separation experiment compares Slakh against this four-stem SPDMX subset rather than treating SPDMX as a drop-in scale match.
+That slice is much smaller than the full multitrack release, so we compare three matched-step arms: Slakh alone, the four-stem SPDMX subset alone, and their union (Slakh+SPDMX), asking whether SPDMX complements Slakh rather than replacing it.
 The remaining multi-stem material (orchestral, voice, and other instrument families) is still useful as an open complement to Slakh for separation settings that are not limited to those four targets.
 Evaluation reports SI-SDR~\cite{leroux2019sdr} on the Slakh2100 test set (Fig.~\ref{fig:downstream}, left).
 
@@ -179,7 +179,7 @@ Held-out generations for a fixed prompt set are scored with OpenL3-based Fr\'{e}
   \centering
   \centerline{\includegraphics[width=\linewidth]{figs/downstream_poc.pdf}}
   \caption{Downstream proof-of-concept results under a matched step budget.
-  Left: Hybrid Demucs SI-SDR (dB) on Slakh2100 test.
+  Left: Hybrid Demucs SI-SDR (dB) on Slakh2100 test (Slakh, SPDMX, Slakh+SPDMX).
   Right: SAO fine-tunes---FAD (lower better) and CLAP (higher better).
   \textit{Curves/bars update when training and evaluation complete.}}
   \label{fig:downstream}
@@ -189,7 +189,7 @@ Held-out generations for a fixed prompt set are scored with OpenL3-based Fr\'{e}
 \label{sec:conclusion}
 
 SPDMX converts public-domain PDMX scores into open multitrack stem audio at the scale of the parent symbolic corpus, using listening-selected FluidSynth and MIDI-DDSP rendering with loudness- and velocity-aware mixing.
-Ablation listening supports a hybrid production recipe; a four-stem Demucs comparison and full-corpus SAO fine-tunes situate the release relative to Slakh2100 under SI-SDR, FAD, and CLAP, while the wider multi-stem and single-stem inventory remains available as an open complement for separation and other audio tasks.
+Ablation listening supports a hybrid production recipe; a three-arm Demucs comparison (Slakh, SPDMX, Slakh+SPDMX) and full-corpus SAO fine-tunes situate the release relative to Slakh2100 under SI-SDR, FAD, and CLAP, while the wider multi-stem and single-stem inventory remains available as an open complement for separation and other audio tasks.
 Broader listener pools and stronger generative evaluations remain open.
 
 \vfill\pagebreak

@@ -1,7 +1,9 @@
-"""Freeze Slakh vs sPDMX (BDGP-eligible) manifests from pack_index.csv.
+"""Freeze Slakh vs SPDMX (BDGP-eligible) vs both manifests from pack_index.csv.
 
 Packs are already filtered to songs with bass/drums/guitar/piano, so the
-sPDMX arm is that full eligible pool (no hour-matched vs full split).
+SPDMX arm is that full eligible pool (no hour-matched vs full split).
+The ``both`` arm unions Slakh and SPDMX train/val under the same matched
+step budget as the singles.
 """
 
 from __future__ import annotations
@@ -36,6 +38,9 @@ def freeze_manifests(
     spdmx_val = spdmx.iloc[:n_val].copy()
     spdmx_train = spdmx.iloc[n_val:].copy()
 
+    both_train = pd.concat([slakh_train, spdmx_train], ignore_index=True)
+    both_val = pd.concat([slakh_val, spdmx_val], ignore_index=True)
+
     manifests = {
         "slakh": {
             "train": slakh_train,
@@ -47,13 +52,22 @@ def freeze_manifests(
             "val": spdmx_val,
             "test": slakh_test,  # primary eval is Slakh2100 test for all arms
         },
+        "both": {
+            "train": both_train,
+            "val": both_val,
+            "test": slakh_test,
+        },
     }
 
     summary: dict = {
         "seed": seed,
         "slakh_train_hours": float(slakh_train["hours"].sum()) if len(slakh_train) else 0.0,
         "spdmx_train_hours": float(spdmx_train["hours"].sum()) if len(spdmx_train) else 0.0,
-        "note": "sPDMX arm = BDGP-eligible packs only (same filter as prepare_stems)",
+        "both_train_hours": float(both_train["hours"].sum()) if len(both_train) else 0.0,
+        "note": (
+            "SPDMX arm = BDGP-eligible packs only; "
+            "both = Slakh train/val ∪ SPDMX train/val (matched step budget)"
+        ),
         "arms": {},
     }
 

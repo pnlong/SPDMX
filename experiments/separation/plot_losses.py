@@ -8,7 +8,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from experiments.separation.paths import load_config, resolve_dev_dir
+from experiments.separation.paths import TRAIN_ARMS, load_config, resolve_dev_dir
 
 
 def plot_losses(csv_path: Path, out_path: Path | None = None) -> Path:
@@ -41,7 +41,7 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument(
         "--arm",
-        choices=("slakh", "spdmx", "all"),
+        choices=(*TRAIN_ARMS, "all"),
         default="all",
     )
     parser.add_argument(
@@ -57,7 +57,7 @@ def main() -> None:
         return
 
     root = resolve_dev_dir(load_config(args.config))
-    arms = ("slakh", "spdmx") if args.arm == "all" else (args.arm,)
+    arms = TRAIN_ARMS if args.arm == "all" else (args.arm,)
     for arm in arms:
         csv_path = root / "checkpoints" / arm / "losses.csv"
         if not csv_path.is_file():
