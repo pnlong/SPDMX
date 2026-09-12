@@ -214,11 +214,11 @@ def main() -> None:
         "--eval-sets",
         nargs="+",
         choices=EVAL_SET_CHOICES,
-        default=["slakh", "musdb"],
+        default=["slakh", "spdmx_val", "musdb"],
         help=(
             "Which test sets to score. slakh=Slakh2100 test; "
             "spdmx_val=sPDMX val packs (early-stopping set; diagnostic); "
-            "musdb=MUSDB18 bass/drums. Default: slakh musdb."
+            "musdb=MUSDB18 bass/drums. Default: slakh spdmx_val musdb."
         ),
     )
     parser.add_argument("--config", type=Path, default=None)

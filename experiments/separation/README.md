@@ -40,8 +40,7 @@ uv run python -m experiments.separation.train --arm all
 
 # 4) Eval → CSV for paper figures (safe to run arms in parallel)
 uv run python -m experiments.separation.eval --arm all --write-paper
-# optional in-domain probe on SPDMX val (used for early stopping; diagnostic only):
-# uv run python -m experiments.separation.eval --arm all --eval-sets spdmx_val
+# Default eval sets: slakh + spdmx_val + musdb (paper CSV still Slakh/MUSDB only)
 # merge prior per-arm CSVs after parallel runs:
 # uv run python -m experiments.separation.eval --merge-only --write-paper
 ```
