@@ -48,4 +48,22 @@ uv run python -m experiments.separation.eval --arm all --write-paper
 
 Outputs live under `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/` (`packs/`, `manifests/`, `checkpoints/`, `eval/`).
 Paper CSV: `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/eval/separation_sisdr.csv`.
-Combined figure: `uv run python -m submission.make_figures --only downstream`.
+## Multi-stem stem vs other (full SPDMX)
+
+Separate from the BDGP / Slakh comparison: 2-source HTDemucs on songs with
+≥2 stems (~88k). Target = one stem; other = mix − stem.
+
+```bash
+# 1) Freeze train/val manifests from songs.csv
+uv run python -m experiments.separation.freeze_multistem
+
+# 2) Train (GPU)
+uv run python -m experiments.separation.train \
+  --arm multistem \
+  --config experiments/separation/config_multistem.yaml
+
+# 3) Eval SI-SDR on held-out multi-stem split
+uv run python -m experiments.separation.eval_multistem --write-paper
+```
+
+Checkpoints: `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/checkpoints/multistem/`.

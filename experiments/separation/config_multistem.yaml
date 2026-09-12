@@ -1,0 +1,26 @@
+# Full multi-stem SPDMX: 2-source HTDemucs (stem vs other). No Slakh / BDGP.
+
+seed: 43
+sample_rate: 44100
+max_steps: 32000
+batch_size: 8
+segment_seconds: 10.0
+lr: 3.0e-4
+num_workers: 4
+channels: 2
+
+log_every: 1000
+val_every: 1000
+val_max_batches: null
+
+sources:
+  - stem
+  - other
+
+# Songs with at least this many on-disk stems (from songs.csv).
+min_stems: 2
+# Held-out fraction of multi-stem songs for validation / SI-SDR eval.
+val_fraction: 0.02
+
+# Chunked release root (override with SPDMX_DATASET_ROOT / spdmx_root).
+# spdmx_root: /deepfreeze/share/SPDMX/SPDMX

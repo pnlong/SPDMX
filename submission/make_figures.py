@@ -207,7 +207,8 @@ def main() -> None:
         if p:
             written.append(p)
 
-    if args.only in ("downstream", "all"):
+    if args.only == "downstream":
+        # Kept for ad-hoc use; paper uses separate separation / SAO figures.
         written.append(make_downstream_figure())
 
     if args.only in ("chunk", "all"):

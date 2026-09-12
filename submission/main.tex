@@ -20,7 +20,7 @@ We present \textbf{SPDMX}, a public-domain multitrack stem corpus derived from t
 Scores are cleaned (General MIDI program correction; empty tracks removed) and rendered with open soundfont synthesis and selective MIDI-DDSP for sustained orchestral families.
 Render choices are selected with a listening study on perceived realism.
 The release comprises approximately $254$K songs and $490$K mono stems at $44.1$\,kHz, sharing song identity with PDMX so symbolic metadata and scores can be used with the audio.
-Matched-budget Hybrid Demucs and Stable Audio Open fine-tunes compare Slakh2100 against four-stem and full SPDMX under objective SI-SDR, FAD, and CLAP.
+Matched-budget Hybrid Demucs and Stable Audio Open fine-tunes provide proof-of-concept checks against Slakh2100 under objective SI-SDR, FAD, and CLAP.
 \end{abstract}
 %
 \begin{keywords}
@@ -31,7 +31,9 @@ Public-domain music, multitrack stems, symbolic-to-audio, source separation, gen
 \label{sec:intro}
 
 Music source separation, accompaniment generation, and related audio models consume paired mixtures and stems.
-Recorded corpora such as MUSDB18~\cite{rafii2019musdb18}, MedleyDB~\cite{bittner2014medleydb}, and MoisesDB~\cite{pereira2023moisesdb} supply realistic multitracks, yet remain small in song count and duration (Table~\ref{tab:datasets}).
+Vision~\cite{deng2009imagenet,schuhmann2022laion}, large-scale text~\cite{raffel2020exploring,gao2020pile}, and broader audio and speech~\cite{gemmeke2017audio,panayotov2015librispeech} enjoy massive public training corpora; music does not.
+Commercial recordings exist in abundance, yet copyright largely bars their use as open training data, leaving a scarcity of redistributable, ethically usable audio, especially paired stems.
+The open recorded multitracks that do exist, such as MUSDB18~\cite{rafii2019musdb18}, MedleyDB~\cite{bittner2014medleydb}, and MoisesDB~\cite{pereira2023moisesdb}, supply realistic stems but remain small in song count and duration (Table~\ref{tab:datasets}), despite evidence that more training data and augmentation improve separation~\cite{uhlich2017improving,pretet2019singing,stoter2018sigsep}.
 Slakh2100~\cite{manilow2019cutting} enlarges training volume by synthesizing MIDI with professional sample libraries, but those virtual instruments are not redistributable, and the release is far smaller than contemporary public-domain symbolic collections.
 
 PDMX~\cite{long2024pdmx} contributes MusicXML and MIDI at public-domain scale.
@@ -73,13 +75,12 @@ PDMX~\cite{long2024pdmx} & $\sim$254k & $\sim$6250 & Symb. & -- & PD & Yes & -- 
 \section{Related work}
 \label{sec:prior}
 
-Slakh~\cite{manilow2019cutting} is the closest precedent: MIDI from Lakh~\cite{raffel2015large,raffel2016learning} is rendered with professional sample libraries to study how training data quantity and quality affect separation.
-That design yields usable synthetic stems at roughly an order of magnitude beyond MUSDB18, but reproduction depends on closed VSTs.
-SPDMX targets a similar stem-and-mixture training interface from public-domain scores and redistributable open synthesizers.
+Open recorded multitracks~\cite{rafii2019musdb18,bittner2014medleydb,pereira2023moisesdb} remain small, and prior large-scale stem synthesis has relied on closed commercial instruments.
+Slakh~\cite{manilow2019cutting} is the closest precedent: Lakh MIDI~\cite{raffel2015large,raffel2016learning} rendered with closed commercial sample libraries (VSTs) to study how training-data quantity and quality affect separation.
+SPDMX targets the same stem-and-mixture interface from public-domain scores and redistributable synthesizers.
 
-Recorded multitrack sets~\cite{rafii2019musdb18,bittner2014medleydb,pereira2023moisesdb} remain the realism reference for evaluation and augmentation studies.
-On the synthesis side, MIDI-DDSP~\cite{wu2022midi} (built on DDSP~\cite{engel2020ddsp}; trained on URMP~\cite{li2018creating}) showed that neural MIDI-to-audio can produce high-quality synthetic corpora from symbolic scores to fill gaps in recorded music data, a line continued by the Chamber Ensemble Generator for MIR~\cite{wu2022chamber}.
-We adopt that precedent selectively, employing MIDI-DDSP where category-level listening favors it over soundfonts, while using FluidSynth for the remainder of the GM inventory.
+On the synthesis side, MIDI-DDSP~\cite{wu2022midi} (built on DDSP~\cite{engel2020ddsp}; trained on URMP~\cite{li2018creating}) showed that neural MIDI-to-audio can produce high-quality synthetic corpora from symbolic scores, a line continued by the Chamber Ensemble Generator for MIR~\cite{wu2022chamber}.
+We adopt that precedent selectively where category-level listening favors it over FluidSynth soundfonts.
 
 \section{SPDMX}
 \label{sec:dataset}
@@ -151,34 +152,41 @@ No preference listening is collected for these arms.
 \subsection{Source separation}
 \label{ssec:separation}
 
-Hybrid Demucs~\cite{defossez2021hybrid} is trained to recover bass, drums, guitar, and piano---Slakh's non-vocal benchmark targets---from coherent mixtures.
+Hybrid Demucs~\cite{defossez2021hybrid} is trained to recover bass, drums, guitar, and piano (Slakh's non-vocal benchmark targets) from coherent mixtures.
 For a fair head-to-head with Slakh, we map SPDMX parts onto those four classes and keep only songs that contain all four.
-That slice is much smaller than the full multitrack release, so we compare three matched-step arms: Slakh alone, the four-stem SPDMX subset alone, and their union (Slakh+SPDMX), asking whether SPDMX complements Slakh rather than replacing it.
-The remaining multi-stem material (orchestral, voice, and other instrument families) is still useful as an open complement to Slakh for separation settings that are not limited to those four targets.
-Evaluation reports SI-SDR~\cite{leroux2019sdr} on the Slakh2100 test set (Fig.~\ref{fig:downstream}, left).
+That BDGP-eligible slice is small relative to the full release (roughly $36$\,h of SPDMX training audio versus $83$\,h of Slakh under our manifests), so we do not expect open soundfont/MIDI-DDSP renders to outperform closed-VST Slakh on Slakh2100.
+We compare three matched-step arms (Slakh alone, the four-stem SPDMX subset alone, and their union Slakh+SPDMX) as a proof of concept: whether SPDMX stems support standard stem-separation training and can complement Slakh rather than replace it.
+In-domain SI-SDR~\cite{leroux2019sdr} on SPDMX (BDGP) shows that the open packs are learnable; the union largely preserves Slakh-test performance while transferring to SPDMX (BDGP), whereas each solo arm fails cross-domain (Fig.~\ref{fig:separation}).
+MUSDB18 bass/drums remain difficult for all synth-trained arms.
+The remaining multi-stem material (about $88$K songs with two or more stems; orchestral, voice, and other families) is outside this BDGP filter and is the natural substrate for broader open separation settings that are not limited to those four targets.
+
+\begin{figure}[t]
+  \centering
+  \centerline{\includegraphics[width=\linewidth]{figs/separation_sisdr.pdf}}
+  \caption{Hybrid Demucs SI-SDR (dB) under a matched step budget for Slakh, SPDMX, and Slakh+SPDMX training on the BDGP-eligible SPDMX slice versus Slakh, evaluated on Slakh2100, SPDMX (BDGP), and MUSDB18 (bass/drums).}
+  \label{fig:separation}
+\end{figure}
 
 \subsection{Generative fine-tuning}
 \label{ssec:sao}
 
 Unlike Slakh2100, which is organized around separation targets, SPDMX is primarily a large public-domain \emph{audio} corpus with paired MIDI: mixtures support generative fine-tuning and related tasks even for single-stem songs or songs outside the four-stem filter above.
 SAO~1.0~\cite{evans2024stable} is fine-tuned from the public checkpoint on loudness-normalized song mixtures with simple instrumental captions under three arms: Slakh train, the same four-stem SPDMX songs used for separation, and full SPDMX.
-Held-out generations for a fixed prompt set are scored with OpenL3-based Fr\'{e}chet audio distance~\cite{kilgour2018fr,cramer2019look} and LAION-CLAP~\cite{wu2023large} prompt adherence (Fig.~\ref{fig:downstream}, right).
+Held-out generations for a fixed prompt set are scored with OpenL3-based Fr\'{e}chet audio distance~\cite{kilgour2018fr,cramer2019look} and LAION-CLAP~\cite{wu2023large} prompt adherence (Fig.~\ref{fig:sao}).
 
 \begin{figure}[t]
   \centering
-  \centerline{\includegraphics[width=\linewidth]{figs/downstream_poc.pdf}}
-  \caption{Downstream proof-of-concept results under a matched step budget.
-  Left: Hybrid Demucs SI-SDR (dB) on Slakh2100 test (Slakh, SPDMX, Slakh+SPDMX).
-  Right: SAO fine-tunes---FAD (lower better) and CLAP (higher better).
-  \textit{Curves/bars update when training and evaluation complete.}}
-  \label{fig:downstream}
+  \centerline{\includegraphics[width=\linewidth]{figs/sao_metrics.pdf}}
+  \caption{Stable Audio Open fine-tunes under a matched step budget: OpenL3 FAD (lower better) and LAION-CLAP (higher better) by training arm.
+  \textit{Bars update when evaluation completes.}}
+  \label{fig:sao}
 \end{figure}
 
 \section{Conclusion}
 \label{sec:conclusion}
 
 SPDMX converts public-domain PDMX scores into open multitrack stem audio at the scale of the parent symbolic corpus, using listening-selected FluidSynth and MIDI-DDSP rendering with loudness- and velocity-aware mixing.
-Ablation listening supports a hybrid production recipe; a three-arm Demucs comparison (Slakh, SPDMX, Slakh+SPDMX) and full-corpus SAO fine-tunes situate the release relative to Slakh2100 under SI-SDR, FAD, and CLAP, while the wider multi-stem and single-stem inventory remains available as an open complement for separation and other audio tasks.
+Ablation listening supports a hybrid production recipe, and proof-of-concept Demucs and SAO fine-tunes situate the release relative to Slakh2100 under SI-SDR, FAD, and CLAP.
 Broader listener pools and stronger generative evaluations remain open.
 
 \vfill\pagebreak

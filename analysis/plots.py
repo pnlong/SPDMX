@@ -387,16 +387,43 @@ _CONDITION_PALETTE = {
 }
 
 
-def _annotate_bars(ax, fmt: str = "{:.1f}", fontsize: int = 7) -> None:
+def _annotate_bars(
+    ax,
+    fmt: str = "{:.1f}",
+    fontsize: int = 7,
+    *,
+    inside: bool = False,
+    rotation: float = 0,
+) -> None:
+    """Label bar heights; ``inside`` places rotated text at each bar midpoint."""
     for container in ax.containers:
-        labels = []
+        if not inside:
+            labels = []
+            for patch in container:
+                h = patch.get_height()
+                if h != h:  # NaN
+                    labels.append("")
+                else:
+                    labels.append(fmt.format(h))
+            ax.bar_label(container, labels=labels, padding=2, fontsize=fontsize)
+            continue
         for patch in container:
-            h = patch.get_height()
+            h = float(patch.get_height())
             if h != h:  # NaN
-                labels.append("")
-            else:
-                labels.append(fmt.format(h))
-        ax.bar_label(container, labels=labels, padding=2, fontsize=fontsize)
+                continue
+            x = patch.get_x() + patch.get_width() / 2.0
+            y = h / 2.0
+            ax.text(
+                x,
+                y,
+                fmt.format(h),
+                ha="center",
+                va="center",
+                rotation=rotation,
+                fontsize=fontsize,
+                color="0.12",
+                clip_on=True,
+            )
 
 
 def plot_ablation_listening(
@@ -808,11 +835,12 @@ def plot_separation_sisdr(
     summary: pd.DataFrame,
     output_path: str | Path,
     *,
-    figsize: tuple[float, float] = (8.0, 4.2),
+    figsize: tuple[float, float] = (8.0, 3.8),
 ) -> None:
     """SI-SDR bars: instrument × train arm, optional MUSDB panel.
 
     Expects columns: ``train_arm``, ``test_set``, ``target``, ``si_sdr_mean``.
+    Panel widths scale with the number of x-tick categories.
     """
     import seaborn as sns
 
@@ -820,7 +848,8 @@ def plot_separation_sisdr(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df = summary.copy()
     df["train_arm"] = df["train_arm"].map(lambda a: _ARM_LABELS.get(str(a), str(a)))
-    df["target"] = df["target"].str.lower()
+    df["target"] = df["target"].astype(str).str.lower().str.capitalize()
+    target_order = [t.capitalize() for t in _TARGET_ORDER]
     test_sets = [
         t
         for t in ("slakh2100", "spdmx_val", "musdb18")
@@ -829,40 +858,69 @@ def plot_separation_sisdr(
     if not test_sets:
         test_sets = sorted(df["test_set"].astype(str).unique())
 
+    panel_targets: list[list[str]] = []
+    for test_set in test_sets:
+        sub = df[df["test_set"].astype(str) == test_set]
+        targets = [t for t in target_order if t in set(sub["target"])]
+        if test_set == "musdb18":
+            targets = [t for t in ("Bass", "Drums") if t in set(sub["target"])]
+        panel_targets.append(targets)
+    width_ratios = [max(1, len(t)) for t in panel_targets]
+
     sns.set_theme(style="ticks", context="paper")
     try:
         n = len(test_sets)
-        fig, axes = plt.subplots(1, n, figsize=figsize, sharey=True)
+        fig, axes = plt.subplots(
+            1,
+            n,
+            figsize=figsize,
+            sharey=True,
+            gridspec_kw={"width_ratios": width_ratios, "wspace": 0.12},
+        )
         if n == 1:
             axes = [axes]
-        for ax, test_set in zip(axes, test_sets):
+        hue_order = [a for a in _ARM_ORDER_SEP if a in set(df["train_arm"])]
+        title_map = {
+            "slakh2100": "Slakh2100",
+            "spdmx_val": "SPDMX (BDGP)",
+            "musdb18": "MUSDB18",
+        }
+        for ax, test_set, targets in zip(axes, test_sets, panel_targets):
             sub = df[df["test_set"].astype(str) == test_set]
-            targets = [t for t in _TARGET_ORDER if t in set(sub["target"])]
-            if test_set == "musdb18":
-                targets = [t for t in ("bass", "drums") if t in set(sub["target"])]
             sns.barplot(
                 data=sub,
                 x="target",
                 y="si_sdr_mean",
                 hue="train_arm",
                 order=targets,
-                hue_order=[a for a in _ARM_ORDER_SEP if a in set(sub["train_arm"])],
+                hue_order=hue_order,
                 ax=ax,
                 saturation=0.9,
             )
-            _annotate_bars(ax, fmt="{:.1f}")
-            title = {
-                "slakh2100": "Slakh2100 test",
-                "spdmx_val": "SPDMX val",
-                "musdb18": "MUSDB18 test",
-            }.get(test_set, test_set)
-            ax.set_title(title, fontsize=10)
-            ax.set_xlabel("Target")
+            _annotate_bars(ax, fmt="{:.1f}", fontsize=6.5, inside=True, rotation=90)
+            ax.set_title(title_map.get(test_set, test_set), fontsize=10)
+            ax.set_xlabel("")
             ax.set_ylabel("SI-SDR (dB)" if ax is axes[0] else "")
-            ax.legend(title=None, frameon=True, fontsize=7)
+            leg = ax.get_legend()
+            if leg is not None:
+                leg.remove()
             sns.despine(ax=ax)
-        fig.tight_layout()
-        _savefig(fig, output_path, pad_inches=0.02)
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=max(1, len(labels)),
+            frameon=False,
+            fontsize=8,
+            bbox_to_anchor=(0.5, 0.0),
+            borderaxespad=0.0,
+            handletextpad=0.4,
+            columnspacing=1.2,
+        )
+        # Leave a small gap under tick labels for the frameless shared legend.
+        fig.subplots_adjust(left=0.08, right=0.99, top=0.90, bottom=0.16, wspace=0.18)
+        _savefig(fig, output_path, pad_inches=0.04)
         plt.close(fig)
     finally:
         sns.reset_defaults()

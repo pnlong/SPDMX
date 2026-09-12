@@ -20,7 +20,15 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from experiments.separation.dataset import StemPackDataset
-from experiments.separation.paths import TARGETS, TRAIN_ARMS, load_config, resolve_dev_dir
+from experiments.separation.dataset_multistem import STEM_OTHER_SOURCES, StemOtherDataset
+from experiments.separation.freeze_multistem import MULTISTEM_ARM
+from experiments.separation.paths import (
+    SPDMX_ROOT,
+    TARGETS,
+    TRAIN_ARMS,
+    load_config,
+    resolve_dev_dir,
+)
 
 
 def build_model(sources: list[str], sample_rate: int):
@@ -100,6 +108,7 @@ def train_arm(
     ckpt_dir: Path,
     device: torch.device,
     resume: bool = True,
+    spdmx_root: Path | None = None,
 ) -> Path:
     train_csv = manifests_dir / arm / "train.csv"
     val_csv = manifests_dir / arm / "val.csv"
@@ -113,20 +122,51 @@ def train_arm(
     max_steps = int(cfg.get("max_steps", 50_000))
     lr = float(cfg.get("lr", 3e-4))
     num_workers = int(cfg.get("num_workers", 4))
-    sources = list(cfg.get("sources") or TARGETS)
+    if arm == MULTISTEM_ARM:
+        sources = list(cfg.get("sources") or STEM_OTHER_SOURCES)
+    else:
+        sources = list(cfg.get("sources") or TARGETS)
     log_every = int(cfg.get("log_every", 50))
     val_every = max(1, int(cfg.get("val_every", 1000)))
     raw_val_max = cfg.get("val_max_batches")
     val_max_batches = int(raw_val_max) if raw_val_max is not None else None
 
-    ds = StemPackDataset(
-        train_csv,
-        packs_root,
-        sample_rate=sample_rate,
-        segment_seconds=segment,
-        channels=channels,
-        train=True,
-    )
+    if arm == MULTISTEM_ARM:
+        root = Path(spdmx_root or cfg.get("spdmx_root") or SPDMX_ROOT)
+        ds = StemOtherDataset(
+            train_csv,
+            root,
+            sample_rate=sample_rate,
+            segment_seconds=segment,
+            channels=channels,
+            train=True,
+        )
+        val_ds_factory = lambda: StemOtherDataset(
+            val_csv,
+            root,
+            sample_rate=sample_rate,
+            segment_seconds=segment,
+            channels=channels,
+            train=False,
+        )
+    else:
+        ds = StemPackDataset(
+            train_csv,
+            packs_root,
+            sample_rate=sample_rate,
+            segment_seconds=segment,
+            channels=channels,
+            train=True,
+        )
+        val_ds_factory = lambda: StemPackDataset(
+            val_csv,
+            packs_root,
+            sample_rate=sample_rate,
+            segment_seconds=segment,
+            channels=channels,
+            train=False,
+        )
+
     loader = DataLoader(
         ds,
         batch_size=batch_size,
@@ -137,16 +177,8 @@ def train_arm(
 
     val_loader: DataLoader | None = None
     if val_csv.is_file() and val_csv.stat().st_size > 0 and len(pd.read_csv(val_csv)) > 0:
-        val_ds = StemPackDataset(
-            val_csv,
-            packs_root,
-            sample_rate=sample_rate,
-            segment_seconds=segment,
-            channels=channels,
-            train=False,
-        )
         val_loader = DataLoader(
-            val_ds,
+            val_ds_factory(),
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
@@ -315,7 +347,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--arm",
-        choices=(*TRAIN_ARMS, "all"),
+        choices=(*TRAIN_ARMS, MULTISTEM_ARM, "all"),
         default="all",
     )
     parser.add_argument("--config", type=Path, default=None)
@@ -332,7 +364,11 @@ def main() -> None:
     packs_root = root / "packs"
     manifests = root / "manifests"
     device = torch.device(args.device)
-    arms = TRAIN_ARMS if args.arm == "all" else (args.arm,)
+    if args.arm == "all":
+        arms = TRAIN_ARMS
+    else:
+        arms = (args.arm,)
+    spdmx_root = Path(cfg.get("spdmx_root") or SPDMX_ROOT)
     for arm in arms:
         ckpt_dir = root / "checkpoints" / arm
         path = train_arm(
@@ -343,6 +379,7 @@ def main() -> None:
             ckpt_dir=ckpt_dir,
             device=device,
             resume=not args.reset,
+            spdmx_root=spdmx_root,
         )
         print(f"{arm}: wrote {path}")
 
