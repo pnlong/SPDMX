@@ -346,7 +346,7 @@ def prepare_all(cfg: dict, out_dir: Path) -> dict:
     if spdmx.empty:
         raise RuntimeError(
             f"no sPDMX songs with shipped mixes under {spdmx_root}; "
-            "run synthesis.final --only-pass song_mix (or build_spdmx) first"
+            "run synthesis.final --only-pass mix (or build_spdmx) first"
         )
 
     matched = _bdgp_matched_pool(spdmx, seed=seed, spdmx_root=spdmx_root)

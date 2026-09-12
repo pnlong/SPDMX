@@ -30,13 +30,10 @@ from synthesis.recipe import (
 from synthesis.synthesize import attach_corrected_midi, run_layout_pass
 
 
-def test_parse_args_resume_check_disk_default():
-    default = parse_args(["--only-pass", "midi_ddsp"])
-    assert default.resume_check_disk is True
-    off = parse_args(["--only-pass", "midi_ddsp", "--no-resume-check-disk"])
-    assert off.resume_check_disk is False
-    on = parse_args(["--only-pass", "midi_ddsp", "--resume-check-disk"])
-    assert on.resume_check_disk is True
+def test_parse_args_dry_run():
+    args = parse_args(["--only-pass", "fluidsynth", "--dry-run"])
+    assert args.dry_run is True
+    assert parse_args(["--only-pass", "fluidsynth"]).dry_run is False
 
 
 def test_hybrid_raw_current_csv_only_skips_without_disk(tmp_path: Path):
@@ -286,16 +283,16 @@ def test_pass_sequence_starts_with_layout():
         specs={"strings": CategorySpec("midi-ddsp", True, "basic", "ddsp_basic_realify")},
     )
     assert pass_sequence(no_realify) == (
-        "layout", "fluidsynth", "verify", "mix", "song_mix", "verify_mix",
+        "layout", "fluidsynth", "mix", "verify",
     )
     assert pass_sequence(with_ddsp) == (
-        "layout", "fluidsynth", "midi_ddsp", "verify", "mix", "song_mix", "verify_mix",
+        "layout", "fluidsynth", "midi_ddsp", "mix", "verify",
     )
     assert pass_sequence(with_realify) == (
-        "layout", "fluidsynth", "realify", "verify", "mix", "song_mix", "verify_mix",
+        "layout", "fluidsynth", "realify", "mix", "verify",
     )
     assert pass_sequence(with_ddsp_realify) == (
-        "layout", "fluidsynth", "midi_ddsp", "realify", "verify", "mix", "song_mix", "verify_mix",
+        "layout", "fluidsynth", "midi_ddsp", "realify", "mix", "verify",
     )
     with_piano_ddsp = CategoryRecipe(
         specs={
@@ -304,7 +301,7 @@ def test_pass_sequence_starts_with_layout():
         },
     )
     assert pass_sequence(with_piano_ddsp) == (
-        "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "verify", "mix", "song_mix", "verify_mix",
+        "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "mix", "verify",
     )
 
 
@@ -423,6 +420,155 @@ def test_attach_corrected_midi_uses_index_without_stat(tmp_path: Path):
     assert (tables / MIDI_INDEX_FILE_NAME).is_file()
     assert int(out.iloc[0]["n_fluidsynth"]) == 2
     assert int(out.iloc[1]["n_fluidsynth"]) == 1
+
+
+def test_work_for_pass_requeses_recipe_mismatches():
+    """Fluidsynth must re-render stems whose sidecar no longer matches the recipe."""
+    from synthesis.synthesize import _work_for_pass
+
+    df = pd.DataFrame({
+        "path_output": ["/a"],
+        "n_fluidsynth": [2],
+        "n_ddsp_piano": [0],
+        "n_midi_ddsp": [0],
+    })
+    recipe = CategoryRecipe(
+        specs={
+            "piano": CategorySpec("slakh", False, "slakh", "slakh"),
+            "drums": CategorySpec("basic", False, "basic", "basic"),
+            "strings": CategorySpec("midi-ddsp", False, "basic", "ddsp_basic"),
+            "wind": CategorySpec("midi-ddsp", False, "slakh", "ddsp_slakh"),
+            "voice": CategorySpec("slakh", False, "slakh", "slakh"),
+            "mallet": CategorySpec("slakh", False, "slakh", "slakh"),
+            "organ": CategorySpec("basic", False, "basic", "basic"),
+            "guitar": CategorySpec("basic", False, "basic", "basic"),
+            "brass": CategorySpec("midi-ddsp", False, "basic", "ddsp_basic"),
+            "polyphonic": CategorySpec("slakh", False, "slakh", "slakh"),
+        },
+    )
+    # Old basic rows for polyphonic — must not count as done under slakh recipe.
+    stale = {
+        ("/a", 0): {
+            "category": "polyphonic",
+            "method": "basic",
+            "fallback": "basic",
+            "backend": "fluidsynth",
+        },
+        ("/a", 1): {
+            "category": "polyphonic",
+            "method": "basic",
+            "fallback": "basic",
+            "backend": "fluidsynth",
+        },
+    }
+    kept, n = _work_for_pass(
+        df, [0], "fluidsynth", stem_recipe_index=stale, recipe=recipe,
+    )
+    assert kept == [0] and n == 2
+
+    fresh = {
+        ("/a", 0): {
+            "category": "polyphonic",
+            "method": "slakh",
+            "fallback": "slakh",
+            "backend": "fluidsynth",
+        },
+        ("/a", 1): {
+            "category": "polyphonic",
+            "method": "slakh",
+            "fallback": "slakh",
+            "backend": "fluidsynth",
+        },
+    }
+    kept2, n2 = _work_for_pass(
+        df, [0], "fluidsynth", stem_recipe_index=fresh, recipe=recipe,
+    )
+    assert kept2 == [] and n2 == 0
+
+
+def test_fluidsynth_credits_pending_before_sf_overflow():
+    """Pending neural deferrals must not steal SF credits from n_fluidsynth."""
+    from synthesis.synthesize import _fluidsynth_pass_credits, _work_for_pass
+
+    # Layout: 3 FS + 3 MD. Rendered: 2 piano SF, 1 strings SF fallback, 3 pending.
+    index = {
+        ("/a", 0): {
+            "category": "piano", "method": "slakh", "fallback": "slakh",
+            "backend": "fluidsynth",
+        },
+        ("/a", 1): {
+            "category": "piano", "method": "slakh", "fallback": "slakh",
+            "backend": "fluidsynth",
+        },
+        ("/a", 2): {
+            "category": "strings", "method": "midi-ddsp", "fallback": "basic",
+            "backend": "fluidsynth", "reason": "soundfont_polyphonic",
+        },
+        ("/a", 3): {
+            "category": "strings", "method": "midi-ddsp", "fallback": "basic",
+            "backend": "pending_midi_ddsp",
+        },
+        ("/a", 4): {
+            "category": "strings", "method": "midi-ddsp", "fallback": "basic",
+            "backend": "pending_midi_ddsp",
+        },
+        ("/a", 5): {
+            "category": "brass", "method": "midi-ddsp", "fallback": "basic",
+            "backend": "pending_midi_ddsp",
+        },
+    }
+    native, neural = _fluidsynth_pass_credits(
+        index, n_midi_ddsp_by_path={"/a": 3}, recipe=None,
+    )
+    assert native["/a"] == 3  # 2 piano + 1 SF overflow
+    assert neural["/a"] == 3  # pending fills all MD slots
+    df = pd.DataFrame({
+        "path_output": ["/a"],
+        "n_fluidsynth": [3],
+        "n_ddsp_piano": [0],
+        "n_midi_ddsp": [3],
+    })
+    kept, n = _work_for_pass(
+        df, [0], "fluidsynth", stem_recipe_index=index, recipe=None,
+    )
+    assert kept == [] and n == 0
+
+
+def test_align_stem_recipe_index_spdmx_to_spdmx_dev():
+    """Resume must match SPDMX_dev path_output even when CSV says SPDMX/raw."""
+    from synthesis.recipe import remap_stem_recipe_index_to_raw_root
+    from synthesis.synthesize import _align_stem_recipe_index_to_dataset, _work_for_pass
+
+    legacy = {
+        ("/deepfreeze/share/SPDMX/SPDMX/raw/1/11/QmSong", 0): {
+            "category": "piano",
+            "method": "slakh",
+            "fallback": "slakh",
+            "backend": "fluidsynth",
+            "path": "/deepfreeze/share/SPDMX/SPDMX/raw/1/11/QmSong",
+        },
+    }
+    df = pd.DataFrame({
+        "path_output": ["/deepfreeze/share/SPDMX/SPDMX_dev/raw/1/11/QmSong"],
+        "n_fluidsynth": [1],
+        "n_ddsp_piano": [0],
+        "n_midi_ddsp": [0],
+    })
+    aligned = _align_stem_recipe_index_to_dataset(legacy, df, work_indices=[0])
+    assert list(aligned) == [("/deepfreeze/share/SPDMX/SPDMX_dev/raw/1/11/QmSong", 0)]
+    kept, n = _work_for_pass(
+        df, [0], "fluidsynth", stem_recipe_index=aligned, recipe=None,
+    )
+    assert kept == [] and n == 0
+    # Without remap, credits miss and the song looks unfinished.
+    kept_bad, n_bad = _work_for_pass(
+        df, [0], "fluidsynth", stem_recipe_index=legacy, recipe=None,
+    )
+    assert kept_bad == [0] and n_bad == 1
+    remapped = remap_stem_recipe_index_to_raw_root(
+        legacy, "/deepfreeze/share/SPDMX/SPDMX_dev/raw",
+    )
+    assert remapped == aligned
 
 
 def test_work_for_pass_counts_remaining_renders(tmp_path: Path):

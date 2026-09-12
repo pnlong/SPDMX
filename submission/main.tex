@@ -93,8 +93,8 @@ After correction, inventory concentrates in acoustic piano, choir/voice, drums, 
 \begin{figure}[t]
   \centering
   \centerline{\includegraphics[width=\columnwidth]{figs/gm_program_counts_compare.pdf}}
-  \caption{Top-10 GM programs by stem count after register correction (non-empty tracks), versus raw PDMX program-change shares (percent within each inventory).
-  Empty tracks are removed before release.}
+  \caption{Top-10 GM programs by stem share after register correction, compared with raw PDMX program-change shares (non-empty tracks).
+  Correcting mislabeled programs and dropping empty tracks reshapes the inventory toward piano, voice, drums, and common orchestral families.}
   \label{fig:gm_programs}
 \end{figure}
 
@@ -110,10 +110,9 @@ Independent per-stem loudness matching would erase relative track levels that MI
 Each stem is first loudness-normalized toward $-23$\,LUFS~\cite{series2011algorithms} with peak limiting, then scaled by the ratio of that track's maximum note-on velocity to the song-level maximum.
 A single anti-clip peak gain, computed on the sum of scaled stems and applied uniformly, keeps stems linearly summable, so the mixture equals the stem sum~\cite{manilow2019cutting}.
 
-On a fixed probe set spanning piano, drums, strings, wind, voice, mallet, organ, guitar, brass, and residual polyphonic classes, listeners rated blinded render variants for perceived realism while soundfont shortlists and FX profiles were locked per category.
+On a fixed probe set spanning piano, drums, strings, wind, voice, mallet, organ, guitar, brass, and miscellaneous residual classes, listeners rated blinded render variants for perceived realism while soundfont shortlists and FX profiles were locked per category.
 A subsequent formal study compared four non-neural-to-neural render families without audio-to-audio post-enhancement (Sec.~\ref{sec:listening}).
-Listening scores inform the frozen hybrid recipe but do not dictate it alone: when basic only narrowly outranks varied, we prefer varied to retain timbral diversity.
-The release uses varied soundfonts for piano, voice, and mallet; basic soundfonts for drums, organ, guitar, and residual polyphony; and MIDI-DDSP (with soundfont fallback as above) for strings, brass, and wind, so every song remains complete.
+The hybrid recipe frozen from that study (Sec.~\ref{sec:listening}) keeps every song complete under redistributable synthesizers.
 
 SPDMX contains $253{,}982$ songs and $490{,}159$ mono FLAC stems ($5{,}469$ hours of score-aligned material), plus paired MIDI for the released tracks.
 Of these, $88{,}403$ songs ($34.8\%$) have more than one stem (mean $1.93$ stems/song; max $66$), so a large multitrack subset sits alongside abundant single-part material.
@@ -123,21 +122,25 @@ Unlike Slakh, rendering uses only redistributable open synthesizers rather than 
 \section{Listening study}
 \label{sec:listening}
 
-Four render families were compared: basic soundfont (A1), varied soundfonts (B1), MIDI-DDSP over basic fallbacks (CA1), and MIDI-DDSP over varied fallbacks (CB1).
-The open reference was A1; when present, the same signal also appeared as a hidden reference among shuffled unlabeled conditions.
+Four render families were compared: basic soundfont, varied soundfonts, MIDI-DDSP over basic fallbacks, and MIDI-DDSP over varied fallbacks.
+The open reference was the basic soundfont; when present, the same signal also appeared as a hidden reference among shuffled unlabeled conditions.
 Each trial showed a 10-second stem excerpt; listeners scored every condition for perceived realism ($0$--$100$).
 The trial set used two stems in each of ten instrument categories ($20$ pages).
-$N{=}8$ listeners scored the full ablation battery; Fig.~\ref{fig:ablation_listening} reports mean realism for the four families retained for the release (when a neural condition reused a soundfont stem unchanged, that stem inherited the donor condition's score).
+We ran the study with $N{=}8$ listeners; Fig.~\ref{fig:ablation_listening} reports realism by instrument category.
 
-A1 attains the highest mean realism; CA1 is the strongest neural-augmented option.
-Per-category patterns guide the hybrid in Sec.~\ref{sec:dataset}, with close calls resolved toward variety rather than strictly maximizing the mean score.
+We freeze one render path per category from these panels rather than a single global winner.
+The default is the highest-mean condition; when the basic soundfont only narrowly outranks varied soundfonts, we keep varied for timbral diversity.
+Concretely, SPDMX uses the basic soundfont for drums, organ, and guitar; varied soundfonts for piano, voice, mallet, and miscellaneous residual classes; and MIDI-DDSP over basic fallbacks for strings and brass and varied fallbacks for wind ($\star$ in Fig.~\ref{fig:ablation_listening}).
 
-\begin{figure}[t]
+\begin{figure*}[t]
   \centering
-  \centerline{\includegraphics[width=\linewidth]{figs/ablation_listening.pdf}}
-  \caption{Ablation listening mean realism ($0$--$100$) for basic (A1), varied soundfonts (B1), and MIDI-DDSP hybrids (CA1, CB1).}
+  \centerline{\includegraphics[width=\textwidth]{figs/ablation_listening.pdf}}
+  \caption{Ablation listening realism ($0$--$100$) by instrument category for basic, varied soundfonts, and MIDI-DDSP hybrids (basic or varied fallbacks).
+  Boxes show per-listener means within each category ($N{=}8$; two stems per category).
+  MIDI-DDSP panels are shown only where neural synthesis can apply; elsewhere those conditions would duplicate basic/varied soundfonts.
+  Stars mark the condition used in the frozen SPDMX recipe.}
   \label{fig:ablation_listening}
-\end{figure}
+\end{figure*}
 
 \section{Experiments}
 \label{sec:experiments}

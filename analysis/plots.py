@@ -211,15 +211,15 @@ def plot_gm_program_compare(
     top_n: int = 10,
     rank_by: str = "corrected",
     show_percentages: bool = False,
-    figsize: tuple[float, float] = (8.0, 4.0),
+    figsize: tuple[float, float] = (7.0, 3.2),
 ):
     """Grouped horizontal bar chart: original vs register-corrected GM usage.
 
     Selects the top ``top_n`` programs by ``rank_by`` (``corrected`` or
     ``original``) stem count and plots each program's share under both
     inventories. The long tail is omitted (no ``Other`` bucket). Rows are
-    ordered by the ranking inventory (most → least). Default figsize is 2:1
-    (wide). No figure title.
+    ordered by the ranking inventory (most → least). Default figsize is
+    wide (~2:1) so a column-width include stays short. No figure title.
     """
     import seaborn as sns
 
@@ -227,7 +227,7 @@ def plot_gm_program_compare(
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    xlabel = "Percentage of Stems (%)"
+    xlabel = "Stem share (%)"
     if rank_by not in {"corrected", "original"}:
         raise ValueError("rank_by must be 'corrected' or 'original'")
 
@@ -251,8 +251,8 @@ def plot_gm_program_compare(
     else:
         ordered = list(rank_counts.sort_values(ascending=False).head(top_n).index)
 
-    # PDMX = raw MIDI program_change inventory; sPDMX = register-corrected inventory.
-    hue_order = ["PDMX", "sPDMX"]
+    # PDMX = raw MIDI program_change inventory; SPDMX = register-corrected inventory.
+    hue_order = ["PDMX", "SPDMX"]
     rank_rows: list[tuple[str, float, float, float]] = []
     for gm_id in ordered:
         label = gm_program_paper_label(int(gm_id))
@@ -269,7 +269,7 @@ def plot_gm_program_compare(
     rows: list[dict] = []
     for label, left_pct, right_pct, _rank_pct in rank_rows:
         rows.append({"label": label, "source": "PDMX", "pct": left_pct})
-        rows.append({"label": label, "source": "sPDMX", "pct": right_pct})
+        rows.append({"label": label, "source": "SPDMX", "pct": right_pct})
     plot_df = pd.DataFrame(rows)
 
     sns.set_theme(style="ticks", context="paper")
@@ -284,14 +284,15 @@ def plot_gm_program_compare(
             hue_order=hue_order,
             orient="h",
             ax=ax,
-            palette={"PDMX": "C0", "sPDMX": "C1"},
+            palette={"PDMX": "C0", "SPDMX": "C1"},
             saturation=0.9,
         )
         ax.set_xlabel(xlabel)
         ax.set_ylabel("General MIDI Program")
         ax.set_title("")
         ax.legend(loc="lower right", frameon=True, fontsize=8, title=None)
-        ax.set_xlim(0, max(float(plot_df["pct"].max()) * 1.12, 1.0))
+        x_max = max(float(plot_df["pct"].max()) * 1.18, 1.0)
+        ax.set_xlim(0, x_max)
         _style_gm_count_axis(ax)
         sns.despine(ax=ax)
         ax.tick_params(axis="y", labelsize=8)
@@ -302,7 +303,7 @@ def plot_gm_program_compare(
                 ax.bar_label(container, fmt="%.0f%%", padding=2, fontsize=7)
 
         fig.tight_layout()
-        _savefig(fig, output_path, pad_inches=0.02)
+        _savefig(fig, output_path, pad_inches=0.08)
         plt.close(fig)
     finally:
         sns.reset_defaults()
@@ -377,6 +378,13 @@ _ARM_ORDER = _ARM_ORDER_SAO  # default for combined/legacy callers
 _TARGET_ORDER = ("bass", "drums", "guitar", "piano")
 # Non-realify ablation arms reported in the ICASSP draft (SA3 omitted).
 _CONDITION_ORDER = ("A1", "B1", "CA1", "CB1")
+# Distinct hues per ablation (basic / varied / neural+basic / neural+varied).
+_CONDITION_PALETTE = {
+    "A1": "#4C78A8",
+    "B1": "#F58518",
+    "CA1": "#54A24B",
+    "CB1": "#E45756",
+}
 
 
 def _annotate_bars(ax, fmt: str = "{:.1f}", fontsize: int = 7) -> None:
@@ -395,38 +403,85 @@ def plot_ablation_listening(
     scores: pd.DataFrame,
     output_path: str | Path,
     *,
-    figsize: tuple[float, float] = (8.0, 3.6),
+    figsize: tuple[float, float] = (5.5, 3.2),
     scales: tuple[str, ...] = ("realism",),
+    score_col: str | None = None,
+    style: str = "auto",
 ) -> None:
-    """Bars of listening means by condition (default: realism only).
+    """Listening scores by condition (default: realism).
 
-    Expects columns: ``condition`` plus each name in ``scales``
-    (e.g. ``content``, ``realism``).
+    Accepts either:
+    - summary rows with ``condition`` + scale columns (e.g. ``realism``) → bars, or
+    - long-form listener scores with ``condition`` + ``score_col`` / ``realism``
+      → boxplots of per-listener means (``style="box"`` / ``"auto"``).
+
+    ``style``: ``auto`` (box if listener scores else bar), ``box``, or ``bar``.
     """
     import seaborn as sns
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    missing = [s for s in scales if s not in scores.columns]
-    if missing:
-        raise ValueError(f"plot_ablation_listening missing columns: {missing}")
     df = scores.copy()
-    df["condition"] = pd.Categorical(
-        df["condition"], categories=list(_CONDITION_ORDER), ordered=True
+    if "condition" not in df.columns:
+        raise ValueError("plot_ablation_listening requires a condition column")
+
+    has_listener_scores = "listener_id" in df.columns and (
+        score_col in df.columns
+        if score_col is not None
+        else (len(scales) == 1 and scales[0] in df.columns)
     )
-    long = df.melt(
-        id_vars=["condition"],
-        value_vars=list(scales),
-        var_name="scale",
-        value_name="score",
+    if style == "auto":
+        style = "box" if has_listener_scores else "bar"
+    if style not in {"box", "bar"}:
+        raise ValueError("style must be 'auto', 'box', or 'bar'")
+
+    if style == "box" or has_listener_scores and style == "box":
+        y_col = score_col or scales[0]
+        if y_col not in df.columns:
+            raise ValueError(f"plot_ablation_listening missing column: {y_col}")
+        long = df[["condition", y_col]].rename(columns={y_col: "score"})
+    else:
+        missing = [s for s in scales if s not in df.columns]
+        if missing:
+            raise ValueError(f"plot_ablation_listening missing columns: {missing}")
+        long = df.melt(
+            id_vars=["condition"],
+            value_vars=list(scales),
+            var_name="scale",
+            value_name="score",
+        )
+        long["scale"] = long["scale"].str.capitalize()
+
+    long["condition"] = pd.Categorical(
+        long["condition"], categories=list(_CONDITION_ORDER), ordered=True
     )
-    long["scale"] = long["scale"].str.capitalize()
     hue_order = [s.capitalize() for s in scales]
 
     sns.set_theme(style="ticks", context="paper")
     try:
         fig, ax = plt.subplots(figsize=figsize)
-        if len(scales) == 1:
+        if style == "box":
+            sns.boxplot(
+                data=long,
+                x="condition",
+                y="score",
+                order=list(_CONDITION_ORDER),
+                ax=ax,
+                color=sns.color_palette("deep")[0],
+                saturation=0.85,
+                width=0.55,
+                showfliers=True,
+                showmeans=True,
+                meanprops={
+                    "marker": "D",
+                    "markerfacecolor": "white",
+                    "markeredgecolor": "black",
+                    "markersize": 5.5,
+                },
+            )
+            ylabel = "Realism" if scales[0].lower() == "realism" else scales[0].capitalize()
+            ax.set_ylabel(ylabel)
+        elif len(scales) == 1:
             sns.barplot(
                 data=long,
                 x="condition",
@@ -435,6 +490,13 @@ def plot_ablation_listening(
                 ax=ax,
                 color=sns.color_palette("deep")[0],
                 saturation=0.9,
+                errorbar=None,
+            )
+            _annotate_bars(ax, fmt="{:.1f}")
+            ax.set_ylabel(
+                "Mean Realism"
+                if scales[0].lower() == "realism"
+                else f"Mean {scales[0].capitalize()}"
             )
         else:
             sns.barplot(
@@ -446,20 +508,297 @@ def plot_ablation_listening(
                 hue_order=hue_order,
                 ax=ax,
                 saturation=0.9,
+                errorbar=None,
             )
             ax.legend(title=None, frameon=True, fontsize=8)
-        _annotate_bars(ax, fmt="{:.1f}")
+            _annotate_bars(ax, fmt="{:.1f}")
+            ax.set_ylabel("Mean score")
         ax.set_xlabel("Condition")
-        ylabel = (
-            f"Mean {scales[0]} (0–100)"
-            if len(scales) == 1
-            else "Mean score (0–100)"
-        )
-        ax.set_ylabel(ylabel)
         ax.set_ylim(0, 100)
+        ax.yaxis.grid(True, linestyle="--", linewidth=0.6, alpha=0.45)
+        ax.set_axisbelow(True)
         sns.despine(ax=ax)
         fig.tight_layout()
-        _savefig(fig, output_path, pad_inches=0.02)
+        _savefig(fig, output_path, pad_inches=0.06)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()
+
+
+# Fluidsynth-only on top row; MIDI-DDSP on bottom (grid layout).
+_LISTENING_CATEGORY_ORDER = (
+    "drums",
+    "organ",
+    "guitar",
+    "piano",
+    "voice",
+    "mallet",
+    "polyphonic",
+    "strings",
+    "brass",
+    "wind",
+)
+_LISTENING_CATEGORY_LABELS = {
+    "polyphonic": "Miscellaneous",
+}
+# Frozen SPDMX render recipe (condition code per listening category).
+_LISTENING_RECIPE = {
+    "piano": "B1",
+    "voice": "B1",
+    "mallet": "B1",
+    "drums": "A1",
+    "organ": "A1",
+    "guitar": "A1",
+    "polyphonic": "B1",
+    "strings": "CA1",
+    "brass": "CA1",
+    "wind": "CB1",
+}
+# Categories where MIDI-DDSP can replace FluidSynth; elsewhere CA1/CB1 duplicate A1/B1.
+_LISTENING_NEURAL_CATEGORIES = frozenset({"strings", "wind", "brass"})
+_CONDITION_DISPLAY = {
+    "A1": "Basic",
+    "B1": "Varied",
+    "CA1": "MIDI-DDSP\n(Basic)",
+    "CB1": "MIDI-DDSP\n(Varied)",
+}
+
+
+def _listening_category_label(category: str) -> str:
+    key = str(category).lower()
+    return _LISTENING_CATEGORY_LABELS.get(key, str(category).capitalize())
+
+
+def _listening_conditions_for_category(category: str) -> tuple[str, ...]:
+    """Visible ablation arms for a category panel (omit redundant neural boxes)."""
+    if str(category).lower() in _LISTENING_NEURAL_CATEGORIES:
+        return _CONDITION_ORDER
+    return ("A1", "B1")
+
+
+def _listening_condition_ticklabels(conditions: tuple[str, ...] | list[str]) -> list[str]:
+    return [_CONDITION_DISPLAY.get(c, c) for c in conditions]
+
+
+def _mark_recipe_condition(
+    ax: plt.Axes,
+    condition: str,
+    _scores: pd.Series,
+    *,
+    condition_order: tuple[str, ...] = _CONDITION_ORDER,
+) -> None:
+    """Place a star just above the x-axis for the frozen-recipe condition."""
+    if condition not in condition_order:
+        return
+    idx = list(condition_order).index(condition)
+    ax.plot(
+        idx,
+        6.5,
+        marker="*",
+        markersize=8.5,
+        color="0.1",
+        markeredgecolor="0.1",
+        markeredgewidth=0.4,
+        linestyle="None",
+        zorder=6,
+        clip_on=True,
+    )
+
+
+def plot_ablation_listening_panels(
+    scores: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    figsize: tuple[float, float] | None = None,
+    score_col: str = "realism",
+    category_order: tuple[str, ...] = _LISTENING_CATEGORY_ORDER,
+    layout: str = "row",
+) -> None:
+    """Text-width listening figure with per-category boxplots.
+
+    CA1/CB1 boxes are shown only for MIDI-DDSP-eligible categories
+    (``_LISTENING_NEURAL_CATEGORIES``); elsewhere they would duplicate A1/B1.
+    Tick labels use plain names (Basic / Varied / MIDI-DDSP …), not condition codes.
+
+    ``layout``:
+      - ``row``: one short row of category panels (default; compact height)
+      - ``grid``: Fluidsynth categories on top (equal panels), MIDI-DDSP on
+        bottom spanning the same width (equal panels; sharex within each row)
+    """
+    import seaborn as sns
+    from matplotlib.gridspec import GridSpec
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if score_col not in scores.columns:
+        raise ValueError(f"missing score column: {score_col}")
+    need = {"condition", "listener_id", "category", score_col}
+    missing = need - set(scores.columns)
+    if missing:
+        raise ValueError(f"plot_ablation_listening_panels missing columns: {missing}")
+    if layout not in {"row", "grid"}:
+        raise ValueError("layout must be 'row' or 'grid'")
+
+    df = scores.copy()
+    df["condition"] = pd.Categorical(
+        df["condition"], categories=list(_CONDITION_ORDER), ordered=True
+    )
+    cat_df = df[df["category"].astype(str).str.lower() != "overall"].copy()
+
+    cats = [c for c in category_order if c in set(cat_df["category"].astype(str))]
+    if not cats:
+        cats = sorted(cat_df["category"].astype(str).unique())
+
+    if layout == "grid":
+        fs_cats = [c for c in cats if str(c).lower() not in _LISTENING_NEURAL_CATEGORIES]
+        neural_cats = [c for c in cats if str(c).lower() in _LISTENING_NEURAL_CATEGORIES]
+        rows = [row for row in (fs_cats, neural_cats) if row]
+        # Equal panel widths within each row; both rows span the full figure.
+        row_ratios = [[1] * len(row) for row in rows]
+        max_units = max((sum(r) for r in row_ratios), default=1)
+    else:
+        rows = [cats]
+        row_ratios = [[len(_listening_conditions_for_category(c)) for c in cats]]
+        max_units = max((sum(r) for r in row_ratios), default=1)
+
+    if figsize is None:
+        figsize = (7.0, 1.85) if layout == "row" else (9.0, 3.2)
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        plt.rcParams.update(
+            {
+                "axes.linewidth": 0.45,
+                "xtick.major.width": 0.45,
+                "ytick.major.width": 0.45,
+                "xtick.major.size": 2.2,
+                "ytick.major.size": 2.2,
+            }
+        )
+        box_kw = dict(
+            order=list(_CONDITION_ORDER),
+            hue="condition",
+            hue_order=list(_CONDITION_ORDER),
+            palette=_CONDITION_PALETTE,
+            dodge=False,
+            saturation=0.9,
+            width=0.62,
+            showfliers=False,
+            showmeans=False,
+            linewidth=0.65,
+            boxprops={"linewidth": 0.65},
+            whiskerprops={"linewidth": 0.65},
+            capprops={"linewidth": 0.65},
+            medianprops={"linewidth": 1.05, "color": "0.05", "zorder": 5},
+            legend=False,
+        )
+        title_fs = 7.5 if layout == "row" else 8.0
+        title_pad = 1.0 if layout == "row" else 1.5
+        x_labelsize = 5.0 if layout == "grid" else 5.5
+
+        def _thin_axes(ax: plt.Axes) -> None:
+            ax.tick_params(axis="both", length=2.2, width=0.45, labelsize=6.5)
+            for spine in ax.spines.values():
+                spine.set_linewidth(0.45)
+
+        def _draw_panel(ax: plt.Axes, cat: str) -> None:
+            conds = _listening_conditions_for_category(cat)
+            sub = cat_df[
+                (cat_df["category"].astype(str) == cat)
+                & (cat_df["condition"].astype(str).isin(conds))
+            ]
+            sns.boxplot(
+                data=sub,
+                x="condition",
+                y=score_col,
+                ax=ax,
+                **{**box_kw, "order": list(conds), "hue_order": list(conds)},
+            )
+            ax.set_title(_listening_category_label(cat), fontsize=title_fs, pad=title_pad)
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            ax.set_ylim(0, 104)
+            ax.set_xticks(range(len(conds)))
+            ax.set_xticklabels(
+                _listening_condition_ticklabels(conds),
+                fontsize=x_labelsize,
+                linespacing=0.9,
+            )
+            ax.tick_params(axis="x", labelsize=x_labelsize, rotation=0, pad=1)
+            ax.yaxis.grid(True, linestyle="--", linewidth=0.4, alpha=0.35)
+            ax.set_axisbelow(True)
+            sns.despine(ax=ax)
+            _thin_axes(ax)
+            recipe = _LISTENING_RECIPE.get(str(cat).lower())
+            if recipe is not None:
+                _mark_recipe_condition(
+                    ax,
+                    recipe,
+                    sub[score_col].astype(float),
+                    condition_order=conds,
+                )
+
+        fig = plt.figure(figsize=figsize)
+        outer = GridSpec(
+            len(rows),
+            1,
+            figure=fig,
+            hspace=0.38 if layout == "grid" else 0.08,
+            left=0.045 if layout == "grid" else 0.08,
+            right=0.995,
+            top=0.94 if layout == "grid" else 0.88,
+            bottom=0.14 if layout == "grid" else 0.22,
+        )
+        sharey_anchor: plt.Axes | None = None
+        # sharex within a row among panels with the same condition arity
+        sharex_anchors: dict[tuple[int, int], plt.Axes] = {}
+        left_axes: list[plt.Axes] = []
+
+        for r, (row_cats, ratios) in enumerate(zip(rows, row_ratios)):
+            if layout == "grid":
+                # Full-width rows: equal panels, no trailing pad.
+                widths = list(ratios)
+                n_slots = len(row_cats)
+                pad = 0
+                # More gap among the denser Fluidsynth top row.
+                wspace = 0.20 if r == 0 else 0.12
+            else:
+                pad = max_units - sum(ratios)
+                n_slots = len(row_cats) + (1 if pad > 0 else 0)
+                widths = list(ratios) + ([pad] if pad > 0 else [])
+                wspace = 0.10
+            inner = outer[r].subgridspec(
+                1, n_slots, width_ratios=widths, wspace=wspace
+            )
+            for c, cat in enumerate(row_cats):
+                n_conds = len(_listening_conditions_for_category(cat))
+                sharex = sharex_anchors.get((r, n_conds))
+                ax = fig.add_subplot(
+                    inner[0, c],
+                    sharex=sharex,
+                    sharey=sharey_anchor,
+                )
+                if sharex is None:
+                    sharex_anchors[(r, n_conds)] = ax
+                if sharey_anchor is None:
+                    sharey_anchor = ax
+                _draw_panel(ax, cat)
+                ax.tick_params(labelleft=(c == 0), labelbottom=True)
+                if c == 0:
+                    left_axes.append(ax)
+            if pad > 0:
+                spacer = fig.add_subplot(inner[0, -1])
+                spacer.axis("off")
+
+        if layout == "grid" and left_axes:
+            # Axis-relative coords keep the label tight against the y ticks.
+            lab_ax = left_axes[-1]
+            lab_ax.set_ylabel("Realism", fontsize=9)
+            # x: close to ticks; y: mid-figure between the two rows.
+            lab_ax.yaxis.set_label_coords(-0.11, 1.18)
+        else:
+            fig.supylabel("Realism", fontsize=8, x=0.01)
+        _savefig(fig, output_path, pad_inches=0.06)
         plt.close(fig)
     finally:
         sns.reset_defaults()

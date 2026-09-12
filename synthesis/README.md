@@ -26,7 +26,7 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 |--------|---------|
 | `synthesize.py` | Main CLI: ablation sample (default) or `--full` PDMX, `--render-mode`, `--realify` |
 | `mix.py` | Post-hoc LUFS × velocity dynamics × peak gain so stems remain summable |
-| `render_mixes.py` | ffmpeg stem→`mix/<song_id>.flac` (raw sum, mono); also `--only-pass song_mix` |
+| `render_mixes.py` | ffmpeg stem→`mix/<song_id>.flac` (raw sum, mono); production via `--only-pass mix` |
 | `listening/serve.py` | Localhost viewer for A1–CB2 ablation comparison |
 | `listening/make_clips.py` | Aligned 10s clips (windows from A1) for listening |
 | `build_spdmx.py` | Post-render: flattened `{OUTPUT}/SPDMX/chunk_N/<song_id>/` from `SPDMX_dev/` |
@@ -74,9 +74,9 @@ Chunked release: `{OUTPUT_DIR}/SPDMX/` via `build_spdmx`.
 Post-render packaging for Zenodo:
 
 ```bash
-# 0. Full-song mixes (after summable audio/ stems exist)
-uv run python -m synthesis.final --only-pass song_mix -j 8
-# → {OUTPUT}/SPDMX_dev/mix/<song_id>.flac
+# 0. Normalize audio/ + write mix/<song_id>.flac (dirty-aware)
+uv run python -m synthesis.final --only-pass mix -j 8
+# → {OUTPUT}/SPDMX_dev/audio/… and {OUTPUT}/SPDMX_dev/mix/<song_id>.flac
 
 # 1. Build flattened chunked release in a NEW dir (flat SPDMX_dev untouched)
 uv run python -m synthesis.build_spdmx -o "$SPDMX_OUTPUT_DIR"

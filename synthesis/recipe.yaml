@@ -16,4 +16,4 @@ mallet: slakh                # B1
 organ: basic                 # A1; skip A2, marginal SA3 gain vs render cost
 guitar: basic                # A1
 brass: ddsp_basic            # CA1 MIDI-DDSP
-polyphonic: basic            # A1 (everything else)
+polyphonic: slakh            # B1: varied inventory for residual GM classes

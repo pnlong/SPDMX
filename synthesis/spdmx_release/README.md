@@ -170,11 +170,11 @@ On Zenodo, metadata files and chunk archives are **separate downloads**:
 
 ## Rebuild (lab)
 
-After summable stems exist under `SPDMX_dev/audio/`:
+After summable stems / mixes exist under `SPDMX_dev/` (`--only-pass mix`):
 
 ```bash
-uv run python -m synthesis.final --only-pass song_mix -j 8
-# or: uv run python -m synthesis.render_mixes -j 8
+uv run python -m synthesis.final --only-pass mix -j 8
+# or debug: uv run python -m synthesis.render_mixes -j 8
 uv run python -m synthesis.build_spdmx -j 8
 ```
 

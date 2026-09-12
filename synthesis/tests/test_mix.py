@@ -139,7 +139,7 @@ def test_overwrite_with_yes_skips_prompt(tmp_path: Path, monkeypatch):
 
 
 def test_mix_resume_skips_complete_dest(tmp_path: Path):
-    from synthesis.mix import build_mixture_tasks, mix_output_ready
+    from synthesis.mix import build_mixture_tasks, mix_output_ready, normalize_song_task
 
     source = tmp_path / "raw"
     _seed_song_tree(source)
@@ -160,7 +160,7 @@ def test_mix_resume_skips_complete_dest(tmp_path: Path):
     def to_audio(path: str) -> str:
         return str(path).replace(str(source), str(tmp_path / "audio"), 1)
 
-    tasks, skipped = build_mixture_tasks(
+    tasks = build_mixture_tasks(
         stems,
         source,
         source,
@@ -170,10 +170,11 @@ def test_mix_resume_skips_complete_dest(tmp_path: Path):
         dest_song_dir_fn=to_audio,
         reset=False,
     )
-    assert skipped == 1
-    assert tasks == []
+    assert len(tasks) == 1
+    status, _ = normalize_song_task(tasks[0])
+    assert status == "skip"
 
-    tasks_reset, skipped_reset = build_mixture_tasks(
+    tasks_reset = build_mixture_tasks(
         stems,
         source,
         source,
@@ -183,12 +184,57 @@ def test_mix_resume_skips_complete_dest(tmp_path: Path):
         dest_song_dir_fn=to_audio,
         reset=True,
     )
-    assert skipped_reset == 0
     assert len(tasks_reset) == 1
+    assert tasks_reset[0]["reset"] is True
+
+
+def test_mix_resume_reruns_when_raw_newer(tmp_path: Path):
+    import os
+    import time
+
+    from synthesis.mix import build_mixture_tasks, normalize_song_task
+
+    source = tmp_path / "raw"
+    _seed_song_tree(source)
+    dest_song = tmp_path / "audio" / "data" / "song"
+    dest_song.mkdir(parents=True)
+    for track in (0, 1):
+        sf.write(
+            str(dest_song / f"{track}.flac"),
+            np.full(100, 0.1, np.float32),
+            SAMPLE_RATE,
+            format="FLAC",
+        )
+    # Make dest older than source.
+    older = time.time() - 120
+    for track in (0, 1):
+        os.utime(dest_song / f"{track}.flac", (older, older))
+    newer = time.time()
+    for track in (0, 1):
+        os.utime(source / "data" / "song" / f"stem_{track}.flac", (newer, newer))
+
+    stems = pd.read_csv(source / "stems.csv")
+
+    def to_audio(path: str) -> str:
+        return str(path).replace(str(source), str(tmp_path / "audio"), 1)
+
+    tasks = build_mixture_tasks(
+        stems,
+        source,
+        source,
+        "flac",
+        write_mixture=False,
+        use_velocity_dynamics=False,
+        dest_song_dir_fn=to_audio,
+        reset=False,
+    )
+    assert len(tasks) == 1
+    status, _ = normalize_song_task(tasks[0])
+    assert status == "wrote"
 
 
 def test_mix_resume_reruns_incomplete_dest(tmp_path: Path):
-    from synthesis.mix import build_mixture_tasks
+    from synthesis.mix import build_mixture_tasks, normalize_song_task
 
     source = tmp_path / "raw"
     _seed_song_tree(source)
@@ -206,7 +252,7 @@ def test_mix_resume_reruns_incomplete_dest(tmp_path: Path):
     def to_audio(path: str) -> str:
         return str(path).replace(str(source), str(tmp_path / "audio"), 1)
 
-    tasks, skipped = build_mixture_tasks(
+    tasks = build_mixture_tasks(
         stems,
         source,
         source,
@@ -214,8 +260,9 @@ def test_mix_resume_reruns_incomplete_dest(tmp_path: Path):
         use_velocity_dynamics=False,
         dest_song_dir_fn=to_audio,
     )
-    assert skipped == 0
     assert len(tasks) == 1
+    status, _ = normalize_song_task(tasks[0])
+    assert status == "wrote"
 
 
 def test_verify_mixed_stems_decodes_audio_tree(tmp_path: Path):
@@ -228,7 +275,7 @@ def test_verify_mixed_stems_decodes_audio_tree(tmp_path: Path):
     audio_song = tmp_path / "SPDMX" / "audio" / "1" / "2" / "QmX"
     raw_song.mkdir(parents=True)
     audio_song.mkdir(parents=True)
-    # stems.csv still points at raw/; verify_mix remaps to audio/
+    # stems.csv still points at raw/; verify remaps to audio/
     pd.DataFrame({
         "path": [str(raw_song), str(raw_song)],
         "track": [0, 1],
@@ -283,7 +330,8 @@ def test_verify_mix_resolves_stale_paths_via_media_dir(tmp_path: Path):
             SAMPLE_RATE,
             format="FLAC",
         )
-    sf.write(str(mix), np.full((200, 2), 0.05, np.float32), SAMPLE_RATE, format="FLAC")
+    # mix must be the sample-wise sum of stems (verify checks this when media_dir is set)
+    sf.write(str(mix), np.full(200, 0.10, np.float32), SAMPLE_RATE, format="FLAC")
 
     paths = mixed_stem_paths_from_tables(tables, audio_format="flac", media_dir=media)
     assert all(str(media / "audio") in p for p in paths)

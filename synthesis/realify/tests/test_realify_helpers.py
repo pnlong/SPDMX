@@ -824,7 +824,7 @@ def test_write_mixtures_for_dataset_uses_pool(tmp_path: Path, monkeypatch):
         def __init__(self, processes):
             captured["processes"] = processes
 
-        def imap(self, func, tasks, chunksize=1):
+        def imap_unordered(self, func, tasks, chunksize=1):
             captured["n_tasks"] = len(tasks)
             captured["chunksize"] = chunksize
             return [func(task) for task in tasks]
@@ -838,7 +838,7 @@ def test_write_mixtures_for_dataset_uses_pool(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("synthesis.mix.multiprocessing.Pool", FakePool)
     monkeypatch.setattr(
         "synthesis.mix.normalize_song_task",
-        lambda task: task["out_song_dir"],
+        lambda task: ("wrote", "song"),
     )
 
     source_dir = tmp_path / "basic"
@@ -859,7 +859,7 @@ def test_write_mixtures_for_dataset_uses_pool(tmp_path: Path, monkeypatch):
     write_mixtures_for_dataset(source_dir, output_dir, jobs=4, use_velocity_dynamics=False)
     assert captured["processes"] == 2
     assert captured["n_tasks"] == 2
-    assert captured["chunksize"] == 1
+    assert captured["chunksize"] >= 1
 
 
 def test_build_mixture_tasks_resolves_output_dirs(tmp_path: Path):

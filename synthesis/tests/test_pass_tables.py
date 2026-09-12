@@ -103,3 +103,46 @@ def test_merge_pass_tables_incomplete_song_stays_out_of_data_csv(tmp_path: Path)
     assert list(STEM_RECIPE_COLUMNS) == list(pd.read_csv(
         tables / STEM_RECIPE_FILE_NAME,
     ).columns)
+
+
+def test_merge_pass_tables_remaps_legacy_spdmx_paths(tmp_path: Path):
+    tables = tmp_path / "final"
+    media = tmp_path / "SPDMX_dev"
+    tables.mkdir()
+    legacy = "/deepfreeze/share/SPDMX/SPDMX/raw/7/19/QmSong"
+    want = str(media / "raw" / "7/19/QmSong")
+    pd.DataFrame({"song_id": ["7/19/QmSong"], "n_tracks": [1]}).to_csv(
+        tables / MIDI_INDEX_FILE_NAME, index=False,
+    )
+    pd.DataFrame([_stem(legacy, 0, "piano")]).to_csv(
+        pass_stems_csv(tables, "fluidsynth"), index=False,
+    )
+    pd.DataFrame([_recipe(legacy, 0, "fluidsynth")]).to_csv(
+        pass_recipe_csv(tables, "fluidsynth"), index=False,
+    )
+    counts = merge_pass_tables(tables, media_dir=media)
+    assert counts["songs"] == 1
+    songs = pd.read_csv(tables / f"{DATA_DIR_NAME}.csv")
+    assert songs.iloc[0]["path"] == want
+    stems = pd.read_csv(tables / f"{STEMS_FILE_NAME}.csv")
+    assert stems.iloc[0]["path"] == want
+
+
+def test_rewrite_tables_raw_paths_updates_shards(tmp_path: Path):
+    from synthesis.pass_tables import rewrite_tables_raw_paths
+
+    tables = tmp_path / "final"
+    media = tmp_path / "SPDMX_dev"
+    tables.mkdir()
+    legacy = str(tmp_path / "SPDMX" / "raw" / "1/2/Qm")
+    pd.DataFrame([_stem(legacy, 0, "piano"), _stem(legacy, 1, "bass")]).to_csv(
+        pass_stems_csv(tables, "fluidsynth"), index=False,
+    )
+    pd.DataFrame({"path": [legacy], "n_tracks": [2]}).to_csv(
+        tables / f"{DATA_DIR_NAME}.csv", index=False,
+    )
+    rewrite_tables_raw_paths(tables, media, include_shards=True)
+    stems = pd.read_csv(pass_stems_csv(tables, "fluidsynth"))
+    assert all(str(p).startswith(str(media / "raw")) for p in stems["path"])
+    songs = pd.read_csv(tables / f"{DATA_DIR_NAME}.csv")
+    assert str(songs.iloc[0]["path"]) == str(media / "raw" / "1/2/Qm")

@@ -204,7 +204,8 @@ After the ablation listening test, edit [`recipe.yaml`](recipe.yaml) with the wi
 3. **MIDI-DDSP** — strings/wind/brass whose recipe is `ddsp_*`. May run **in parallel** with Fluidsynth and with DDSP-Piano when that pass exists. Writes `stems.midi_ddsp.csv` / `stem_recipe.midi_ddsp.csv`.
 4. **merge** — optional. Concatenates the per-pass CSVs into canonical `stems.csv` / `stem_recipe.csv` / `ddsp_routing.csv` and writes `data.csv` for songs whose stem count matches `midi_index.csv`. Mix and realify run this automatically. **Pass shards stay on disk** so a later re-render or recipe change can still append to them.
 5. **SA3 realify** — only if the recipe sets `*_realify`; overwrites those stems in place. **After Fluidsynth, DDSP-Piano, and MIDI-DDSP have all finished.** Locked preset bypasses (`realify: false`) still apply.
-6. **mix** — merge tables, then LUFS + velocity + peak in place. No `mixture.*`; mix = sum(stems). Same gate: all raw stems must be on disk first.
+6. **mix** — merge tables, then LUFS + velocity + peak into `audio/` **and** write `mix/<song_id>.flac` (ffmpeg stem sum) in the same pass. Dirty-aware: re-normalize when any raw stem is newer than `audio/`; remake song mixes when any `audio/` stem is newer than the mix file (or the song was just re-normalized).
+7. **verify** — raw completeness / claimed-stem checks **plus** full FLAC decode of `audio/` stems and `mix/<song_id>.flac`, then a sample-wise check that each mix equals `sum(audio stems)` (s16-tolerant). With `--delete-bad-mix-sums`, failing mixes are removed so a later `--only-pass mix` remakes them. One-shot remake: `--only-pass mix --repair-mix-sums`.
 
 Without `--reset`, each method pass **resumes** from its own `stem_recipe.<pass>.csv` plus a valid on-disk FLAC (default; `--no-resume-check-disk` for CSV-only). Canonical `stems.csv` / `stem_recipe.csv` / `data.csv` are merge outputs (rebuilt at mix) and are deleted when a render pass starts; the per-pass shards are not. Valid stems whose pass sidecar matches the current recipe are skipped. Pass `-y` / `--yes` after a recipe change to regenerate mismatches without a prompt.
 
@@ -214,17 +215,21 @@ uv run python -m synthesis.final --only-pass layout
 uv run python -m synthesis.final --only-pass fluidsynth -j 8
 uv run python -m synthesis.final --only-pass ddsp_piano
 uv run python -m synthesis.final --only-pass midi_ddsp
-uv run python -m synthesis.final --only-pass verify
-uv run python -m synthesis.final --only-pass mix
+uv run python -m synthesis.final --only-pass mix -j 8
+uv run python -m synthesis.final --only-pass verify -j 8
 
 # Optional: rebuild canonical CSVs without mixing (mix/realify/verify already do this):
 uv run python -m synthesis.final --only-pass merge
 
-# If the recipe uses *_realify, insert before verify — after Fluidsynth, DDSP-Piano, and MIDI-DDSP:
+# If the recipe uses *_realify, insert before mix — after Fluidsynth, DDSP-Piano, and MIDI-DDSP:
 uv run python -m synthesis.final --only-pass realify
 
-# Recipe changed; regenerate mismatches without prompting:
+# Recipe changed; preview conflicts without writing, then regenerate:
+uv run python -m synthesis.final --only-pass fluidsynth --dry-run
 uv run python -m synthesis.final --only-pass fluidsynth -y -j 8
+# Then mix (only dirty songs) + verify:
+uv run python -m synthesis.final --only-pass mix -j 8
+uv run python -m synthesis.final --only-pass verify -j 8
 
 # Stratified sample instead of all valid PDMX (writes dev/ablations/final/):
 uv run python -m synthesis.final --only-pass layout --ablation-sample

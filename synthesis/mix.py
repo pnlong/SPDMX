@@ -56,17 +56,51 @@ from synthesis.velocity import (
 )
 
 
-def normalize_song_task(task: dict) -> str | None:
+def normalize_song_task(task: dict) -> tuple[str, str | None]:
+    """Normalize one song; skip when dest stems are already up to date.
+
+    Returns ``(status, song_id)`` where status is ``skip``, ``wrote``, or ``error``.
+    """
+    src = Path(task["song_dir"])
+    dest = Path(task["out_song_dir"])
+    tracks = task["tracks"]
+    audio_format = task["audio_format"]
+    write_mixture = bool(task.get("write_mixture", False))
+    song_id = _song_id_from_stem_path(str(dest))
+    # Cheap path compare (avoid NFS ``resolve()``); in-place dest==src never skips.
+    if (
+        not bool(task.get("reset", False))
+        and src != dest
+        and audio_stems_up_to_date(
+            src, dest, tracks, audio_format, write_mixture=write_mixture,
+        )
+    ):
+        return "skip", song_id
+
     scales = task.get("velocity_scales")
+    if scales is None and bool(task.get("use_velocity_dynamics", True)):
+        try:
+            midi_path = resolve_song_midi(
+                src,
+                pdmx_root=Path(task.get("pdmx_root") or Path(PDMX_FILEPATH).parent),
+                output_dir=str(task.get("spdmx_output_dir") or OUTPUT_DIR),
+            )
+            scales = velocity_scales_for_midi(midi_path)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"Cannot resolve MIDI velocity dynamics for {src}: {exc}\n"
+                "Pass --dataset to the PDMX.csv path, or --no-velocity-dynamics to skip."
+            ) from exc
+
     peak_gain = normalize_stems_in_song_dir(
-        Path(task["song_dir"]),
-        task["tracks"],
-        task["audio_format"],
-        dest_song_dir=Path(task["out_song_dir"]),
-        write_mixture=bool(task.get("write_mixture", False)),
+        src,
+        tracks,
+        audio_format,
+        dest_song_dir=dest,
+        write_mixture=write_mixture,
         velocity_scales=scales,
     )
-    return task["out_song_dir"] if peak_gain is not None else None
+    return ("wrote" if peak_gain is not None else "error"), song_id
 
 
 # Back-compat alias
@@ -98,6 +132,30 @@ def mix_output_ready(
         mix = mixture_path(dest_song_dir, audio_format)
         try:
             if not mix.is_file() or mix.stat().st_size <= 0:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def audio_stems_up_to_date(
+    src_song_dir: Path,
+    dest_song_dir: Path,
+    tracks: list[int],
+    audio_format: str,
+    *,
+    write_mixture: bool = False,
+) -> bool:
+    """True when dest stems exist and are at least as new as matching source stems."""
+    if not mix_output_ready(
+        dest_song_dir, tracks, audio_format, write_mixture=write_mixture,
+    ):
+        return False
+    for track in tracks:
+        src = stem_path(src_song_dir, track, audio_format)
+        dst = stem_path(dest_song_dir, track, audio_format)
+        try:
+            if src.stat().st_mtime > dst.stat().st_mtime:
                 return False
         except OSError:
             return False
@@ -171,48 +229,25 @@ def build_mixture_tasks(
     use_velocity_dynamics: bool = True,
     dest_song_dir_fn=None,
     reset: bool = False,
-) -> tuple[list[dict], int]:
-    """Build per-song mix tasks.
+) -> list[dict]:
+    """Build one mix task per song (no disk scan).
 
-    Returns ``(tasks, n_skipped)``. When ``reset`` is False and the destination
-    tree differs from the source, songs whose dest stems are already present are
-    skipped (resume). In-place overwrite (dest == source) never skips.
+    Dirty resume happens inside ``normalize_song_task``: clean dest stems are a
+    no-op. Persisted ``velocity_scale`` values are attached when present; MIDI
+    lookup is deferred until a song is actually rewritten.
     """
-    tasks = []
-    skipped = 0
     root = Path(pdmx_root) if pdmx_root is not None else Path(PDMX_FILEPATH).parent
-    for song_path, group in stems.groupby("path"):
+    tasks: list[dict] = []
+    for song_path, group in stems.groupby("path", sort=False):
         src_song_dir = Path(song_path)
         if dest_song_dir_fn is not None:
             out_song_dir = Path(dest_song_dir_fn(str(src_song_dir)))
         else:
             out_song_dir = resolve_output_song_dir(src_song_dir, source_dir, output_dir)
         tracks = sorted(int(t) for t in group["track"])
-        if (
-            not reset
-            and out_song_dir.resolve() != src_song_dir.resolve()
-            and mix_output_ready(
-                out_song_dir,
-                tracks,
-                audio_format,
-                write_mixture=write_mixture,
-            )
-        ):
-            skipped += 1
-            continue
-        try:
-            scales = velocity_scales_for_song(
-                src_song_dir,
-                group,
-                pdmx_root=root,
-                output_dir=spdmx_output_dir,
-                use_velocity_dynamics=use_velocity_dynamics,
-            )
-        except FileNotFoundError as exc:
-            raise FileNotFoundError(
-                f"Cannot resolve MIDI velocity dynamics for {src_song_dir}: {exc}\n"
-                "Pass --dataset to the PDMX.csv path, or --no-velocity-dynamics to skip."
-            ) from exc
+        scales = (
+            _scales_from_stems_group(group) if use_velocity_dynamics else None
+        )
         tasks.append({
             "song_dir": str(src_song_dir),
             "out_song_dir": str(out_song_dir),
@@ -220,8 +255,12 @@ def build_mixture_tasks(
             "audio_format": audio_format,
             "write_mixture": write_mixture,
             "velocity_scales": scales,
+            "use_velocity_dynamics": use_velocity_dynamics,
+            "pdmx_root": str(root),
+            "spdmx_output_dir": spdmx_output_dir,
+            "reset": reset,
         })
-    return tasks, skipped
+    return tasks
 
 
 def _shutdown_pool(pool) -> None:
@@ -276,7 +315,7 @@ def normalize_stems_for_dataset(
     use_velocity_dynamics: bool = True,
     dest_song_dir_fn=None,
     reset: bool = False,
-):
+) -> set[str]:
     """Peak-normalize stems so they remain linearly summable.
 
     Loads stems from ``source_dir`` (via stems.csv paths) and writes to the
@@ -285,13 +324,16 @@ def normalize_stems_for_dataset(
     (hybrid ``raw`` → ``audio``).
 
     When the destination differs from the source, songs whose dest stems are
-    already present are skipped unless ``reset`` is True.
+    present and at least as new as the source are skipped unless ``reset`` is
+    True.
+
+    Returns the set of ``song_id`` values that were (re)normalized.
     """
     stems_csv = source_dir / f"{STEMS_FILE_NAME}.csv"
     if not stems_csv.exists():
         stems_csv = output_dir / f"{STEMS_FILE_NAME}.csv"
     if not stems_csv.exists():
-        return
+        return set()
 
     if (
         dest_song_dir_fn is None
@@ -300,7 +342,7 @@ def normalize_stems_for_dataset(
         copy_metadata_tables(source_dir, output_dir)
 
     stems = pd.read_csv(stems_csv)
-    tasks, n_skipped = build_mixture_tasks(
+    tasks = build_mixture_tasks(
         stems,
         source_dir,
         output_dir,
@@ -312,17 +354,8 @@ def normalize_stems_for_dataset(
         dest_song_dir_fn=dest_song_dir_fn,
         reset=reset,
     )
-    n_total = n_skipped + len(tasks)
-    if n_skipped:
-        print(
-            f"Resume: skipping {n_skipped}/{n_total} song(s) with mix output already on disk; "
-            f"{len(tasks)} remaining.",
-            flush=True,
-        )
     if not tasks:
-        if n_skipped:
-            print("Nothing left to mix.", flush=True)
-        return
+        return set()
 
     n_workers = min(max(jobs, 1), len(tasks))
     parts = ["Normalizing stems"]
@@ -332,22 +365,57 @@ def normalize_stems_for_dataset(
         parts.append("+ writing mixtures")
     action = " ".join(parts)
     desc = action if n_workers == 1 else f"{action} ({n_workers} workers)"
-    if n_workers == 1:
-        for task in tqdm(tasks, desc=desc, unit="song"):
-            normalize_song_task(task)
-        return
 
-    pool = multiprocessing.Pool(processes=n_workers)
+    dirty_ids: set[str] = set()
+    n_skip = 0
+    n_wrote = 0
+    n_error = 0
+
+    def _consume(status: str, song_id: str | None) -> None:
+        nonlocal n_skip, n_wrote, n_error
+        if status == "skip":
+            n_skip += 1
+        elif status == "wrote":
+            n_wrote += 1
+            if song_id:
+                dirty_ids.add(song_id)
+        else:
+            n_error += 1
+
+    pbar = tqdm(total=len(tasks), desc=desc, unit="song", miniters=1)
     try:
-        for _ in tqdm(
-            pool.imap(normalize_song_task, tasks, chunksize=1),
-            total=len(tasks),
-            desc=desc,
-            unit="song",
-        ):
-            pass
+        if n_workers == 1:
+            for task in tasks:
+                status, song_id = normalize_song_task(task)
+                _consume(status, song_id)
+                pbar.set_postfix(skip=n_skip, wrote=n_wrote, refresh=False)
+                pbar.update(1)
+        else:
+            # Unordered: skips must advance the bar even while a few dirty
+            # normalizes run for minutes (ordered imap made ETA look like no skip).
+            chunksize = max(1, min(32, len(tasks) // (n_workers * 8) or 1))
+            pool = multiprocessing.Pool(processes=n_workers)
+            try:
+                for status, song_id in pool.imap_unordered(
+                    normalize_song_task, tasks, chunksize=chunksize,
+                ):
+                    _consume(status, song_id)
+                    pbar.set_postfix(skip=n_skip, wrote=n_wrote, refresh=False)
+                    pbar.update(1)
+            finally:
+                _shutdown_pool(pool)
     finally:
-        _shutdown_pool(pool)
+        pbar.close()
+
+    if n_skip:
+        print(
+            f"Resume: skipped {n_skip}/{len(tasks)} up-to-date song(s); "
+            f"wrote {n_wrote}"
+            + (f", errors {n_error}" if n_error else "")
+            + ".",
+            flush=True,
+        )
+    return dirty_ids
 
 
 # Back-compat alias
@@ -481,11 +549,16 @@ def verify_mixed_stems_on_disk(
     jobs: int = 1,
     limit: int = 25,
     media_dir: str | Path | None = None,
+    delete_bad_mix_sums: bool = False,
+    force_delete_bad_mixes: bool = False,
 ) -> None:
-    """Require mixed ``audio/`` stems (and optional ``mix/`` song mixes) to FLAC-decode.
+    """Require mixed ``audio/`` stems (and ``mix/`` song mixes) to FLAC-decode.
 
-    Raises ``RuntimeError`` listing up to ``limit`` failures. Intended as
-    ``--only-pass verify_mix`` after ``mix`` and ``song_mix``.
+    When ``media_dir`` is set, also checks sample-wise that each
+    ``mix/<song_id>.flac`` equals the sum of ``audio/<song_id>/*.flac``
+    (s16-tolerant). When ``delete_bad_mix_sums`` is True, only mixes with a
+    content sum mismatch are removed (never on read/missing-stem errors);
+    deletions above 5% of the catalog require ``force_delete_bad_mixes``.
     """
     paths = mixed_stem_paths_from_tables(
         tables_dir, audio_format=audio_format, media_dir=media_dir,
@@ -496,7 +569,7 @@ def verify_mixed_stems_on_disk(
         raise RuntimeError(f"No stems/mixes to verify under {tables_dir}")
 
     n_jobs = max(1, int(jobs))
-    label = f"verify_mix decode (-j {n_jobs})" if n_jobs > 1 else "verify_mix decode"
+    label = f"verify decode (-j {n_jobs})" if n_jobs > 1 else "verify decode"
     bad: list[str] = []
     if n_jobs <= 1 or len(paths) <= 1:
         for path_str in tqdm(paths, total=len(paths), desc=label, unit="file"):
@@ -534,10 +607,21 @@ def verify_mixed_stems_on_disk(
         raise RuntimeError(
             f"Mixed stems/mixes failed FLAC decode or are missing ({n_bad}{extra}):\n{lines}\n"
             "Re-run: uv run python -m synthesis.final --only-pass mix -j 8\n"
-            "Then:    uv run python -m synthesis.final --only-pass song_mix -j 8\n"
-            "Then:    uv run python -m synthesis.final --only-pass verify_mix -j 8"
+            "Then:    uv run python -m synthesis.final --only-pass verify -j 8"
         )
-    print(f"verify_mix ok: {len(paths)} file(s) fully decoded.", flush=True)
+    print(f"verify ok: {len(paths)} file(s) fully decoded.", flush=True)
+
+    if media_dir is not None:
+        from synthesis.render_mixes import verify_mixes_match_stem_sums
+
+        verify_mixes_match_stem_sums(
+            media_dir,
+            tables_dir=tables_dir,
+            jobs=jobs,
+            limit=limit,
+            delete_bad=delete_bad_mix_sums,
+            force_delete=force_delete_bad_mixes,
+        )
 
 
 def resolve_stems_dir(

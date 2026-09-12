@@ -165,6 +165,39 @@ def test_pad_and_loudness_equal_length():
     assert padded[0].shape[-1] == padded[1].shape[-1] == sr * 2
 
 
+def test_normalize_stems_staged_matches_in_memory(tmp_path: Path, monkeypatch):
+    """Low RAM budget forces disk-staging path; peak gain matches in-memory path."""
+    from synthesis.audio import normalize_stems_in_song_dir, load_stem, to_mono_numpy
+
+    src = tmp_path / "raw"
+    dest_mem = tmp_path / "audio_mem"
+    dest_staged = tmp_path / "audio_staged"
+    src.mkdir()
+    sr = SAMPLE_RATE
+    for track, amp in ((0, 0.4), (1, 0.5), (2, 0.3)):
+        sf.write(
+            str(src / f"{track}.flac"),
+            np.full(max(sr // 5, int(0.5 * sr)), amp, np.float32),
+            sr,
+            format="FLAC",
+        )
+
+    monkeypatch.setenv("SPDMX_MIX_NORMALIZE_RAM_BYTES", str(64 * 1024 ** 3))  # in-memory
+    gain_mem = normalize_stems_in_song_dir(
+        src, [0, 1, 2], "flac", dest_song_dir=dest_mem, velocity_scales=None,
+    )
+    monkeypatch.setenv("SPDMX_MIX_NORMALIZE_RAM_BYTES", "1")  # force staged
+    gain_staged = normalize_stems_in_song_dir(
+        src, [0, 1, 2], "flac", dest_song_dir=dest_staged, velocity_scales=None,
+    )
+    assert gain_mem is not None and gain_staged is not None
+    np.testing.assert_allclose(gain_mem, gain_staged, rtol=1e-4, atol=1e-4)
+    for track in (0, 1, 2):
+        a = to_mono_numpy(load_stem(dest_mem / f"{track}.flac"))
+        b = to_mono_numpy(load_stem(dest_staged / f"{track}.flac"))
+        np.testing.assert_allclose(a, b, rtol=1e-3, atol=1e-3)
+
+
 def test_build_mixture_scales_when_clipping():
     w1 = torch.ones(1, 4) * 0.8
     w2 = torch.ones(1, 4) * 0.8

@@ -9,6 +9,7 @@ import pandas as pd
 
 from analysis.plots import (
     plot_ablation_listening,
+    plot_ablation_listening_panels,
     plot_chunk_layout,
     plot_downstream_poc,
     plot_gm_program_compare,
@@ -44,18 +45,38 @@ def make_gm_program_compare_figure(
         top_n=top_n,
         rank_by=rank_by,
         show_percentages=show_percentages,
-        figsize=(3.4, 3.2),
+        figsize=(7.0, 3.2),
     )
     return out
 
 
 def make_ablation_listening_figure() -> Path | None:
-    csv_path = DATA_DIR / "ablation_listening.csv"
-    if not csv_path.is_file():
-        print(f"skip ablation figure: missing {csv_path}")
-        return None
+    scores_path = DATA_DIR / "ablation_listening_scores.csv"
+    by_cat_path = DATA_DIR / "ablation_listening_by_category.csv"
+    summary_path = DATA_DIR / "ablation_listening.csv"
     out = FIGURES_DIR / "ablation_listening.pdf"
-    plot_ablation_listening(pd.read_csv(csv_path), out, figsize=(5.5, 3.2))
+    if by_cat_path.is_file():
+        plot_ablation_listening_panels(
+            pd.read_csv(by_cat_path),
+            out,
+            layout="grid",
+            figsize=(9.0, 3.2),
+        )
+        return out
+    if scores_path.is_file():
+        plot_ablation_listening(
+            pd.read_csv(scores_path),
+            out,
+            figsize=(5.5, 3.2),
+            scales=("realism",),
+        )
+        return out
+    if not summary_path.is_file():
+        print(
+            f"skip ablation figure: missing {by_cat_path}, {scores_path}, and {summary_path}"
+        )
+        return None
+    plot_ablation_listening(pd.read_csv(summary_path), out, figsize=(5.5, 3.2))
     return out
 
 

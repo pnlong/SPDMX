@@ -9,8 +9,6 @@ from typing import Any, Mapping
 import pandas as pd
 import yaml
 
-from shared.config import DATA_DIR_NAME
-from synthesis.audio import stem_is_valid, stem_path
 from synthesis.ddsp.routing import (
     BACKEND_DDSP_PIANO,
     BACKEND_MIDI_DDSP,
@@ -403,6 +401,34 @@ def format_realify_fingerprint(fp: tuple[str, str, str, bool] | None) -> str:
     )
 
 
+def remap_stem_recipe_index_to_raw_root(
+    index: dict[tuple[str, int], dict],
+    raw_root: str | Path,
+) -> dict[tuple[str, int], dict]:
+    """Re-key recipe rows under ``raw_root/<song_id>``.
+
+    Bookkeeping CSVs may still say ``…/SPDMX/raw/…`` while the live hybrid
+    tree is ``…/SPDMX_dev/raw/…``. Resume looks up by ``path_output``, so keys
+    must match the media tree. Same ``song_id``+track collapses (last wins).
+    """
+    from synthesis.pass_tables import _song_id_from_audio_dir
+
+    if not index:
+        return {}
+    root = Path(raw_root)
+    out: dict[tuple[str, int], dict] = {}
+    for (path, track), rec in index.items():
+        sid = _song_id_from_audio_dir(str(path))
+        if not sid:
+            out[(str(path), int(track))] = rec
+            continue
+        new_path = str(root / sid)
+        new_rec = dict(rec)
+        new_rec["path"] = new_path
+        out[(new_path, int(track))] = new_rec
+    return out
+
+
 def load_stem_recipe_index(
     stems_dir: str | Path,
     filename: str = STEM_RECIPE_FILE_NAME,
@@ -419,10 +445,84 @@ def load_stem_recipe_index(
         return {}
     if df.empty or "path" not in df.columns or "track" not in df.columns:
         return {}
+    records = df.to_dict("records")
     index: dict[tuple[str, int], dict] = {}
-    for _, row in df.iterrows():
-        index[(str(row["path"]), int(row["track"]))] = row.to_dict()
+    for row in records:
+        index[(str(row["path"]), int(row["track"]))] = row
     return index
+
+
+def load_merged_stem_recipe_index(stems_dir: str | Path) -> dict[tuple[str, int], dict]:
+    """Canonical ``stem_recipe.csv`` if present; else union of per-pass shards."""
+    index = load_stem_recipe_index(stems_dir)
+    if index:
+        return index
+    try:
+        from synthesis.pass_tables import RENDER_PASSES, pass_recipe_csv
+    except ImportError:
+        return index
+    root = Path(stems_dir)
+    for name in RENDER_PASSES:
+        shard = pass_recipe_csv(root, name)
+        index.update(load_stem_recipe_index(root, filename=shard.name))
+    return index
+
+
+def _read_csv_if_present(path: Path) -> pd.DataFrame | None:
+    if not path.is_file() or path.stat().st_size == 0:
+        return None
+    try:
+        return pd.read_csv(path)
+    except Exception:
+        return None
+
+
+def load_merged_stem_recipe_frame(stems_dir: str | Path) -> pd.DataFrame:
+    """Canonical ``stem_recipe.csv`` if present; else union of per-pass shards."""
+    root = Path(stems_dir)
+    frame = _read_csv_if_present(root / STEM_RECIPE_FILE_NAME)
+    if frame is None:
+        frames: list[pd.DataFrame] = []
+        try:
+            from synthesis.pass_tables import RENDER_PASSES, pass_recipe_csv
+        except ImportError:
+            RENDER_PASSES = ()
+            pass_recipe_csv = None  # type: ignore
+        for name in RENDER_PASSES:
+            shard = _read_csv_if_present(pass_recipe_csv(root, name))
+            if shard is not None and not shard.empty:
+                frames.append(shard)
+        frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if frame.empty or "path" not in frame.columns or "track" not in frame.columns:
+        return pd.DataFrame(columns=STEM_RECIPE_COLUMNS)
+    frame = frame.copy()
+    frame["path"] = frame["path"].astype(str)
+    frame["track"] = frame["track"].astype(int)
+    return frame.drop_duplicates(subset=["path", "track"], keep="last")
+
+
+def load_merged_stems_frame(stems_dir: str | Path) -> pd.DataFrame:
+    """Canonical ``stems.csv`` if present; else union of per-pass stem shards."""
+    root = Path(stems_dir)
+    frame = _read_csv_if_present(root / "stems.csv")
+    if frame is None:
+        frames: list[pd.DataFrame] = []
+        try:
+            from synthesis.pass_tables import RENDER_PASSES, pass_stems_csv
+        except ImportError:
+            RENDER_PASSES = ()
+            pass_stems_csv = None  # type: ignore
+        for name in RENDER_PASSES:
+            shard = _read_csv_if_present(pass_stems_csv(root, name))
+            if shard is not None and not shard.empty:
+                frames.append(shard)
+        frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if frame.empty or "path" not in frame.columns or "track" not in frame.columns:
+        return pd.DataFrame(columns=["path", "track"])
+    frame = frame.copy()
+    frame["path"] = frame["path"].astype(str)
+    frame["track"] = frame["track"].astype(int)
+    return frame.drop_duplicates(subset=["path", "track"], keep="last")
 
 
 def desired_raw_fingerprint(spec: CategorySpec, backend: str) -> tuple[str, str, str]:
@@ -442,77 +542,159 @@ def scan_recipe_conflicts(
     *,
     audio_format: str,
     stage: str,
+    categories: frozenset[str] | None = None,
 ) -> list[RecipeConflict]:
-    """Find on-disk stems whose sidecar does not match the current recipe.
+    """Find rendered stems whose sidecar does not match the current recipe.
 
     ``stage`` is ``raw`` (ignore realify flag) or ``realify`` (include it).
-    Stems with no sidecar after a completed ``data.csv`` are treated as conflicts.
-    Incomplete runs (stem files but no ``data.csv``) resume without prompting.
+    Compares ``stem_recipe`` rows (canonical or per-pass shards) against the
+    recipe; stems listed in ``stems.csv`` / shards with no sidecar also count.
+    Optional ``categories`` limits the scan (e.g. Fluidsynth-owned classes).
+
+    ``audio_format`` is kept for call-site compatibility; existence comes from
+    the stem tables rather than per-file ``stem_is_valid`` probes.
     """
+    del audio_format  # table-backed scan; kept so callers need not change.
     root = Path(stems_dir)
-    data_csv = root / f"{DATA_DIR_NAME}.csv"
-    if not data_csv.is_file():
+    recipe_df = load_merged_stem_recipe_frame(root)
+    stems_df = load_merged_stems_frame(root)
+    if recipe_df.empty and stems_df.empty:
         return []
-    songs = pd.read_csv(data_csv)
-    if songs.empty or "path" not in songs.columns:
+
+    if stems_df.empty:
+        work = recipe_df.copy()
+    else:
+        keep_stem_cols = [
+            c for c in ("path", "track", "program", "is_drum", "name") if c in stems_df.columns
+        ]
+        work = stems_df[keep_stem_cols].merge(
+            recipe_df, on=["path", "track"], how="left", suffixes=("", "_recipe"),
+        )
+
+    if work.empty:
         return []
-    index = load_stem_recipe_index(root)
-    stems_csv = root / "stems.csv"
-    stems_by_key: dict[tuple[str, int], dict] = {}
-    if stems_csv.is_file():
-        stems = pd.read_csv(stems_csv)
-        for _, row in stems.iterrows():
-            stems_by_key[(str(row["path"]), int(row["track"]))] = row.to_dict()
+
+    want_method = {c: s.method for c, s in recipe.specs.items()}
+    want_fallback = {c: s.fallback for c, s in recipe.specs.items()}
+    want_realify = {c: bool(s.realify) for c, s in recipe.specs.items()}
+
+    cat = work["category"] if "category" in work.columns else pd.Series(pd.NA, index=work.index)
+    cat = cat.astype("string")
+    missing_cat = cat.isna() | (cat.str.len() == 0) | cat.isin(["nan", "None"])
+    if bool(missing_cat.any()):
+        derived = []
+        for row in work.loc[missing_cat].to_dict("records"):
+            try:
+                derived.append(listening_category_from_stem_row(row))
+            except Exception:
+                derived.append(None)
+        cat = cat.copy()
+        cat.loc[missing_cat] = pd.Series(derived, index=work.index[missing_cat], dtype="string")
+
+    work = work.assign(_category=cat)
+    if categories is not None:
+        work = work[work["_category"].isin(categories) | work["_category"].isna()].copy()
+        if work.empty:
+            return []
+
+    has_sidecar = (
+        work["method"].notna() & work["fallback"].notna() & work["backend"].notna()
+        if {"method", "fallback", "backend"}.issubset(work.columns)
+        else pd.Series(False, index=work.index)
+    )
+    method = (
+        work["method"].astype("string")
+        if "method" in work.columns
+        else pd.Series(pd.NA, index=work.index, dtype="string")
+    )
+    fallback = (
+        work["fallback"].astype("string")
+        if "fallback" in work.columns
+        else pd.Series(pd.NA, index=work.index, dtype="string")
+    )
+    backend = (
+        work["backend"].astype("string")
+        if "backend" in work.columns
+        else pd.Series(pd.NA, index=work.index, dtype="string")
+    )
+    backend = backend.fillna(BACKEND_FLUIDSYNTH)
+    backend = backend.mask(backend.isin(["", "nan", "None"]), BACKEND_FLUIDSYNTH)
+    realify = (
+        work["realify"].map(_as_bool)
+        if "realify" in work.columns
+        else pd.Series(False, index=work.index)
+    )
+
+    des_method = work["_category"].map(want_method)
+    des_fallback = work["_category"].map(want_fallback)
+    des_realify = work["_category"].map(want_realify)
+
+    unknown = work["_category"].isna() | ~work["_category"].isin(list(recipe.specs))
+    if stage == "realify":
+        mismatch = (
+            (~has_sidecar)
+            | (method != des_method)
+            | (fallback != des_fallback)
+            | (realify != des_realify)
+        )
+    else:
+        mismatch = (
+            (~has_sidecar)
+            | (method != des_method)
+            | (fallback != des_fallback)
+        )
+    flagged = work.loc[unknown | mismatch]
+    if flagged.empty:
+        return []
 
     conflicts: list[RecipeConflict] = []
-    for _, song in songs.iterrows():
-        song_path = str(song["path"])
-        n_tracks = int(song["n_tracks"])
-        for track in range(n_tracks):
-            if not stem_is_valid(stem_path(Path(song_path), track, audio_format)):
-                continue
-            rec = index.get((song_path, track))
-            stem_meta = stems_by_key.get((song_path, track), rec or {})
-            try:
-                category = str(rec["category"]) if rec and rec.get("category") else (
-                    listening_category_from_stem_row(stem_meta)
-                    if stem_meta else None
-                )
-            except Exception:
-                category = None
-            if category is None or category not in recipe.specs:
+    for row in flagged.to_dict("records"):
+        category = row.get("_category")
+        if category is not None and not isinstance(category, str):
+            category = None if pd.isna(category) else str(category)
+        has_sc = (
+            pd.notna(row.get("method"))
+            and pd.notna(row.get("fallback"))
+            and pd.notna(row.get("backend"))
+        )
+        rec = row if has_sc else None
+        if category is None or category not in recipe.specs:
+            conflicts.append(RecipeConflict(
+                path=str(row["path"]),
+                track=int(row["track"]),
+                category=category,
+                recorded=(
+                    format_realify_fingerprint(recorded_realify_fingerprint(rec))
+                    if stage == "realify"
+                    else format_raw_fingerprint(recorded_raw_fingerprint(rec))
+                ),
+                desired="(unknown category)",
+            ))
+            continue
+        spec = recipe.spec_for_category(category)
+        be = str(row["backend"]) if has_sc else BACKEND_FLUIDSYNTH
+        if stage == "realify":
+            recorded = recorded_realify_fingerprint(rec)
+            desired = desired_realify_fingerprint(spec, be)
+            if recorded != desired:
                 conflicts.append(RecipeConflict(
-                    path=song_path,
-                    track=track,
+                    path=str(row["path"]),
+                    track=int(row["track"]),
                     category=category,
-                    recorded=format_raw_fingerprint(recorded_raw_fingerprint(rec)),
-                    desired="(unknown category)",
+                    recorded=format_realify_fingerprint(recorded),
+                    desired=format_realify_fingerprint(desired),
                 ))
-                continue
-            spec = recipe.spec_for_category(category)
-            backend = str(rec["backend"]) if rec and rec.get("backend") else BACKEND_FLUIDSYNTH
-            if stage == "realify":
-                recorded = recorded_realify_fingerprint(rec)
-                desired = desired_realify_fingerprint(spec, backend)
-                if recorded != desired:
-                    conflicts.append(RecipeConflict(
-                        path=song_path,
-                        track=track,
-                        category=category,
-                        recorded=format_realify_fingerprint(recorded),
-                        desired=format_realify_fingerprint(desired),
-                    ))
-            else:
-                recorded = recorded_raw_fingerprint(rec)
-                desired = desired_raw_fingerprint(spec, backend)
-                if recorded != desired:
-                    conflicts.append(RecipeConflict(
-                        path=song_path,
-                        track=track,
-                        category=category,
-                        recorded=format_raw_fingerprint(recorded),
-                        desired=format_raw_fingerprint(desired),
-                    ))
+        else:
+            recorded = recorded_raw_fingerprint(rec)
+            desired = desired_raw_fingerprint(spec, be)
+            if recorded != desired:
+                conflicts.append(RecipeConflict(
+                    path=str(row["path"]),
+                    track=int(row["track"]),
+                    category=category,
+                    recorded=format_raw_fingerprint(recorded),
+                    desired=format_raw_fingerprint(desired),
+                ))
     return conflicts
 
 

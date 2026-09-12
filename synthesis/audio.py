@@ -544,6 +544,10 @@ def normalize_stems_in_song_dir(
 
     Pipeline: LUFS → × velocity_scale[track] → sum → shared peak_gain → write.
     Returns the anti-clip ``peak_gain``, or ``None`` if any stem is missing/invalid.
+
+    Songs whose padded float32 footprint would exceed
+    ``SPDMX_MIX_NORMALIZE_RAM_BYTES`` (default 2 GiB) use a disk-staging path so
+    many long stems cannot pin tens of GB and wedge the mix worker pool.
     """
     from synthesis.velocity import apply_velocity_scales
 
@@ -552,16 +556,145 @@ def normalize_stems_in_song_dir(
         return None
     dest = dest_song_dir if dest_song_dir is not None else song_dir
     dest.mkdir(parents=True, exist_ok=True)
-    waveforms = pad_and_loudness_normalize([load_stem(path) for path in stem_paths])
-    waveforms = apply_velocity_scales(waveforms, track_indices, velocity_scales)
-    _scaled, peak_gain, _mix_path = normalize_stems_for_sum(
-        waveforms,
-        dest,
-        track_indices,
-        audio_format,
-        write_mixture=write_mixture,
+
+    frame_counts = [stem_n_samples(path) for path in stem_paths]
+    max_frames = max(frame_counts) if frame_counts else 0
+    if max_frames <= 0:
+        return None
+    # In-memory path holds ~3× float32 copies of every padded stem.
+    est_bytes = len(stem_paths) * max_frames * STEM_CHANNELS * 4 * 3
+    if est_bytes <= _mix_normalize_ram_budget_bytes():
+        waveforms = pad_and_loudness_normalize([load_stem(path) for path in stem_paths])
+        waveforms = apply_velocity_scales(waveforms, track_indices, velocity_scales)
+        _scaled, peak_gain, _mix_path = normalize_stems_for_sum(
+            waveforms,
+            dest,
+            track_indices,
+            audio_format,
+            write_mixture=write_mixture,
+        )
+        return peak_gain
+
+    print(
+        f"mix normalize: large song ({len(stem_paths)} stems, "
+        f"~{est_bytes / (1024 ** 3):.1f} GiB if buffered) — disk-staging under {dest}",
+        flush=True,
     )
-    return peak_gain
+    return _normalize_stems_in_song_dir_staged(
+        stem_paths,
+        track_indices,
+        dest,
+        audio_format=audio_format,
+        write_mixture=write_mixture,
+        velocity_scales=velocity_scales,
+        max_frames=max_frames,
+    )
+
+
+def _mix_normalize_ram_budget_bytes() -> int:
+    import os
+
+    raw = os.environ.get("SPDMX_MIX_NORMALIZE_RAM_BYTES", str(2 * 1024 ** 3))
+    try:
+        return max(64 * 1024 ** 2, int(raw))
+    except ValueError:
+        return 2 * 1024 ** 3
+
+
+def _peak_of_sum_flac_files(
+    paths: list[Path],
+    *,
+    max_frames: int,
+    block: int = 262_144,
+) -> float:
+    """Max |sum| over time without loading every stem fully into RAM."""
+    peak = 0.0
+    for start in range(0, max_frames, block):
+        n = min(block, max_frames - start)
+        acc = np.zeros((n, STEM_CHANNELS), dtype=np.float64)
+        for path in paths:
+            with _suppress_native_stderr():
+                audio, _ = sf.read(
+                    str(path),
+                    start=start,
+                    frames=n,
+                    dtype="float32",
+                    always_2d=True,
+                )
+            if audio.shape[0] == 0:
+                continue
+            if audio.shape[1] == 1 and STEM_CHANNELS > 1:
+                audio = np.repeat(audio, STEM_CHANNELS, axis=1)
+            elif audio.shape[1] > STEM_CHANNELS:
+                audio = audio[:, :STEM_CHANNELS]
+            elif audio.shape[1] < STEM_CHANNELS:
+                pad_ch = np.zeros((audio.shape[0], STEM_CHANNELS), dtype=np.float32)
+                pad_ch[:, : audio.shape[1]] = audio
+                audio = pad_ch
+            if audio.shape[0] < n:
+                padded = np.zeros((n, STEM_CHANNELS), dtype=np.float32)
+                padded[: audio.shape[0]] = audio
+                audio = padded
+            acc += audio.astype(np.float64, copy=False)
+        peak = max(peak, float(np.max(np.abs(acc))) if acc.size else 0.0)
+    return peak
+
+
+def _normalize_stems_in_song_dir_staged(
+    stem_paths: list[Path],
+    track_indices: list[int],
+    dest: Path,
+    *,
+    audio_format: str,
+    write_mixture: bool,
+    velocity_scales: dict[int, float] | None,
+    max_frames: int,
+) -> float:
+    """LUFS + velocity to staging FLACs, block-peak sum, then peak-scale to dest."""
+    import shutil
+    import tempfile
+
+    from synthesis.velocity import apply_velocity_scales
+
+    staging = Path(
+        tempfile.mkdtemp(prefix=".mix_norm_", dir=str(dest)),
+    )
+    try:
+        staged: list[Path] = []
+        for path, track in zip(stem_paths, track_indices):
+            wave = loudness_normalize(load_stem(path))
+            wave = apply_velocity_scales([wave], [track], velocity_scales)[0]
+            out = staging / f"{int(track)}.flac"
+            write_flac(wave, out)
+            staged.append(out)
+            del wave
+
+        peak = _peak_of_sum_flac_files(staged, max_frames=max_frames)
+        peak_gain = (MIXTURE_PEAK_LIMIT / peak) if peak > MIXTURE_PEAK_LIMIT else 1.0
+
+        mix_acc: np.ndarray | None = None
+        if write_mixture:
+            mix_acc = np.zeros((max_frames, STEM_CHANNELS), dtype=np.float64)
+
+        for staged_path, track in zip(staged, track_indices):
+            wave = load_stem(staged_path)
+            if peak_gain != 1.0:
+                wave = wave * peak_gain
+            save_stem(wave, dest, track, audio_format)
+            if mix_acc is not None:
+                arr = to_stem_numpy(wave).astype(np.float64, copy=False)
+                if arr.ndim == 1:
+                    arr = arr[:, np.newaxis]
+                n = min(arr.shape[0], max_frames)
+                mix_acc[:n] += arr[:n]
+            del wave
+
+        if write_mixture and mix_acc is not None:
+            mix = torch.from_numpy(mix_acc.T.astype(np.float32))
+            save_mixture(mix, dest, audio_format)
+        return float(peak_gain)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def write_mixture_from_waveforms(

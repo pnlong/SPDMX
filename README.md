@@ -100,7 +100,7 @@ Writes raw FLAC stems to `{OUTPUT_DIR}/SPDMX_dev/raw/` (mix writes summable stem
 │   ├── 0.flac
 │   └── …
 ├── mid/<song_id>.mid
-└── mix/<song_id>.flac            # full-song mix (after --only-pass song_mix)
+└── mix/<song_id>.flac            # full-song mix (written by --only-pass mix)
 ```
 
 Chunked **release** tree `{OUTPUT_DIR}/SPDMX/` uses flattened
@@ -111,7 +111,7 @@ Chunked **release** tree `{OUTPUT_DIR}/SPDMX/` uses flattened
 Rebuild release after mixes exist::
 
 ```bash
-uv run python -m synthesis.final --only-pass song_mix -j 8
+uv run python -m synthesis.final --only-pass mix -j 8
 uv run python -m synthesis.build_spdmx -j 8
 ```
 ### Analysis

@@ -1,5 +1,5 @@
-condition,content,realism
-A1,83.2,67.39
-B1,62.26,55.56
-CA1,73.62,63.59
-CB1,57.13,54.48
+condition,content,realism,n_listeners
+A1,84.23,66.74,8
+B1,64.34,56.01,8
+CA1,75.7,64.45,8
+CB1,60.0,56.51,8

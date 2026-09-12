@@ -10,6 +10,7 @@ from shared.config import (
     DATA_DIR_NAME,
     NA_STRING,
     SONGS_TABLE_COLUMNS,
+    SPDMX_RAW_DIR_NAME,
     STEMS_FILE_NAME,
     STEMS_TABLE_COLUMNS,
 )
@@ -60,6 +61,79 @@ def _song_id_from_audio_dir(path: str) -> str:
         if marker in text:
             return text.split(marker, 1)[1].strip("/")
     return Path(path).name
+
+
+def rewrite_raw_path_to_media(path: str, media_dir: str | Path) -> str:
+    """Map any ``…/raw/<song_id>`` path to ``{media_dir}/raw/<song_id>``."""
+    sid = _song_id_from_audio_dir(path)
+    if not sid:
+        return str(path)
+    return str(Path(media_dir) / SPDMX_RAW_DIR_NAME / sid)
+
+
+def rewrite_dataframe_raw_paths(
+    df: pd.DataFrame,
+    media_dir: str | Path,
+    *,
+    column: str = "path",
+) -> pd.DataFrame:
+    """Rewrite ``column`` song dirs onto ``media_dir/raw`` (no-op if column missing)."""
+    if df is None or not len(df) or column not in df.columns:
+        return df
+    out = df.copy()
+    media = Path(media_dir)
+    out[column] = [
+        rewrite_raw_path_to_media(str(p), media) for p in out[column].tolist()
+    ]
+    return out
+
+
+def rewrite_tables_raw_paths(
+    tables_dir: str | Path,
+    media_dir: str | Path,
+    *,
+    include_shards: bool = True,
+) -> dict[str, int]:
+    """Rewrite ``path`` columns in final tables (and optional pass shards) to ``media_dir/raw``.
+
+    Dedupes ``(path, track)`` with last-row-wins after rewrite so legacy
+    ``…/SPDMX/raw/…`` and newer ``…/SPDMX_dev/raw/…`` rows collapse.
+    """
+    root = Path(tables_dir)
+    media = Path(media_dir)
+    rewritten: dict[str, int] = {}
+
+    targets: list[tuple[Path, list[str] | None]] = [
+        (root / f"{DATA_DIR_NAME}.csv", None),
+        (canonical_stems_csv(root), ["path", "track"]),
+        (canonical_recipe_csv(root), ["path", "track"]),
+        (root / DDSP_ROUTING_FILE_NAME, ["path", "track"]),
+    ]
+    if include_shards:
+        for name in RENDER_PASSES:
+            targets.append((pass_stems_csv(root, name), ["path", "track"]))
+            targets.append((pass_recipe_csv(root, name), ["path", "track"]))
+            targets.append((pass_routing_csv(root, name), ["path", "track"]))
+
+    for path, key_cols in targets:
+        if not path.is_file() or path.stat().st_size == 0:
+            continue
+        df = _read_csv(path)
+        if df.empty or "path" not in df.columns:
+            continue
+        df = rewrite_dataframe_raw_paths(df, media)
+        if key_cols and set(key_cols) <= set(df.columns):
+            df = df.drop_duplicates(key_cols, keep="last")
+        elif path.name == f"{DATA_DIR_NAME}.csv":
+            df = df.drop_duplicates(["path"], keep="last")
+        df.to_csv(path, index=False, na_rep=NA_STRING)
+        rewritten[path.name] = len(df)
+        print(
+            f"Rewrote paths → {media / SPDMX_RAW_DIR_NAME}: {path.name} "
+            f"({len(df)} rows)",
+            flush=True,
+        )
+    return rewritten
 
 
 def _normalize_stems_bool_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -118,17 +192,28 @@ def _concat_dedup(paths: list[Path], key_cols: list[str]) -> pd.DataFrame:
     return out.drop_duplicates(key_cols, keep="last")
 
 
-def merge_pass_tables(tables_dir: str | Path) -> dict[str, int]:
+def merge_pass_tables(
+    tables_dir: str | Path,
+    *,
+    media_dir: str | Path | None = None,
+) -> dict[str, int]:
     """Write canonical stems/recipe/routing/data CSVs from per-pass shards.
 
     Shards are read-only inputs: mix/merge never deletes or rewrites
     ``stems.<pass>.csv`` / ``stem_recipe.<pass>.csv`` / ``ddsp_routing.<pass>.csv``,
     so a later re-render or recipe change can still append to them.
+
+    When ``media_dir`` is set, ``path`` columns are rewritten to
+    ``{media_dir}/raw/<song_id>`` so canonical tables match the live tree
+    (``SPDMX_dev``) even if shards still say ``SPDMX/raw``.
     Returns row counts written (stems, recipes, songs).
     """
     root = Path(tables_dir)
     stem_paths = [pass_stems_csv(root, name) for name in RENDER_PASSES]
     stems = _concat_dedup(stem_paths, ["path", "track"])
+    if media_dir is not None and len(stems):
+        stems = rewrite_dataframe_raw_paths(stems, media_dir)
+        stems = stems.drop_duplicates(["path", "track"], keep="last")
     if not len(stems):
         stems = pd.DataFrame(columns=STEMS_TABLE_COLUMNS)
     else:
@@ -141,6 +226,9 @@ def merge_pass_tables(tables_dir: str | Path) -> dict[str, int]:
 
     recipe_paths = [pass_recipe_csv(root, name) for name in RENDER_PASSES]
     recipes = _concat_dedup(recipe_paths, ["path", "track"])
+    if media_dir is not None and len(recipes):
+        recipes = rewrite_dataframe_raw_paths(recipes, media_dir)
+        recipes = recipes.drop_duplicates(["path", "track"], keep="last")
     if not len(recipes):
         recipes = pd.DataFrame(columns=STEM_RECIPE_COLUMNS)
     else:
@@ -159,6 +247,9 @@ def merge_pass_tables(tables_dir: str | Path) -> dict[str, int]:
 
     routing_paths = [pass_routing_csv(root, name) for name in RENDER_PASSES]
     routing = _concat_dedup(routing_paths, ["path", "track"])
+    if media_dir is not None and len(routing):
+        routing = rewrite_dataframe_raw_paths(routing, media_dir)
+        routing = routing.drop_duplicates(["path", "track"], keep="last")
     routing_out = root / DDSP_ROUTING_FILE_NAME
     if len(routing):
         if set(DDSP_ROUTING_COLUMNS) <= set(routing.columns):

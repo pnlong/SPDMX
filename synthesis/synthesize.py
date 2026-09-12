@@ -119,6 +119,22 @@ def _hybrid_raw_current(args, song_path: str, track: int, out_stem, plan, backen
     return True
 
 
+def _sidecar_matches_recipe(rec: dict | None, recipe) -> bool:
+    """True when a stem_recipe row matches the current category recipe fingerprint."""
+    if recipe is None:
+        return True
+    if not rec:
+        return False
+    from synthesis.recipe import desired_raw_fingerprint, recorded_raw_fingerprint
+
+    category = rec.get("category")
+    if category is None or str(category) not in recipe.specs:
+        return False
+    spec = recipe.spec_for_category(str(category))
+    backend = str(rec.get("backend") or "fluidsynth")
+    return recorded_raw_fingerprint(rec) == desired_raw_fingerprint(spec, backend)
+
+
 def _hybrid_song_raw_current(
     args, path_output: str, n_tracks: int, song_dir, audio_format: str, recipe,
 ) -> bool:
@@ -226,6 +242,39 @@ def song_output_dir(
 
 def render_tree_dir_name(args) -> str:
     return SPDMX_RAW_DIR_NAME if _hybrid_recipe(args) is not None else DATA_DIR_NAME
+
+
+def _raw_root_from_path_output(path_output: str) -> Path | None:
+    """``…/raw`` directory containing a hybrid ``path_output`` song dir."""
+    text = str(path_output).replace("\\", "/")
+    marker = f"/{SPDMX_RAW_DIR_NAME}/"
+    if marker not in text:
+        return None
+    return Path(text.split(marker, 1)[0] + f"/{SPDMX_RAW_DIR_NAME}")
+
+
+def _align_stem_recipe_index_to_dataset(
+    index: dict | None,
+    dataset: pd.DataFrame,
+    *,
+    work_indices: list | None = None,
+) -> dict:
+    """Re-key recipe rows so paths match dataset ``path_output`` (SPDMX_dev)."""
+    from synthesis.recipe import remap_stem_recipe_index_to_raw_root
+
+    if not index:
+        return {}
+    sample = None
+    if work_indices:
+        sample = str(dataset.at[work_indices[0], "path_output"])
+    elif "path_output" in dataset.columns and len(dataset):
+        sample = str(dataset.iloc[0]["path_output"])
+    if not sample:
+        return dict(index)
+    raw_root = _raw_root_from_path_output(sample)
+    if raw_root is None:
+        return dict(index)
+    return remap_stem_recipe_index_to_raw_root(index, raw_root)
 
 
 def songs_missing_routing(songs: pd.DataFrame, routing: pd.DataFrame) -> set[str]:
@@ -529,28 +578,24 @@ def synthesize_song_at_index(
                     and midi_path_has_positive_duration_notes(track_path)
                 )
                 claimed = recipe_index.get((str(path_output), j))
-                # Already claimed this pass (native SF, neural→SF, or deferred)?
-                if claimed is not None and not args.reset:
-                    claimed_backend = str(claimed.get("backend") or "")
-                    # Reclaim pending rows when routing now prefers soundfont
-                    # (e.g. zero-duration notes that MIDI-DDSP cannot render).
-                    if (
-                        claimed_backend == BACKEND_PENDING_MIDI_DDSP
-                        and not leave_for_neural
-                    ):
-                        pass  # fall through to SF-render
-                    else:
-                        continue
                 if leave_for_neural:
                     # Bookkeeping only — MIDI-DDSP / DDSP-Piano owns the audio.
+                    # Do not SF-render neural-eligible tracks here.
                     if plan is not None:
-                        recipe_rows.append(plan.sidecar_row(
-                            path=path_output,
-                            track=j,
-                            backend=BACKEND_PENDING_MIDI_DDSP,
-                            reason=meta.get("ddsp_reason") or "midi_ddsp_eligible",
-                        ))
+                        claimed_backend = str((claimed or {}).get("backend") or "")
+                        if (
+                            claimed is None
+                            or claimed_backend != BACKEND_PENDING_MIDI_DDSP
+                            or not _sidecar_matches_recipe(claimed, getattr(args, "recipe", None))
+                        ):
+                            recipe_rows.append(plan.sidecar_row(
+                                path=path_output,
+                                track=j,
+                                backend=BACKEND_PENDING_MIDI_DDSP,
+                                reason=meta.get("ddsp_reason") or "midi_ddsp_eligible",
+                            ))
                     continue
+                # Skip only when the Fluidsynth sidecar already matches the recipe.
                 if (
                     plan is not None
                     and _hybrid_raw_current(
@@ -918,18 +963,28 @@ def _resolved_recipe(args):
     return recipe
 
 
-def _recipe_done_by_path(stem_recipe_index: dict | None, pass_name: str) -> dict[str, int]:
+def _recipe_done_by_path(
+    stem_recipe_index: dict | None,
+    pass_name: str,
+    *,
+    recipe=None,
+) -> dict[str, int]:
     """Count tracks finished in this pass's stem_recipe index.
 
     The index is loaded from a pass-scoped CSV (``stem_recipe.<pass>.csv``), so
     every recorded track counts — including soundfont/fluidsynth redirects written
     when a neural pass re-routes a mis-indexed drum or similar.
+
+    When ``recipe`` is set, only rows whose method/fallback/backend match the
+    current category recipe are credited (so recipe changes re-enter the queue).
     """
     done: dict[str, int] = {}
     if not stem_recipe_index:
         return done
     for (path, _track), rec in stem_recipe_index.items():
         if not rec:
+            continue
+        if not _sidecar_matches_recipe(rec, recipe):
             continue
         key = str(path)
         done[key] = done.get(key, 0) + 1
@@ -991,11 +1046,14 @@ def _is_fluidsynth_midi_ddsp_fallback_row(method, backend, reason=None) -> bool:
 
 def _fluidsynth_midi_ddsp_fallback_counts_by_path(
     tables_dir: str | Path,
+    *,
+    recipe=None,
 ) -> dict[str, int]:
     """``path`` → Fluidsynth recipe rows that are real neural→soundfont fallbacks.
 
     Layout assigns these to ``midi_ddsp``; Fluidsynth renders them (polyphony,
     drum, unsupported, etc.). Excludes ``pending_midi_ddsp`` bookkeeping rows.
+    When ``recipe`` is set, only rows matching the current fingerprint count.
     """
     df = _fluidsynth_recipe_frame(tables_dir)
     if df.empty or "path" not in df.columns or "method" not in df.columns:
@@ -1009,10 +1067,16 @@ def _fluidsynth_midi_ddsp_fallback_counts_by_path(
         df["reason"] if "reason" in df.columns
         else pd.Series([None] * len(df))
     )
-    mask = [
-        _is_fluidsynth_midi_ddsp_fallback_row(m, b, r)
-        for m, b, r in zip(methods, backends, reasons, strict=False)
-    ]
+    mask = []
+    for i, (m, b, r) in enumerate(zip(methods, backends, reasons, strict=False)):
+        if not _is_fluidsynth_midi_ddsp_fallback_row(m, b, r):
+            mask.append(False)
+            continue
+        if recipe is None:
+            mask.append(True)
+            continue
+        rec = df.iloc[i].to_dict()
+        mask.append(_sidecar_matches_recipe(rec, recipe))
     if not any(mask):
         return {}
     return df.loc[mask, "path"].astype(str).value_counts().to_dict()
@@ -1022,6 +1086,7 @@ def _fluidsynth_pass_credits(
     stem_recipe_index: dict | None,
     *,
     n_midi_ddsp_by_path: dict[str, int],
+    recipe=None,
 ) -> tuple[dict[str, int], dict[str, int]]:
     """Per-path ``(native_done, neural_handled)`` for Fluidsynth resume / bar.
 
@@ -1031,9 +1096,18 @@ def _fluidsynth_pass_credits(
     SF at render). Attribute ``method=midi-ddsp`` SF rows to ``n_midi_ddsp``
     first; any overflow counts toward ``n_fluidsynth`` so the bar does not stay
     stuck on already-rendered layout-Fluidsynth tracks.
+
+    Rows that no longer match ``recipe`` are not credited (must re-render).
+    Pure neural ``backend=midi_ddsp`` rows are never Fluidsynth work.
+
+    Attribution order for neural layout slots (``n_midi_ddsp``): pending
+    deferrals first, then SF fallbacks; any remaining SF rows count toward
+    ``n_fluidsynth``. Without pending-first, SF was double-booked against
+    ``n_midi_ddsp`` and native resume falsely stayed open.
     """
     from synthesis.recipe import (
         BACKEND_FLUIDSYNTH,
+        BACKEND_MIDI_DDSP,
         BACKEND_PENDING_MIDI_DDSP,
         METHOD_MIDI_DDSP,
     )
@@ -1045,6 +1119,8 @@ def _fluidsynth_pass_credits(
         for (path, _track), rec in stem_recipe_index.items():
             if not rec:
                 continue
+            if not _sidecar_matches_recipe(rec, recipe):
+                continue
             key = str(path)
             method = str(rec.get("method") or "")
             backend = str(rec.get("backend") or "")
@@ -1052,6 +1128,9 @@ def _fluidsynth_pass_credits(
             if method == METHOD_MIDI_DDSP:
                 if backend == BACKEND_PENDING_MIDI_DDSP:
                     pending[key] = pending.get(key, 0) + 1
+                elif backend == BACKEND_MIDI_DDSP:
+                    # Neural audio owned by midi_ddsp pass — not Fluidsynth work.
+                    continue
                 elif _is_fluidsynth_midi_ddsp_fallback_row(method, backend, reason):
                     md_sf[key] = md_sf.get(key, 0) + 1
                 elif backend in ("", BACKEND_FLUIDSYNTH, "nan", "None"):
@@ -1069,15 +1148,19 @@ def _fluidsynth_pass_credits(
         n_md = int(n_midi_ddsp_by_path.get(path, 0))
         sf = int(md_sf.get(path, 0))
         pend = int(pending.get(path, 0))
-        # SF rows fill layout-MIDI-DDSP fallback slots first.
-        md_sf_credit = min(sf, n_md)
-        native_done[path] = int(basic.get(path, 0)) + max(0, sf - n_md)
-        neural_handled[path] = pend + md_sf_credit
+        # Pending rows already claimed neural slots (defer to MIDI-DDSP). Apply
+        # those first so SF fallbacks are not double-booked against n_midi_ddsp
+        # when pend already covers it — leftover SF then counts toward n_fluidsynth.
+        neural_from_pending = min(pend, n_md)
+        neural_slots_left = max(0, n_md - neural_from_pending)
+        md_sf_credit = min(sf, neural_slots_left)
+        native_done[path] = int(basic.get(path, 0)) + max(0, sf - md_sf_credit)
+        neural_handled[path] = neural_from_pending + md_sf_credit
     return native_done, neural_handled
 
 
 def _pass_recipe_counts_by_path(
-    tables_dir: str | Path, pass_name: str,
+    tables_dir: str | Path, pass_name: str, *, recipe=None,
 ) -> dict[str, int]:
     """``path`` → row counts in ``stem_recipe.<pass>.csv``."""
     from synthesis.pass_tables import pass_recipe_csv
@@ -1089,6 +1172,7 @@ def _pass_recipe_counts_by_path(
     return _recipe_done_by_path(
         load_stem_recipe_index(tables_dir, filename=path.name),
         pass_name,
+        recipe=recipe,
     )
 
 
@@ -1190,9 +1274,10 @@ def _work_done_by_path(
     *,
     stem_recipe_index: dict | None,
     tables_dir: str | Path | None = None,
+    recipe=None,
 ) -> dict[str, int]:
     """Per-path finished-track counts for resume / progress of one pass."""
-    done = _recipe_done_by_path(stem_recipe_index, pass_name)
+    done = _recipe_done_by_path(stem_recipe_index, pass_name, recipe=recipe)
     if pass_name != "midi_ddsp" or tables_dir is None:
         return done
     # Normalize keys so recipe paths match dataset path_output.
@@ -1200,7 +1285,9 @@ def _work_done_by_path(
     for path, n in done.items():
         key = os.path.normpath(str(path))
         normalized[key] = normalized.get(key, 0) + int(n)
-    for path, n in _fluidsynth_midi_ddsp_fallback_counts_by_path(tables_dir).items():
+    for path, n in _fluidsynth_midi_ddsp_fallback_counts_by_path(
+        tables_dir, recipe=recipe,
+    ).items():
         key = os.path.normpath(str(path))
         normalized[key] = normalized.get(key, 0) + int(n)
     return normalized
@@ -1240,10 +1327,16 @@ def _reload_progress_from_disk(
         from synthesis.recipe import load_stem_recipe_index
 
         recipe_path = Path(recipe_output_filepath)
-        args.stem_recipe_index = load_stem_recipe_index(
+        index = load_stem_recipe_index(
             recipe_path.parent,
             filename=recipe_path.name,
         )
+        raw_root = getattr(args, "_media_raw_root", None)
+        if raw_root is not None:
+            from synthesis.recipe import remap_stem_recipe_index_to_raw_root
+
+            index = remap_stem_recipe_index_to_raw_root(index, raw_root)
+        args.stem_recipe_index = index
     return completed_paths
 
 
@@ -1290,15 +1383,19 @@ def _work_for_pass(
     *,
     stem_recipe_index: dict | None = None,
     tables_dir: str | Path | None = None,
+    recipe=None,
 ):
     """Songs and remaining tracks to *render* for one hybrid engine pass.
 
     Skips songs with no assigned tracks for this engine, and songs whose
-    ``stem_recipe.<pass>.csv`` already covers those tracks (CSV resume).
+    ``stem_recipe.<pass>.csv`` already covers those tracks **with a fingerprint
+    matching the current recipe**. Recipe mismatches are re-queued.
+
     For ``midi_ddsp``, also credits Fluidsynth rows with ``method=midi-ddsp``
     and ``backend=fluidsynth`` (polyphony / unsupported → soundfont fallbacks).
     For ``fluidsynth``, also visits songs with unclaimed layout-MIDI-DDSP tracks
-    so soundfont fallbacks are claimed here (not by the neural pass).
+    so soundfont fallbacks are claimed here (not by the neural pass). Fluidsynth
+    never re-renders pure neural ``backend=midi_ddsp`` stems.
     Bar total is assigned tracks minus stems already recorded for that backend.
     """
     col = PASS_TRACK_COLUMNS.get(pass_name)
@@ -1308,19 +1405,34 @@ def _work_for_pass(
     if pass_name == "fluidsynth":
         md_done: dict[str, int] = {}
         if tables_dir is not None:
-            md_done = _pass_recipe_counts_by_path(tables_dir, "midi_ddsp")
+            md_done = _pass_recipe_counts_by_path(
+                tables_dir, "midi_ddsp", recipe=recipe,
+            )
         n_md_by_path: dict[str, int] = {}
+        raw_root = None
         for i in work_indices:
             path = (
                 str(dataset.at[i, "path_output"])
                 if "path_output" in dataset.columns
                 else ""
             )
+            if raw_root is None and path:
+                raw_root = _raw_root_from_path_output(path)
             if "n_midi_ddsp" in dataset.columns:
                 n_md_by_path[path] = int(dataset.at[i, "n_midi_ddsp"])
+        if raw_root is not None and md_done:
+            from synthesis.pass_tables import _song_id_from_audio_dir
+
+            remapped_md: dict[str, int] = {}
+            for path, n in md_done.items():
+                sid = _song_id_from_audio_dir(str(path))
+                key = str(raw_root / sid) if sid else str(path)
+                remapped_md[key] = remapped_md.get(key, 0) + int(n)
+            md_done = remapped_md
         native_done, neural_handled = _fluidsynth_pass_credits(
             stem_recipe_index,
             n_midi_ddsp_by_path=n_md_by_path,
+            recipe=recipe,
         )
         kept: list = []
         total = 0
@@ -1352,6 +1464,7 @@ def _work_for_pass(
         pass_name,
         stem_recipe_index=stem_recipe_index,
         tables_dir=tables_dir,
+        recipe=recipe,
     )
     pending_unclaimed: dict[str, int] = {}
     if pass_name == "midi_ddsp" and tables_dir is not None:
@@ -2158,9 +2271,17 @@ def _run_hybrid_synthesis(
     def _one(pass_name: str, desc: str, pass_jobs: int, *, use_threads: bool = False) -> None:
         args.ddsp_pass = pass_name
         recipe_path = pass_recipe_csv(tables, pass_name)
-        args.stem_recipe_index = load_stem_recipe_index(
+        index = load_stem_recipe_index(
             tables, filename=recipe_path.name,
         )
+        index = _align_stem_recipe_index_to_dataset(
+            index, dataset, work_indices=work_indices,
+        )
+        if work_indices and "path_output" in dataset.columns:
+            args._media_raw_root = _raw_root_from_path_output(
+                str(dataset.at[work_indices[0], "path_output"])
+            )
+        args.stem_recipe_index = index
         if pass_name == "midi_ddsp":
             args._pending_midi_ddsp_keys = _fluidsynth_pending_unclaimed_keys(
                 tables, args.stem_recipe_index,
@@ -2179,6 +2300,7 @@ def _run_hybrid_synthesis(
             dataset, work_indices, pass_name,
             stem_recipe_index=args.stem_recipe_index,
             tables_dir=tables,
+            recipe=recipe,
         )
         extra = ""
         if track_total is not None:
@@ -2308,21 +2430,36 @@ def run_synthesis(args, output_dir: str, *, media_dir: str | None = None):
         scan_recipe_conflicts,
     )
     recipe = _hybrid_recipe(args)
-    if recipe is not None:
-        from synthesis.pass_tables import drop_canonical_tables
-
-        drop_canonical_tables(output_dir)
     recipe_output_filepath = (
         f"{output_dir}/{STEM_RECIPE_FILE_NAME}" if recipe is not None else None
     )
     audio_format = synthesis_audio_format(args.flac)
+    # Scan conflicts BEFORE dropping canonical merge outputs — otherwise
+    # table-backed scan only sees empty shards after drop_canonical_tables.
     if recipe is not None and not args.reset:
+        only = getattr(args, "only_pass", None)
+        categories = None
+        if only == "fluidsynth":
+            categories = frozenset(recipe.pass_categories()["fluidsynth"])
+        elif only == "midi_ddsp":
+            categories = frozenset(recipe.pass_categories()["ddsp"])
+        elif only == "ddsp_piano":
+            categories = frozenset({"piano"}) if recipe.uses_ddsp_piano() else frozenset()
         require_recipe_conflicts_ok(
             scan_recipe_conflicts(
-                output_dir, recipe, audio_format=audio_format, stage="raw",
+                output_dir,
+                recipe,
+                audio_format=audio_format,
+                stage="raw",
+                categories=categories,
             ),
             yes=bool(getattr(args, "yes", False)),
         )
+    if recipe is not None:
+        from synthesis.pass_tables import drop_canonical_tables
+
+        drop_canonical_tables(output_dir)
+    if recipe is not None and not args.reset:
         args.stem_recipe_index = load_stem_recipe_index(output_dir)
     else:
         args.stem_recipe_index = {}
@@ -2484,8 +2621,9 @@ def count_pass_remaining(
     """Per-pass assigned / done / remaining track counts from midi_index + recipes.
 
     ``remaining`` matches ``_work_for_pass`` resume logic (assigned tracks not yet
-    recorded in ``stem_recipe.<pass>.csv``). Each row includes ``examples``:
-    ``[{song_id, remaining}, ...]`` (up to ``sample_limit``) for incomplete songs.
+    recorded in ``stem_recipe.<pass>.csv`` with a matching recipe fingerprint).
+    Each row includes ``examples``: ``[{song_id, remaining}, ...]`` (up to
+    ``sample_limit``) for incomplete songs.
     """
     from synthesis.pass_tables import _song_id_from_audio_dir, pass_recipe_csv
     from synthesis.recipe import load_stem_recipe_index
@@ -2498,6 +2636,13 @@ def count_pass_remaining(
     if index.empty or "song_id" not in index.columns:
         return []
 
+    def _by_sid(counts: dict[str, int]) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for path, n in counts.items():
+            sid = _song_id_from_audio_dir(str(path))
+            out[sid] = out.get(sid, 0) + int(n)
+        return out
+
     rows: list[dict] = []
     for pass_name in _render_passes_for_recipe(recipe):
         col = PASS_TRACK_COLUMNS.get(pass_name)
@@ -2505,10 +2650,71 @@ def count_pass_remaining(
             continue
         recipe_path = pass_recipe_csv(root, pass_name)
         stem_index = load_stem_recipe_index(root, filename=recipe_path.name)
+
+        if pass_name == "fluidsynth":
+            # Credits key by audio path; map each recipe path → that song's n_midi_ddsp.
+            sid_to_n_md = dict(zip(
+                index["song_id"].astype(str),
+                index["n_midi_ddsp"].fillna(0).astype(int),
+            ))
+            n_md_by_audio: dict[str, int] = {}
+            for path in {p for (p, _) in (stem_index or {})}:
+                n_md_by_audio[str(path)] = int(
+                    sid_to_n_md.get(_song_id_from_audio_dir(str(path)), 0)
+                )
+            native_done, neural_handled = _fluidsynth_pass_credits(
+                stem_index,
+                n_midi_ddsp_by_path=n_md_by_audio,
+                recipe=recipe,
+            )
+            md_done = _pass_recipe_counts_by_path(root, "midi_ddsp", recipe=recipe)
+            native_by_sid = _by_sid(native_done)
+            neural_by_sid = _by_sid(neural_handled)
+            md_done_by_sid = _by_sid(md_done)
+
+            assigned = 0
+            remaining = 0
+            songs_left = 0
+            done_total = 0
+            examples: list[dict] = []
+            for sid, n_fs, n_md in zip(
+                index["song_id"].astype(str),
+                index[col].fillna(0).astype(int),
+                index["n_midi_ddsp"].fillna(0).astype(int),
+            ):
+                native_rem = max(0, int(n_fs) - int(native_by_sid.get(sid, 0)))
+                neural_rem = max(
+                    0,
+                    int(n_md)
+                    - int(md_done_by_sid.get(sid, 0))
+                    - int(neural_by_sid.get(sid, 0)),
+                )
+                if int(n_fs) <= 0 and neural_rem <= 0:
+                    continue
+                if int(n_fs) > 0:
+                    assigned += int(n_fs)
+                    done_total += min(int(n_fs), int(native_by_sid.get(sid, 0)))
+                if native_rem + neural_rem <= 0:
+                    continue
+                remaining += native_rem
+                songs_left += 1
+                if len(examples) < sample_limit:
+                    examples.append({"song_id": sid, "remaining": native_rem})
+            rows.append({
+                "pass": pass_name,
+                "assigned": assigned,
+                "done": done_total,
+                "remaining": remaining,
+                "songs_left": songs_left,
+                "examples": examples,
+            })
+            continue
+
         done_by_path = _work_done_by_path(
             pass_name,
             stem_recipe_index=stem_index,
             tables_dir=root,
+            recipe=recipe,
         )
         pending_by_path: dict[str, int] = {}
         if pass_name == "midi_ddsp":
@@ -2516,28 +2722,17 @@ def count_pass_remaining(
                 root,
                 stem_index,
             )
-        done_by_sid: dict[str, int] = {}
-        for path, n in done_by_path.items():
-            sid = _song_id_from_audio_dir(str(path))
-            done_by_sid[sid] = done_by_sid.get(sid, 0) + int(n)
-        pending_by_sid: dict[str, int] = {}
-        for path, n in pending_by_path.items():
-            sid = _song_id_from_audio_dir(str(path))
-            pending_by_sid[sid] = pending_by_sid.get(sid, 0) + int(n)
+        done_by_sid = _by_sid(done_by_path)
+        pending_by_sid = _by_sid(pending_by_path)
         assigned = 0
         remaining = 0
         songs_left = 0
         neural_done = 0
-        examples: list[dict] = []
-        for _, row in tqdm(
-            index.iterrows(),
-            total=len(index),
-            desc=f"verify remaining ({pass_name})",
-            unit="song",
-            leave=False,
+        examples = []
+        for sid, n in zip(
+            index["song_id"].astype(str),
+            index[col].fillna(0).astype(int),
         ):
-            n = int(row[col])
-            sid = str(row["song_id"])
             rem_pending = int(pending_by_sid.get(sid, 0))
             if n <= 0 and rem_pending <= 0:
                 continue
@@ -2961,16 +3156,17 @@ def require_raw_synthesis(
     source = Path(source_dir)
     data_csv = source / f"{DATA_DIR_NAME}.csv"
     have = 0
+    songs = None
     if data_csv.is_file():
         try:
-            have = len(pd.read_csv(data_csv, usecols=["path"]))
+            songs = pd.read_csv(data_csv, usecols=["path", "n_tracks"])
+            have = len(songs)
         except Exception:
             have = 0
     detail_parts: list[str] = []
     if expected_n_songs is not None:
         detail_parts.append(
-            f"Need {expected_n_songs} songs in data.csv "
-            f"(have {have}). Fluidsynth and MIDI-DDSP must both finish first."
+            f"Need {expected_n_songs} songs in data.csv (have {have})."
         )
         if have and have < int(expected_n_songs):
             pending = _fluidsynth_pending_unclaimed_counts_by_path(source)
@@ -2979,6 +3175,37 @@ def require_raw_synthesis(
                 detail_parts.append(
                     f"{n_pending} Fluidsynth pending_midi_ddsp tracks still lack "
                     "a MIDI-DDSP recipe/audio — re-run midi_ddsp."
+                )
+            detail_parts.append(
+                "Fluidsynth and MIDI-DDSP must both finish first."
+            )
+        elif have and expected_n_songs is not None and have >= int(expected_n_songs):
+            # Count is fine — at least one listed song has invalid/missing stems.
+            example = None
+            if songs is not None and len(songs):
+                for row in songs[["path", "n_tracks"]].itertuples(index=False):
+                    if not _verify_song_complete_task(
+                        (str(row.path), int(row.n_tracks), audio_format, False)
+                    ):
+                        example = (str(row.path), int(row.n_tracks))
+                        break
+            if example is not None:
+                song_dir, n_tracks = example
+                missing = [
+                    j
+                    for j in range(n_tracks)
+                    if not stem_is_valid(stem_path(Path(song_dir), j, audio_format))
+                ]
+                detail_parts.append(
+                    f"Song count OK, but stems fail validation "
+                    f"(e.g. {song_dir} n_tracks={n_tracks} bad_tracks={missing}). "
+                    "Delete those FLACs / clear stem_recipe rows and re-run the "
+                    "owning render pass."
+                )
+            else:
+                detail_parts.append(
+                    "Song count OK, but at least one song failed stem validation "
+                    "(corrupt or empty FLAC)."
                 )
     detail = (" " + " ".join(detail_parts)) if detail_parts else ""
     raise RuntimeError(
