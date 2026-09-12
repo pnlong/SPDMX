@@ -821,7 +821,11 @@ def plot_separation_sisdr(
     df = summary.copy()
     df["train_arm"] = df["train_arm"].map(lambda a: _ARM_LABELS.get(str(a), str(a)))
     df["target"] = df["target"].str.lower()
-    test_sets = [t for t in ("slakh2100", "musdb18") if t in set(df["test_set"].astype(str))]
+    test_sets = [
+        t
+        for t in ("slakh2100", "spdmx_val", "musdb18")
+        if t in set(df["test_set"].astype(str))
+    ]
     if not test_sets:
         test_sets = sorted(df["test_set"].astype(str).unique())
 
@@ -847,7 +851,11 @@ def plot_separation_sisdr(
                 saturation=0.9,
             )
             _annotate_bars(ax, fmt="{:.1f}")
-            title = "Slakh2100 test" if test_set == "slakh2100" else "MUSDB18 test"
+            title = {
+                "slakh2100": "Slakh2100 test",
+                "spdmx_val": "SPDMX val",
+                "musdb18": "MUSDB18 test",
+            }.get(test_set, test_set)
             ax.set_title(title, fontsize=10)
             ax.set_xlabel("Target")
             ax.set_ylabel("SI-SDR (dB)" if ax is axes[0] else "")

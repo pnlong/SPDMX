@@ -39,11 +39,13 @@ uv run python -m experiments.separation.train --arm all
 # or train only the joint arm: --arm both
 
 # 4) Eval → CSV for paper figures (safe to run arms in parallel)
+# Default eval sets: slakh + spdmx_val + musdb; --write-paper →
+# `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/eval/separation_sisdr.csv`
 uv run python -m experiments.separation.eval --arm all --write-paper
-# Default eval sets: slakh + spdmx_val + musdb (paper CSV still Slakh/MUSDB only)
 # merge prior per-arm CSVs after parallel runs:
 # uv run python -m experiments.separation.eval --merge-only --write-paper
 ```
 
 Outputs live under `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/` (`packs/`, `manifests/`, `checkpoints/`, `eval/`).
-Paper CSV: `submission/data/separation_sisdr.csv`. Combined figure: `uv run python -m submission.make_figures --only downstream`.
+Paper CSV: `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/eval/separation_sisdr.csv`.
+Combined figure: `uv run python -m submission.make_figures --only downstream`.

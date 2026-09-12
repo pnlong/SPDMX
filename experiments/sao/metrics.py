@@ -76,7 +76,10 @@ def main() -> None:
     parser.add_argument(
         "--write-paper",
         action="store_true",
-        help="Also write submission/data/sao_metrics.csv for make_figures.py",
+        help=(
+            "Write sao_metrics.csv under SPDMX_OUTPUT_DIR "
+            "(dev/experiments/sao/metrics/); no repo-local copy."
+        ),
     )
     args = parser.parse_args()
     cfg = load_config(args.config)
@@ -101,12 +104,8 @@ def main() -> None:
     out = root / "metrics" / "sao_metrics.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out, index=False)
-    paper = Path(__file__).resolve().parents[2] / "submission" / "data" / "sao_metrics.csv"
-    if args.write_paper:
-        paper.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(paper, index=False)
     print(df.to_string(index=False))
-    print(f"wrote {out}" + (f" and {paper}" if args.write_paper else ""))
+    print(f"wrote {out}")
 
 
 if __name__ == "__main__":

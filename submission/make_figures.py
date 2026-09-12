@@ -20,13 +20,27 @@ from shared.config import OUTPUT_DIR
 from synthesis.chunking import CHUNKS_FILE_NAME
 
 FIGURES_DIR = Path(__file__).resolve().parent / "figs"
+# Local placeholders under submission/data/; real metrics live on SPDMX_OUTPUT_DIR.
 DATA_DIR = Path(__file__).resolve().parent / "data"
+SEP_PAPER_CSV = (
+    Path(OUTPUT_DIR) / "dev" / "experiments" / "separation" / "eval" / "separation_sisdr.csv"
+)
+SAO_PAPER_CSV = (
+    Path(OUTPUT_DIR) / "dev" / "experiments" / "sao" / "metrics" / "sao_metrics.csv"
+)
 INSTRUMENTS_DIR = (
     Path(OUTPUT_DIR) / "dev" / "analysis" / "instruments" / "all_valid"
 )
 ORIGINAL_STEMS = INSTRUMENTS_DIR / "gm_program_stems.csv"
 CORRECTED_STEMS = INSTRUMENTS_DIR / "gm_program_stems_corrected.csv"
 CHUNKS_CSV = Path(OUTPUT_DIR) / "SPDMX" / CHUNKS_FILE_NAME
+
+
+def _resolve_paper_csv(preferred: Path, fallback_name: str) -> Path:
+    """Prefer deepfreeze experiment outputs; fall back to repo submission/data/."""
+    if preferred.is_file():
+        return preferred
+    return DATA_DIR / fallback_name
 
 
 def make_gm_program_compare_figure(
@@ -81,7 +95,7 @@ def make_ablation_listening_figure() -> Path | None:
 
 
 def make_separation_figure() -> Path | None:
-    csv_path = DATA_DIR / "separation_sisdr.csv"
+    csv_path = _resolve_paper_csv(SEP_PAPER_CSV, "separation_sisdr.csv")
     out = FIGURES_DIR / "separation_sisdr.pdf"
     if not csv_path.is_file():
         _placeholder_figure(out, "SI-SDR results pending")
@@ -95,7 +109,7 @@ def make_separation_figure() -> Path | None:
 
 
 def make_sao_figure() -> Path | None:
-    csv_path = DATA_DIR / "sao_metrics.csv"
+    csv_path = _resolve_paper_csv(SAO_PAPER_CSV, "sao_metrics.csv")
     out = FIGURES_DIR / "sao_metrics.pdf"
     if not csv_path.is_file():
         _placeholder_figure(out, "FAD / CLAP results pending")
@@ -110,8 +124,8 @@ def make_sao_figure() -> Path | None:
 
 def make_downstream_figure() -> Path:
     """Combined Demucs + SAO figure used in the camera-ready draft."""
-    sep_path = DATA_DIR / "separation_sisdr.csv"
-    sao_path = DATA_DIR / "sao_metrics.csv"
+    sep_path = _resolve_paper_csv(SEP_PAPER_CSV, "separation_sisdr.csv")
+    sao_path = _resolve_paper_csv(SAO_PAPER_CSV, "sao_metrics.csv")
     out = FIGURES_DIR / "downstream_poc.pdf"
     sep = (
         pd.read_csv(sep_path)

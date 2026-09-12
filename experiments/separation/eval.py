@@ -24,8 +24,8 @@ from experiments.separation.paths import (
 from experiments.separation.sisdr import si_sdr
 from experiments.separation.train import build_model
 
-# Paper figures only plot these; spdmx_val is diagnostic.
-PAPER_TEST_SETS = ("slakh2100", "musdb18")
+# Included in --write-paper CSV (figures may still subset).
+PAPER_TEST_SETS = ("slakh2100", "spdmx_val", "musdb18")
 EVAL_SET_CHOICES = ("slakh", "spdmx_val", "musdb")
 
 
@@ -227,7 +227,10 @@ def main() -> None:
     parser.add_argument(
         "--write-paper",
         action="store_true",
-        help="Also write submission/data/separation_sisdr.csv for make_figures.py",
+        help=(
+            "Also write separation_sisdr.csv under the eval dir on SPDMX_OUTPUT_DIR "
+            "(includes slakh2100, spdmx_val, musdb18)."
+        ),
     )
     parser.add_argument(
         "--merge-only",
@@ -328,11 +331,10 @@ def main() -> None:
     _atomic_to_csv(full, full_path)
     _atomic_to_csv(summary, summary_path)
 
-    paper_csv = Path(__file__).resolve().parents[2] / "submission" / "data" / "separation_sisdr.csv"
+    paper_csv = out_dir / "separation_sisdr.csv"
     paper_path: str | None = None
     if args.write_paper:
         paper = summary[summary["test_set"].astype(str).isin(PAPER_TEST_SETS)].copy()
-        paper_csv.parent.mkdir(parents=True, exist_ok=True)
         _atomic_to_csv(paper, paper_csv)
         paper_path = str(paper_csv)
 

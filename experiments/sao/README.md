@@ -41,6 +41,7 @@ uv run python -m experiments.sao.generate --arm all
 uv run python -m experiments.sao.metrics --ref-dir /path/to/heldout_mixes
 ```
 
-Outputs: `{SPDMX_OUTPUT_DIR}/dev/experiments/sao/`. Paper CSV: `submission/data/sao_metrics.csv`.
+Outputs: `{SPDMX_OUTPUT_DIR}/dev/experiments/sao/`. Paper CSV:
+`{SPDMX_OUTPUT_DIR}/dev/experiments/sao/metrics/sao_metrics.csv`.
 
 See also [`CHECKPOINT.md`](CHECKPOINT.md) for downloading SAO 1.0 weights.
