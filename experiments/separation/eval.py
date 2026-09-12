@@ -248,6 +248,7 @@ def main() -> None:
 
     if not args.merge_only:
         arms = TRAIN_ARMS if args.arm == "all" else (args.arm,)
+        print(f"eval: train arms={list(arms)}  eval_sets={sorted(eval_sets)}")
         for arm in arms:
             ckpt_dir = root / "checkpoints" / arm
             # Prefer best val, then best train, then last.
