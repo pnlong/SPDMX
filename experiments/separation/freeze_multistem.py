@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing as mp
 from pathlib import Path
 
 import pandas as pd
+from tqdm import tqdm
 
 from experiments.separation.paths import SPDMX_ROOT, load_config, resolve_dev_dir
-from experiments.separation.spdmx_io import resolve_spdmx_mix
 
 
 MULTISTEM_ARM = "multistem"
@@ -34,14 +35,58 @@ def _parse_tracks(raw: object) -> list[int]:
     return out
 
 
+def _index_one(args: tuple[str, dict, int]) -> dict | None:
+    """Worker: validate one songs.csv row on disk."""
+    root_s, row, min_stems = args
+    root = Path(root_s)
+    song_id = str(row["song_id"])
+    tracks = _parse_tracks(row.get("tracks"))
+    if len(tracks) < min_stems:
+        return None
+    path_col = row.get("path")
+    if path_col is None or (isinstance(path_col, float) and pd.isna(path_col)):
+        return None
+    path_rel = str(path_col).replace("\\", "/").lstrip("./")
+    song_dir = root / path_rel
+    if not song_dir.is_dir():
+        return None
+    if not (song_dir / "mix.flac").is_file():
+        return None
+    ok_tracks = [int(t) for t in tracks if (song_dir / f"{int(t)}.flac").is_file()]
+    if len(ok_tracks) < min_stems:
+        return None
+    dur_raw = row.get("song_length")
+    dur = float(dur_raw) if dur_raw is not None and not (
+        isinstance(dur_raw, float) and pd.isna(dur_raw)
+    ) else 0.0
+    if dur <= 0:
+        return None
+    mix_col = row.get("mix")
+    mix_rel = (
+        str(mix_col)
+        if mix_col is not None and not (isinstance(mix_col, float) and pd.isna(mix_col))
+        else f"{path_rel}/mix.flac"
+    )
+    return {
+        "corpus": "spdmx",
+        "split": "all",
+        "song_id": song_id,
+        "path": str(path_col),
+        "mix": mix_rel,
+        "tracks": "|".join(str(t) for t in ok_tracks),
+        "n_stems": len(ok_tracks),
+        "duration_sec": dur,
+        "hours": dur / 3600.0,
+    }
+
+
 def index_multistem_songs(
     spdmx_root: Path,
     *,
     min_stems: int = 2,
+    jobs: int = 1,
 ) -> pd.DataFrame:
     """Build one row per multi-stem song with resolvable audio."""
-    from tqdm import tqdm
-
     songs_path = spdmx_root / "songs.csv"
     if not songs_path.is_file():
         raise FileNotFoundError(f"missing songs.csv under {spdmx_root}")
@@ -50,52 +95,30 @@ def index_multistem_songs(
     if "n_stems_on_disk" not in songs.columns:
         raise RuntimeError("songs.csv missing n_stems_on_disk")
     songs = songs[songs["n_stems_on_disk"].astype(int) >= int(min_stems)].copy()
+    records = songs.to_dict(orient="records")
+    root_s = str(Path(spdmx_root))
+    min_stems_i = int(min_stems)
+    payloads = [(root_s, rec, min_stems_i) for rec in records]
+
+    n_jobs = max(1, int(jobs))
     rows: list[dict] = []
-    root = Path(spdmx_root)
-    for _, row in tqdm(songs.iterrows(), total=len(songs), desc="index multistem"):
-        song_id = str(row["song_id"])
-        tracks = _parse_tracks(row.get("tracks"))
-        if len(tracks) < int(min_stems):
-            continue
-        path_col = row.get("path")
-        if path_col is None or (isinstance(path_col, float) and pd.isna(path_col)):
-            continue
-        song_dir = root / str(path_col).replace("\\", "/").lstrip("./")
-        if not song_dir.is_dir():
-            continue
-        mix_path = song_dir / "mix.flac"
-        if not mix_path.is_file():
-            mix = resolve_spdmx_mix(root, row, song_id=song_id)
-            if mix is None:
-                continue
-        ok_tracks: list[int] = []
-        for track in tracks:
-            if (song_dir / f"{int(track)}.flac").is_file():
-                ok_tracks.append(int(track))
-        if len(ok_tracks) < int(min_stems):
-            continue
-        dur = float(row["song_length"]) if "song_length" in row and pd.notna(row["song_length"]) else 0.0
-        if dur <= 0:
-            continue
-        mix_col = row.get("mix")
-        mix_rel = (
-            str(mix_col)
-            if mix_col is not None and not (isinstance(mix_col, float) and pd.isna(mix_col))
-            else str(Path(str(path_col).replace("\\", "/").lstrip("./")) / "mix.flac")
-        )
-        rows.append(
-            {
-                "corpus": "spdmx",
-                "split": "all",
-                "song_id": song_id,
-                "path": str(path_col),
-                "mix": mix_rel,
-                "tracks": "|".join(str(t) for t in ok_tracks),
-                "n_stems": len(ok_tracks),
-                "duration_sec": dur,
-                "hours": dur / 3600.0,
-            }
-        )
+    if n_jobs <= 1:
+        for payload in tqdm(payloads, desc="index multistem", unit="song"):
+            hit = _index_one(payload)
+            if hit is not None:
+                rows.append(hit)
+    else:
+        chunksize = max(16, min(256, len(payloads) // (n_jobs * 8) or 16))
+        with mp.Pool(processes=n_jobs) as pool:
+            for hit in tqdm(
+                pool.imap_unordered(_index_one, payloads, chunksize=chunksize),
+                total=len(payloads),
+                desc=f"index multistem (-j {n_jobs})",
+                unit="song",
+            ):
+                if hit is not None:
+                    rows.append(hit)
+
     if not rows:
         raise RuntimeError(f"no multi-stem songs found under {spdmx_root}")
     return pd.DataFrame(rows)
@@ -139,7 +162,6 @@ def freeze_multistem_manifests(
     }
     with open(arm_dir / "manifest_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
-    # Also stash under manifests/ for discoverability next to BDGP summary.
     with open(out_dir / "multistem_manifest_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
     return summary
@@ -157,6 +179,13 @@ def main() -> None:
     parser.add_argument("--min-stems", type=int, default=None)
     parser.add_argument("--val-fraction", type=float, default=None)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=None,
+        help="Parallel workers for on-disk indexing (default: 16)",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -167,9 +196,13 @@ def main() -> None:
         args.val_fraction if args.val_fraction is not None else cfg.get("val_fraction", 0.02)
     )
     seed = int(args.seed if args.seed is not None else cfg.get("seed", 43))
+    jobs = int(args.jobs if args.jobs is not None else cfg.get("index_jobs", 16))
 
-    print(f"indexing multi-stem songs under {spdmx_root} (min_stems={min_stems}) ...")
-    index = index_multistem_songs(spdmx_root, min_stems=min_stems)
+    print(
+        f"indexing multi-stem songs under {spdmx_root} "
+        f"(min_stems={min_stems}, -j {jobs}) ..."
+    )
+    index = index_multistem_songs(spdmx_root, min_stems=min_stems, jobs=jobs)
     print(f"indexed {len(index)} songs ({index['hours'].sum():.1f} h)")
     summary = freeze_multistem_manifests(
         index, out_dir, seed=seed, val_fraction=val_fraction,

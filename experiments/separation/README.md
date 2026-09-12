@@ -55,7 +55,7 @@ Separate from the BDGP / Slakh comparison: 2-source HTDemucs on songs with
 
 ```bash
 # 1) Freeze train/val manifests from songs.csv
-uv run python -m experiments.separation.freeze_multistem
+uv run python -m experiments.separation.freeze_multistem -j 32
 
 # 2) Train (GPU)
 uv run python -m experiments.separation.train \
