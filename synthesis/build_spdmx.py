@@ -21,7 +21,7 @@ import argparse
 import os
 import shutil
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pandas as pd
@@ -112,8 +112,11 @@ def parse_args(args=None, namespace=None):
         "-j",
         "--jobs",
         type=int,
-        default=8,
-        help="Parallel workers for size scan + hardlink/copy (default: 8).",
+        default=None,
+        help=(
+            "Parallel workers for size scan, publish, cleanup, and songs.csv "
+            f"(default: {_default_jobs()})."
+        ),
     )
     parser.add_argument(
         "--in-place",
@@ -133,15 +136,20 @@ def _parallel_map(fn, items, *, jobs: int, desc: str):
     label = desc if n_jobs <= 1 else f"{desc} (-j {n_jobs})"
     if n_jobs <= 1 or len(items) <= 1:
         return [fn(item) for item in tqdm(items, total=len(items), desc=label)]
-    results = [None] * len(items)
+    chunksize = max(1, min(64, len(items) // (n_jobs * 8) or 1))
     with ThreadPoolExecutor(max_workers=n_jobs) as pool:
-        futures = {pool.submit(fn, item): i for i, item in enumerate(items)}
-        with tqdm(total=len(items), desc=label) as pbar:
-            for fut in as_completed(futures):
-                i = futures[fut]
-                results[i] = fut.result()
-                pbar.update(1)
-    return results
+        return list(
+            tqdm(
+                pool.map(fn, items, chunksize=chunksize),
+                total=len(items),
+                desc=label,
+            )
+        )
+
+
+def _default_jobs() -> int:
+    """Prefer more workers for NFS hardlink/stat throughput."""
+    return max(8, min(32, (os.cpu_count() or 8) * 2))
 
 
 def _measure_sizes_parallel(
@@ -336,35 +344,139 @@ def _is_song_media_dir(path: Path) -> bool:
     return False
 
 
+def _iter_packaged_song_dirs(chunk_dir: Path):
+    """Yield song media dirs under ``chunk_N/<a>/<b>/<hash>/`` (depth-3 song_ids)."""
+    try:
+        top = list(chunk_dir.iterdir())
+    except OSError:
+        return
+    for a in top:
+        if not a.is_dir():
+            continue
+        if a.name in (SPDMX_AUDIO_DIR_NAME, SPDMX_MID_DIR_NAME):
+            continue
+        try:
+            mid_level = list(a.iterdir())
+        except OSError:
+            continue
+        for b in mid_level:
+            if not b.is_dir():
+                continue
+            try:
+                leaves = list(b.iterdir())
+            except OSError:
+                continue
+            for c in leaves:
+                if c.is_dir() and _is_song_media_dir(c):
+                    yield c
+
+
+def _cleanup_one_chunk_dir(
+    chunk_dir: Path,
+    keep: set[str] | None,
+) -> dict[str, int | str]:
+    """Clean one ``chunk_*`` tree.
+
+    If *keep* is ``None``, the entire chunk directory is removed (obsolete
+    chunk id). Otherwise drop legacy wrappers and song dirs not in *keep*.
+    """
+    name = chunk_dir.name
+    if keep is None:
+        print(f"  cleanup {name}: removing obsolete chunk directory …", flush=True)
+        shutil.rmtree(chunk_dir)
+        return {"chunk": name, "removed_songs": -1, "removed_legacy": 0, "kept": 0}
+
+    removed_songs = 0
+    removed_legacy = 0
+    for legacy in (SPDMX_AUDIO_DIR_NAME, SPDMX_MID_DIR_NAME):
+        legacy_path = chunk_dir / legacy
+        if legacy_path.is_dir():
+            shutil.rmtree(legacy_path)
+            removed_legacy += 1
+
+    print(f"  cleanup {name}: scanning for obsolete song dirs …", flush=True)
+    to_remove: list[Path] = []
+    for path in _iter_packaged_song_dirs(chunk_dir):
+        try:
+            rel = path.relative_to(chunk_dir).as_posix()
+        except ValueError:
+            continue
+        if rel in keep:
+            continue
+        to_remove.append(path)
+
+    if to_remove:
+        print(
+            f"  cleanup {name}: removing {len(to_remove)} obsolete song dir(s) …",
+            flush=True,
+        )
+        # Parallel rmtree within the chunk (independent song trees).
+        n_rm = min(8, max(1, len(to_remove)))
+        if n_rm <= 1:
+            for path in to_remove:
+                shutil.rmtree(path)
+                _prune_empty_parents(path.parent, stop_at=chunk_dir)
+                removed_songs += 1
+        else:
+            with ThreadPoolExecutor(max_workers=n_rm) as pool:
+                list(pool.map(shutil.rmtree, to_remove))
+            for path in to_remove:
+                _prune_empty_parents(path.parent, stop_at=chunk_dir)
+                removed_songs += 1
+
+    print(
+        f"  cleanup {name}: done "
+        f"(kept={len(keep)}, removed_songs={removed_songs}, "
+        f"removed_legacy={removed_legacy})",
+        flush=True,
+    )
+    return {
+        "chunk": name,
+        "removed_songs": removed_songs,
+        "removed_legacy": removed_legacy,
+        "kept": len(keep),
+    }
+
+
 def _cleanup_obsolete_chunk_dirs(
     package_dir: Path,
     assignment: dict[str, str],
+    *,
+    jobs: int = 8,
 ) -> None:
+    """Drop stale chunk trees / song dirs left from a prior packing.
+
+    Parallelized per ``chunk_*`` directory (I/O-bound NFS walks).
+    """
     songs_by_chunk: dict[str, set[str]] = {}
     for song_id, chunk_id in assignment.items():
         songs_by_chunk.setdefault(chunk_dir_name(chunk_id), set()).add(song_id)
 
-    for chunk_dir in list_chunk_dirs(package_dir):
-        if chunk_dir.name not in songs_by_chunk:
-            shutil.rmtree(chunk_dir)
-            continue
-        keep = songs_by_chunk[chunk_dir.name]
-        # Drop legacy nested audio/ / mid/ wrappers from earlier releases.
-        for legacy in (SPDMX_AUDIO_DIR_NAME, SPDMX_MID_DIR_NAME):
-            legacy_path = chunk_dir / legacy
-            if legacy_path.is_dir():
-                shutil.rmtree(legacy_path)
-        for path in sorted(chunk_dir.rglob("*"), reverse=True):
-            if not path.is_dir():
-                continue
-            try:
-                rel = path.relative_to(chunk_dir).as_posix()
-            except ValueError:
-                continue
-            if rel in keep or not _is_song_media_dir(path):
-                continue
-            shutil.rmtree(path)
-            _prune_empty_parents(path.parent, stop_at=chunk_dir)
+    chunk_dirs = list_chunk_dirs(package_dir)
+    tasks: list[tuple[Path, set[str] | None]] = []
+    for chunk_dir in chunk_dirs:
+        keep = songs_by_chunk.get(chunk_dir.name)
+        tasks.append((chunk_dir, keep))
+
+    n_jobs = max(1, int(jobs))
+    print(
+        f"Cleaning obsolete paths under {package_dir} "
+        f"({len(tasks)} chunk dir(s), -j {n_jobs}) …",
+        flush=True,
+    )
+
+    def _one(task: tuple[Path, set[str] | None]) -> dict[str, int | str]:
+        chunk_dir, keep = task
+        return _cleanup_one_chunk_dir(chunk_dir, keep)
+
+    results = _parallel_map(_one, tasks, jobs=n_jobs, desc="Cleanup chunk dirs")
+    n_removed = sum(int(r["removed_songs"]) for r in results if int(r["removed_songs"]) > 0)
+    n_dropped_chunks = sum(1 for r in results if int(r["removed_songs"]) < 0)
+    print(
+        f"Cleanup finished: removed {n_removed} obsolete song dir(s); "
+        f"dropped {n_dropped_chunks} empty/obsolete chunk dir(s).",
+        flush=True,
+    )
 
 
 def chunk_dataset(
@@ -410,9 +522,15 @@ def chunk_dataset(
         mix_root=mix_root,
         jobs=jobs,
     )
-    missing_audio = [
-        s for s in song_ids if not (audio_root / s).is_dir()
-    ]
+
+    def _audio_missing(song_id: str) -> str | None:
+        return song_id if not (audio_root / song_id).is_dir() else None
+
+    print(f"Checking flat audio presence ({len(song_ids)} songs) …", flush=True)
+    missing_flags = _parallel_map(
+        _audio_missing, song_ids, jobs=jobs, desc="Check audio dirs",
+    )
+    missing_audio = [s for s in missing_flags if s is not None]
     if missing_audio:
         preview = ", ".join(missing_audio[:5])
         more = "" if len(missing_audio) <= 5 else f" (+{len(missing_audio) - 5} more)"
@@ -443,13 +561,17 @@ def chunk_dataset(
 
     _parallel_map(_place, items, jobs=jobs, desc="Publish into chunks")
 
-    _cleanup_obsolete_chunk_dirs(dest, assignment)
+    print("Publish finished; starting obsolete-path cleanup …", flush=True)
+    _cleanup_obsolete_chunk_dirs(dest, assignment, jobs=jobs)
 
+    print(f"Writing packaged CSVs under {dest} …", flush=True)
     packaged.to_csv(dest / f"{SPDMX_FILE_NAME}.csv", index=False)
     chunks.to_csv(dest / CHUNKS_FILE_NAME, index=False)
     write_spdmx_release_docs(dest)
     # Media just published; trust packaged stems.csv paths (no second disk scan).
-    write_songs_table(dest, check_files=False)
+    print("Writing songs.csv …", flush=True)
+    write_songs_table(dest, check_files=False, jobs=jobs)
+    print("Chunk packaging complete.", flush=True)
     return packaged, chunks, assignment
 
 def main(argv=None) -> int:
@@ -474,7 +596,7 @@ def main(argv=None) -> int:
             copy=args.copy,
             dry_run=args.dry_run,
             allow_in_place=args.in_place,
-            jobs=args.jobs,
+            jobs=args.jobs if args.jobs is not None else _default_jobs(),
         )
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)

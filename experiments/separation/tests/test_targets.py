@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import numpy as np
+import torch
 
-from experiments.separation.sisdr import si_sdr
+from experiments.separation.sisdr import si_sdr, si_sdr_loss_torch
 from experiments.separation.targets import gm_to_target, slakh_inst_class_to_target
 
 
@@ -39,3 +40,19 @@ def test_si_sdr_scaled():
     rng = np.random.default_rng(1)
     x = rng.standard_normal(8000)
     assert si_sdr(2.5 * x, x) > 50
+
+
+def test_si_sdr_loss_torch_identical_near_zero():
+    rng = np.random.default_rng(2)
+    x = torch.from_numpy(rng.standard_normal((4, 2, 2048)).astype(np.float32))
+    loss = si_sdr_loss_torch(x, x)
+    assert float(loss) < -20.0
+
+
+def test_si_sdr_loss_torch_noise_worse():
+    rng = np.random.default_rng(3)
+    ref = torch.from_numpy(rng.standard_normal((2, 4096)).astype(np.float32))
+    noise = torch.from_numpy(rng.standard_normal((2, 4096)).astype(np.float32))
+    good = si_sdr_loss_torch(ref, ref)
+    bad = si_sdr_loss_torch(noise, ref)
+    assert float(bad) > float(good)

@@ -29,6 +29,7 @@ from experiments.separation.paths import (
     load_config,
     resolve_dev_dir,
 )
+from experiments.separation.sisdr import si_sdr_loss_torch
 
 
 def build_model(sources: list[str], sample_rate: int):
@@ -41,6 +42,57 @@ def build_model(sources: list[str], sample_rate: int):
     return HTDemucs(sources=sources, samplerate=sample_rate)
 
 
+def _source_weight_tensor(
+    sources: list[str],
+    weight_map: dict | None,
+    *,
+    n_batch: int,
+    n_channels: int,
+    n_time: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor | None:
+    """Broadcast ``(1, S, 1, 1)`` weights, or None for uniform L1."""
+    if not weight_map:
+        return None
+    weights = [float(weight_map.get(name, 1.0)) for name in sources]
+    if all(abs(w - 1.0) < 1e-12 for w in weights):
+        return None
+    w = torch.tensor(weights, device=device, dtype=dtype).view(1, -1, 1, 1)
+    return w.expand(n_batch, -1, n_channels, n_time)
+
+
+def separation_loss(
+    estimate: torch.Tensor,
+    sources_t: torch.Tensor,
+    *,
+    sources: list[str],
+    source_loss_weights: dict | None = None,
+    sisdr_loss_weight: float = 0.0,
+) -> torch.Tensor:
+    """Weighted L1 (+ optional stem SI-SDR) training loss."""
+    b, s, c, t = estimate.shape
+    w = _source_weight_tensor(
+        sources,
+        source_loss_weights,
+        n_batch=b,
+        n_channels=c,
+        n_time=t,
+        device=estimate.device,
+        dtype=estimate.dtype,
+    )
+    if w is None:
+        l1 = torch.nn.functional.l1_loss(estimate, sources_t)
+    else:
+        l1 = (w * (estimate - sources_t).abs()).mean()
+    loss = l1
+    if sisdr_loss_weight and sisdr_loss_weight > 0.0 and "stem" in sources:
+        stem_idx = sources.index("stem")
+        sisdr = si_sdr_loss_torch(estimate[:, stem_idx], sources_t[:, stem_idx])
+        loss = loss + float(sisdr_loss_weight) * sisdr
+    return loss
+
+
 @torch.no_grad()
 def run_validation(
     model: torch.nn.Module,
@@ -48,6 +100,9 @@ def run_validation(
     device: torch.device,
     *,
     max_batches: int | None,
+    sources: list[str],
+    source_loss_weights: dict | None = None,
+    sisdr_loss_weight: float = 0.0,
 ) -> float:
     model.eval()
     total = 0.0
@@ -58,7 +113,13 @@ def run_validation(
         mix = batch["mix"].to(device)
         sources_t = batch["sources"].to(device)
         estimate = model(mix)
-        loss = torch.nn.functional.l1_loss(estimate, sources_t)
+        loss = separation_loss(
+            estimate,
+            sources_t,
+            sources=sources,
+            source_loss_weights=source_loss_weights,
+            sisdr_loss_weight=sisdr_loss_weight,
+        )
         total += float(loss.detach().cpu())
         n += 1
     model.train()
@@ -126,6 +187,12 @@ def train_arm(
         sources = list(cfg.get("sources") or STEM_OTHER_SOURCES)
     else:
         sources = list(cfg.get("sources") or TARGETS)
+    raw_weights = cfg.get("source_loss_weights") or {}
+    source_loss_weights = (
+        {str(k): float(v) for k, v in dict(raw_weights).items()} if raw_weights else None
+    )
+    sisdr_loss_weight = float(cfg.get("sisdr_loss_weight") or 0.0)
+    stem_min_energy_ratio = float(cfg.get("stem_min_energy_ratio") or 0.0)
     log_every = int(cfg.get("log_every", 50))
     val_every = max(1, int(cfg.get("val_every", 1000)))
     raw_val_max = cfg.get("val_max_batches")
@@ -140,6 +207,7 @@ def train_arm(
             segment_seconds=segment,
             channels=channels,
             train=True,
+            stem_min_energy_ratio=stem_min_energy_ratio,
         )
         val_ds_factory = lambda: StemOtherDataset(
             val_csv,
@@ -148,6 +216,7 @@ def train_arm(
             segment_seconds=segment,
             channels=channels,
             train=False,
+            stem_min_energy_ratio=0.0,
         )
     else:
         ds = StemPackDataset(
@@ -246,7 +315,13 @@ def train_arm(
             print(f"  [{label}] step {step}/{max_steps}  (no val set)")
             return None
         val_loss = run_validation(
-            model, val_loader, device, max_batches=val_max_batches,
+            model,
+            val_loader,
+            device,
+            max_batches=val_max_batches,
+            sources=sources,
+            source_loss_weights=source_loss_weights,
+            sisdr_loss_weight=sisdr_loss_weight,
         )
         logger.log(step=step, split="val", loss=val_loss)
         improved = ""
@@ -257,7 +332,7 @@ def train_arm(
         train_note = f"  best_train={best_train:.4f}" if best_train < float("inf") else ""
         print(
             f"  [{label}] step {step}/{max_steps}  "
-            f"val_l1={val_loss:.4f}  best_val={best_val:.4f}{train_note}{improved}"
+            f"val_loss={val_loss:.4f}  best_val={best_val:.4f}{train_note}{improved}"
         )
         return val_loss
 
@@ -285,7 +360,13 @@ def train_arm(
                     mix = batch["mix"].to(device)
                     sources_t = batch["sources"].to(device)
                     estimate = model(mix)
-                    loss = torch.nn.functional.l1_loss(estimate, sources_t)
+                    loss = separation_loss(
+                        estimate,
+                        sources_t,
+                        sources=sources,
+                        source_loss_weights=source_loss_weights,
+                        sisdr_loss_weight=sisdr_loss_weight,
+                    )
                     opt.zero_grad(set_to_none=True)
                     loss.backward()
                     opt.step()

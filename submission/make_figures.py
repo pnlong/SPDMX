@@ -14,6 +14,7 @@ from analysis.plots import (
     plot_downstream_poc,
     plot_gm_program_compare,
     plot_sao_metrics,
+    plot_separation_multistem,
     plot_separation_sisdr,
 )
 from shared.config import OUTPUT_DIR
@@ -24,6 +25,14 @@ FIGURES_DIR = Path(__file__).resolve().parent / "figs"
 DATA_DIR = Path(__file__).resolve().parent / "data"
 SEP_PAPER_CSV = (
     Path(OUTPUT_DIR) / "dev" / "experiments" / "separation" / "eval" / "separation_sisdr.csv"
+)
+SEP_MULTISTEM_CSV = (
+    Path(OUTPUT_DIR)
+    / "dev"
+    / "experiments"
+    / "separation"
+    / "eval"
+    / "separation_sisdr_multistem.csv"
 )
 SAO_PAPER_CSV = (
     Path(OUTPUT_DIR) / "dev" / "experiments" / "sao" / "metrics" / "sao_metrics.csv"
@@ -94,18 +103,34 @@ def make_ablation_listening_figure() -> Path | None:
     return out
 
 
-def make_separation_figure() -> Path | None:
+def make_separation_figure() -> list[Path]:
+    """Write LaTeX panels (a) BDGP comparison and (b) multistem."""
+    written: list[Path] = []
     csv_path = _resolve_paper_csv(SEP_PAPER_CSV, "separation_sisdr.csv")
-    out = FIGURES_DIR / "separation_sisdr.pdf"
+    out_a = FIGURES_DIR / "separation_sisdr.pdf"
     if not csv_path.is_file():
-        _placeholder_figure(out, "SI-SDR results pending")
-        return out
-    df = pd.read_csv(csv_path)
-    if df.empty or df["si_sdr_mean"].isna().all():
-        _placeholder_figure(out, "SI-SDR results pending")
-        return out
-    plot_separation_sisdr(df, out)
-    return out
+        _placeholder_figure(out_a, "SI-SDR results pending")
+    else:
+        df = pd.read_csv(csv_path)
+        if df.empty or df["si_sdr_mean"].isna().all():
+            _placeholder_figure(out_a, "SI-SDR results pending")
+        else:
+            plot_separation_sisdr(df, out_a)
+    written.append(out_a)
+
+    ms_path = _resolve_paper_csv(SEP_MULTISTEM_CSV, "separation_sisdr_multistem.csv")
+    out_b = FIGURES_DIR / "separation_sisdr_multistem.pdf"
+    skinny = (1.9, 3.6)
+    if not ms_path.is_file():
+        _placeholder_figure(out_b, "pending", figsize=skinny)
+    else:
+        ms = pd.read_csv(ms_path)
+        if ms.empty or ms["si_sdr_mean"].isna().all():
+            _placeholder_figure(out_b, "pending", figsize=skinny)
+        else:
+            plot_separation_multistem(ms, out_b)
+    written.append(out_b)
+    return written
 
 
 def make_sao_figure() -> Path | None:
@@ -150,12 +175,17 @@ def make_chunk_layout_figure() -> Path | None:
     return out
 
 
-def _placeholder_figure(path: Path, message: str) -> None:
+def _placeholder_figure(
+    path: Path,
+    message: str,
+    *,
+    figsize: tuple[float, float] = (6.0, 2.5),
+) -> None:
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(6.0, 2.5))
+    fig, ax = plt.subplots(figsize=figsize)
     ax.axis("off")
-    ax.text(0.5, 0.5, message, ha="center", va="center", fontsize=12)
+    ax.text(0.5, 0.5, message, ha="center", va="center", fontsize=10)
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, bbox_inches="tight", transparent=True)
     plt.close(fig)
@@ -198,9 +228,7 @@ def main() -> None:
             written.append(p)
 
     if args.only in ("separation", "all"):
-        p = make_separation_figure()
-        if p:
-            written.append(p)
+        written.extend(make_separation_figure())
 
     if args.only in ("sao", "all"):
         p = make_sao_figure()

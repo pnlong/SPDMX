@@ -358,24 +358,27 @@ def plot_track_name_bar(
 
 _ARM_LABELS = {
     "slakh": "Slakh",
-    "spdmx": "SPDMX",
+    "spdmx": "SPDMX (BDGP)",
     "both": "Slakh+SPDMX",
     "spdmx_matched": "SPDMX-BDGP",
     "spdmx_full": "SPDMX-full",
+    "multistem": "SPDMX (multi)",
     "Slakh": "Slakh",
-    "SPDMX": "SPDMX",
+    "SPDMX": "SPDMX (BDGP)",
+    "SPDMX (BDGP)": "SPDMX (BDGP)",
     "Slakh+SPDMX": "Slakh+SPDMX",
     # Legacy spellings from older CSVs / figures
-    "sPDMX": "SPDMX",
+    "sPDMX": "SPDMX (BDGP)",
     "sPDMX-matched": "SPDMX-BDGP",
     "sPDMX-BDGP": "SPDMX-BDGP",
     "sPDMX-full": "SPDMX-full",
 }
 
-_ARM_ORDER_SEP = ("Slakh", "SPDMX", "Slakh+SPDMX")
+_ARM_ORDER_SEP = ("Slakh", "SPDMX (BDGP)", "Slakh+SPDMX")
 _ARM_ORDER_SAO = ("Slakh", "SPDMX-BDGP", "SPDMX-full")
 _ARM_ORDER = _ARM_ORDER_SAO  # default for combined/legacy callers
 _TARGET_ORDER = ("bass", "drums", "guitar", "piano")
+_MULTISTEM_TARGET_ORDER = ("stem", "other")
 # Non-realify ablation arms reported in the ICASSP draft (SA3 omitted).
 _CONDITION_ORDER = ("A1", "B1", "CA1", "CB1")
 # Distinct hues per ablation (basic / varied / neural+basic / neural+varied).
@@ -386,18 +389,31 @@ _CONDITION_PALETTE = {
     "CB1": "#E45756",
 }
 
+# SI-SDR bars too short for an in-bar label (paper separation figure).
+_INSIDE_POS_MIN = 2.0
+_INSIDE_NEG_MAX = -2.0
+
 
 def _annotate_bars(
     ax,
     fmt: str = "{:.1f}",
     fontsize: int = 7,
     *,
-    inside: bool = False,
+    inside: bool | str = False,
     rotation: float = 0,
+    inside_pos_min: float = _INSIDE_POS_MIN,
+    inside_neg_max: float = _INSIDE_NEG_MAX,
 ) -> None:
-    """Label bar heights; ``inside`` places rotated text at each bar midpoint."""
+    """Label bar heights.
+
+    ``inside``:
+      - ``False``: above/below via ``bar_label``
+      - ``True``: centered in each bar
+      - ``"auto"``: inside when ``h >= inside_pos_min`` or ``h <= inside_neg_max``;
+        otherwise outside (above positives, below negatives; same rotation)
+    """
     for container in ax.containers:
-        if not inside:
+        if inside is False:
             labels = []
             for patch in container:
                 h = patch.get_height()
@@ -412,18 +428,40 @@ def _annotate_bars(
             if h != h:  # NaN
                 continue
             x = patch.get_x() + patch.get_width() / 2.0
-            y = h / 2.0
-            ax.text(
-                x,
-                y,
-                fmt.format(h),
-                ha="center",
-                va="center",
-                rotation=rotation,
-                fontsize=fontsize,
-                color="0.12",
-                clip_on=True,
+            label = fmt.format(h)
+            use_inside = inside is True or (
+                inside == "auto" and (h >= inside_pos_min or h <= inside_neg_max)
             )
+            if use_inside:
+                ax.text(
+                    x,
+                    h / 2.0,
+                    label,
+                    ha="center",
+                    va="center",
+                    rotation=rotation,
+                    fontsize=fontsize,
+                    color="0.12",
+                    clip_on=True,
+                )
+            else:
+                # Outside the bar tip: above for positives, below for negatives.
+                if h >= 0:
+                    xytext, va = (0, 3), "bottom"
+                else:
+                    xytext, va = (0, -3), "top"
+                ax.annotate(
+                    label,
+                    xy=(x, h),
+                    xytext=xytext,
+                    textcoords="offset points",
+                    ha="center",
+                    va=va,
+                    rotation=rotation,
+                    fontsize=fontsize,
+                    color="0.12",
+                    clip_on=False,
+                )
 
 
 def plot_ablation_listening(
@@ -835,9 +873,9 @@ def plot_separation_sisdr(
     summary: pd.DataFrame,
     output_path: str | Path,
     *,
-    figsize: tuple[float, float] = (8.0, 3.8),
+    figsize: tuple[float, float] = (8.0, 3.6),
 ) -> None:
-    """SI-SDR bars: instrument × train arm, optional MUSDB panel.
+    """SI-SDR bars: instrument × train arm across test sets (LaTeX panel a).
 
     Expects columns: ``train_arm``, ``test_set``, ``target``, ``si_sdr_mean``.
     Panel widths scale with the number of x-tick categories.
@@ -897,7 +935,7 @@ def plot_separation_sisdr(
                 ax=ax,
                 saturation=0.9,
             )
-            _annotate_bars(ax, fmt="{:.1f}", fontsize=6.5, inside=True, rotation=90)
+            _annotate_bars(ax, fmt="{:.1f}", fontsize=6.5, inside="auto", rotation=90)
             ax.set_title(title_map.get(test_set, test_set), fontsize=10)
             ax.set_xlabel("")
             ax.set_ylabel("SI-SDR (dB)" if ax is axes[0] else "")
@@ -918,9 +956,54 @@ def plot_separation_sisdr(
             handletextpad=0.4,
             columnspacing=1.2,
         )
-        # Leave a small gap under tick labels for the frameless shared legend.
         fig.subplots_adjust(left=0.08, right=0.99, top=0.90, bottom=0.16, wspace=0.18)
         _savefig(fig, output_path, pad_inches=0.04)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()
+
+
+def plot_separation_multistem(
+    summary: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    figsize: tuple[float, float] = (1.9, 3.6),
+) -> None:
+    """Stem/other SI-SDR for the 2-source multistem model (LaTeX panel b)."""
+    import seaborn as sns
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df = summary.copy()
+    df["train_arm"] = df["train_arm"].map(lambda a: _ARM_LABELS.get(str(a), str(a)))
+    df["target"] = df["target"].astype(str).str.lower()
+    target_order = [t for t in _MULTISTEM_TARGET_ORDER if t in set(df["target"])]
+    if not target_order:
+        target_order = sorted(df["target"].unique())
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        fig, ax = plt.subplots(figsize=figsize)
+        plot_df = df.copy()
+        plot_df["target"] = plot_df["target"].str.capitalize()
+        sns.barplot(
+            data=plot_df,
+            x="target",
+            y="si_sdr_mean",
+            order=[t.capitalize() for t in target_order],
+            ax=ax,
+            color=sns.color_palette("deep")[0],
+            saturation=0.9,
+            width=0.65,
+        )
+        _annotate_bars(ax, fmt="{:.1f}", fontsize=6.5, inside="auto", rotation=90)
+        ax.set_xlabel("")
+        ax.set_ylabel("SI-SDR (dB)")
+        ax.set_title("Multi-stem", fontsize=10)
+        ax.tick_params(axis="x", labelsize=8)
+        sns.despine(ax=ax)
+        fig.subplots_adjust(left=0.32, right=0.98, top=0.90, bottom=0.14)
+        _savefig(fig, output_path, pad_inches=0.02)
         plt.close(fig)
     finally:
         sns.reset_defaults()

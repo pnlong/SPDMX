@@ -156,16 +156,27 @@ Hybrid Demucs~\cite{defossez2021hybrid} is trained to recover bass, drums, guita
 For a fair head-to-head with Slakh, we map SPDMX parts onto those four classes and keep only songs that contain all four.
 That BDGP-eligible slice is small relative to the full release (roughly $36$\,h of SPDMX training audio versus $83$\,h of Slakh under our manifests), so we do not expect open soundfont/MIDI-DDSP renders to outperform closed-VST Slakh on Slakh2100.
 We compare three matched-step arms (Slakh alone, the four-stem SPDMX subset alone, and their union Slakh+SPDMX) as a proof of concept: whether SPDMX stems support standard stem-separation training and can complement Slakh rather than replace it.
-In-domain SI-SDR~\cite{leroux2019sdr} on SPDMX (BDGP) shows that the open packs are learnable; the union largely preserves Slakh-test performance while transferring to SPDMX (BDGP), whereas each solo arm fails cross-domain (Fig.~\ref{fig:separation}).
+In-domain SI-SDR~\cite{leroux2019sdr} on SPDMX (BDGP) shows that the open packs are learnable; the union largely preserves Slakh-test performance while transferring to SPDMX (BDGP), whereas each solo arm fails cross-domain (Fig.~\ref{fig:separation}a).
 MUSDB18 bass/drums remain difficult for all synth-trained arms.
-The remaining multi-stem material (about $88$K songs with two or more stems; orchestral, voice, and other families) is outside this BDGP filter and is the natural substrate for broader open separation settings that are not limited to those four targets.
+The remaining multi-stem material (about $88$K songs with two or more stems; orchestral, voice, and other families) is outside this BDGP filter.
+We train a separate 2-source HTDemucs (target stem vs.\ residual other) on that pool; held-out SI-SDR is shown in Fig.~\ref{fig:separation}b.
 
-\begin{figure}[t]
+\begin{figure*}[t]
   \centering
-  \centerline{\includegraphics[width=\linewidth]{figs/separation_sisdr.pdf}}
-  \caption{Hybrid Demucs SI-SDR (dB) under a matched step budget for Slakh, SPDMX, and Slakh+SPDMX training on the BDGP-eligible SPDMX slice versus Slakh, evaluated on Slakh2100, SPDMX (BDGP), and MUSDB18 (bass/drums).}
+  \begin{minipage}[t]{0.82\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figs/separation_sisdr.pdf}\\[1pt]
+    {\footnotesize (a)}
+  \end{minipage}\hfill%
+  \begin{minipage}[t]{0.16\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figs/separation_sisdr_multistem.pdf}\\[1pt]
+    {\footnotesize (b)}
+  \end{minipage}
+  \caption{(a)~Matched-step Hybrid Demucs SI-SDR (dB) for Slakh, SPDMX (BDGP), and Slakh+SPDMX on Slakh2100, SPDMX (BDGP), and MUSDB18 (bass/drums).
+  (b)~2-source HTDemucs on multi-stem SPDMX ($\geq 2$ stems): stem vs.\ other.}
   \label{fig:separation}
-\end{figure}
+\end{figure*}
 
 \subsection{Generative fine-tuning}
 \label{ssec:sao}

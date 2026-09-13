@@ -1,9 +1,11 @@
 # Full multi-stem SPDMX: 2-source HTDemucs (stem vs other). No Slakh / BDGP.
+# v2 recipe: stem-weighted L1 + SI-SDR loss + energy-aware stem sampling
+# (v1 plain-L1 32k run collapsed to the mixture).
 
 seed: 43
 sample_rate: 44100
-max_steps: 32000
-batch_size: 8
+max_steps: 96000
+batch_size: 16
 segment_seconds: 10.0
 lr: 3.0e-4
 num_workers: 4
@@ -16,6 +18,15 @@ val_max_batches: null
 sources:
   - stem
   - other
+
+# Fight mixture collapse: weight the quieter target stem in waveform L1.
+source_loss_weights:
+  stem: 5.0
+  other: 1.0
+# Differentiable −SI-SDR on the stem source (aligned with paper metric).
+sisdr_loss_weight: 0.5
+# Train-only: resample track/crop when stem RMS / mix RMS is below this.
+stem_min_energy_ratio: 0.05
 
 # Songs with at least this many on-disk stems (from songs.csv).
 min_stems: 2
