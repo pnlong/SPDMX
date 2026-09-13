@@ -120,10 +120,11 @@ def parse_args(args=None, namespace=None):
             "merge, realify, mix, or verify. Fluidsynth, ddsp_piano, and midi_ddsp "
             "may run in parallel. Mix normalizes raw→audio and writes "
             "mix/<song_id>.flac (dirty-aware resume). Verify checks raw completeness "
-            "and fully FLAC-decodes audio/ stems and song mixes, then checks "
-            "sample-wise mix == sum(stems). Use --delete-bad-mix-sums with verify "
-            "to remove failing mixes (then re-run mix), or --repair-mix-sums with "
-            "mix to delete+remake in one shot. "
+            "and fully FLAC-decodes audio/ + mixes, then mix == sum(stems). "
+            "One-shot fix: --only-pass mix --repair-mix-sums (deletes bad "
+            "mix+audio, rebuilds from raw/, rechecks those songs). "
+            "End-of-pipeline: --only-pass mix --verify (claimed stems + "
+            "full decode+mix=sum; replaces a separate verify pass). "
             "Mix/realify/verify merge per-pass tables first."
         ),
     )
@@ -131,19 +132,33 @@ def parse_args(args=None, namespace=None):
         "--delete-bad-mix-sums",
         action="store_true",
         help=(
-            "With --only-pass verify: delete only mixes that fail a *content* "
-            "sum check (max|mix-sum| / length / sample-rate). Never deletes on "
-            "missing stems or read errors. Refuses if more than "
-            "max(100, 5% of catalog) mixes would be deleted unless also "
-            "pass -y/--yes. Then re-run mix to remake them."
+            "With --only-pass verify: delete mixes that fail a *content* sum "
+            "check (max|mix-sum| / length / sample-rate) and their "
+            "audio/<song_id>/ trees (raw/ untouched) so mix can rebuild from "
+            "raw/. Never deletes on missing stems or read errors. Refuses if "
+            "more than max(100, 5% of catalog) would be deleted unless also "
+            "pass -y/--yes."
         ),
     )
     parser.add_argument(
         "--repair-mix-sums",
         action="store_true",
         help=(
-            "With --only-pass mix: delete mixes that fail sum(stems) and remake "
-            "them only (skips stem normalize)."
+            "With --only-pass mix: scan for mix≠sum(stems), delete those mixes "
+            "and their audio/<song_id>/ trees (raw/ untouched), then "
+            "re-normalize from raw/ and remake mixes. Implies the expensive "
+            "full-catalog mix=sum verify. Pass -y/--yes if more than "
+            "max(100, 5%%) of the catalog would be deleted."
+        ),
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help=(
+            "With --only-pass mix: after writing, run claimed-stem checks and "
+            "full-catalog decode+mix=sum (same as --only-pass verify). "
+            "Prefer this over a separate verify pass. Implied when "
+            "--repair-mix-sums already scanned the catalog."
         ),
     )
     parser.add_argument(
@@ -289,47 +304,91 @@ def log_next_pass(recipe, only: str) -> None:
             flush=True,
         )
     if only == "mix":
+        verify_note = ""
+        if getattr(args, "verify", False) or getattr(args, "repair_mix_sums", False):
+            verify_note = " Includes full-catalog mix=sum verify."
         print(
             "Mix writes summable audio/ stems and mix/<song_id>.flac "
-            "(dirty-aware: only songs with newer raw/audio inputs).",
+            "(dirty-aware: only songs with newer raw/audio inputs); "
+            f"always runs claimed-stem checks.{verify_note}",
             flush=True,
         )
     if only == "verify":
         print(
-            "Verify checks raw completeness and fully FLAC-decodes audio/ stems "
-            "and mix/<song_id>.flac via -j/--jobs.",
+            "Verify checks claimed stems / raw completeness and fully "
+            "FLAC-decodes audio/ + mix/ with mix==sum(stems). "
+            "Prefer --only-pass mix --verify when you also need to (re)mix.",
             flush=True,
         )
     print(f"Next: uv run python -m synthesis.final --only-pass {nxt}{extra}", flush=True)
 
 
-def run_summable_mix(args, stems_dir: str, *, media_dir: str) -> None:
+def run_summable_mix(args, stems_dir: str, *, media_dir: str, recipe=None) -> None:
     from shared.config import (
         SPDMX_AUDIO_DIR_NAME,
         SPDMX_FILE_NAME,
+        SPDMX_MIX_DIR_NAME,
         SPDMX_RAW_DIR_NAME,
     )
-    from synthesis.mix import normalize_stems_for_dataset
+    from synthesis.mix import normalize_stems_for_dataset, verify_mixed_stems_on_disk
     from synthesis.paths import raw_path_to_audio
-    from synthesis.render_mixes import render_dataset_mixes, repair_mix_sum_mismatches
+    from synthesis.render_mixes import (
+        delete_mix_sum_mismatches,
+        mix_matches_stem_sum,
+        render_dataset_mixes,
+        verify_song_ids_match_stem_sums,
+    )
+    from synthesis.synthesize import verify_claimed_stems_on_disk
 
     media = Path(media_dir)
     raw_root = media / SPDMX_RAW_DIR_NAME
     audio_root = media / SPDMX_AUDIO_DIR_NAME
     reset = bool(getattr(args, "reset", False))
     repair_sums = bool(getattr(args, "repair_mix_sums", False))
+    verify_all = bool(getattr(args, "verify", False)) or repair_sums
+    repair_ids: set[str] = set()
+    catalog_sum_verified = False
+
+    # Cheap verify step (same as --only-pass verify) before the expensive work.
+    verify_claimed_stems_on_disk(
+        stems_dir,
+        FLAC_AUDIO_FORMAT,
+        recipe=recipe,
+        jobs=args.jobs,
+    )
 
     if repair_sums and not reset:
-        # Delete mismatched mixes and remake them; leave audio/ alone.
-        counts = repair_mix_sum_mismatches(
+        # Content mismatches usually mean corrupt audio/ FLACs; wipe mix+audio
+        # so the normal dirty path rebuilds stems from raw/ then remakes mixes.
+        # This scan is the full-catalog mix=sum verify.
+        bad = delete_mix_sum_mismatches(
             media_dir,
             tables_dir=stems_dir,
             jobs=args.jobs,
-            force_delete=bool(getattr(args, "yes", False)),
+            force=bool(getattr(args, "yes", False)),
+            also_delete_audio=True,
         )
-        if counts.get("error", 0):
-            raise SystemExit(1)
-        return
+        catalog_sum_verified = True
+        if not bad:
+            print(
+                "Repair: nothing to fix (all mixes match sum(stems); "
+                "claimed stems + mix=sum verify complete).",
+                flush=True,
+            )
+            from synthesis.build_songs_table import write_songs_table
+
+            print("Writing SPDMX_dev/songs.csv …", flush=True)
+            dest_songs = write_songs_table(
+                media, check_files=False, jobs=int(args.jobs),
+            )
+            print(f"Wrote {dest_songs}", flush=True)
+            return
+        repair_ids = {sid for sid, _ in bad}
+        print(
+            f"Repair: re-normalizing {len(repair_ids)} song(s) from raw/ "
+            "and remaking mixes…",
+            flush=True,
+        )
 
     print(
         f"Writing mixable stems to {audio_root}/ "
@@ -349,11 +408,12 @@ def run_summable_mix(args, stems_dir: str, *, media_dir: str) -> None:
         dest_song_dir_fn=raw_path_to_audio,
         reset=reset,
     )
+    force_ids = set(dirty_ids or ()) | repair_ids
     counts = render_dataset_mixes(
         media_dir,
         jobs=args.jobs,
         force=reset,
-        force_ids=dirty_ids,
+        force_ids=force_ids or None,
     )
     print(
         f"mix files: wrote={counts.get('wrote', 0)} "
@@ -364,6 +424,50 @@ def run_summable_mix(args, stems_dir: str, *, media_dir: str) -> None:
     )
     if counts.get("error", 0):
         raise SystemExit(1)
+
+    if repair_ids:
+        # Recheck only rebuilt songs; rest of catalog was verified in the scan.
+        still_bad: list[str] = []
+        for sid in sorted(repair_ids):
+            err, _duration = mix_matches_stem_sum(
+                sid,
+                audio_root=audio_root,
+                mix_root=media / SPDMX_MIX_DIR_NAME,
+            )
+            if err:
+                still_bad.append(err)
+        if still_bad:
+            lines = "\n".join(f"  {msg}" for msg in still_bad[:25])
+            extra = (
+                f" (showing first 25; {len(still_bad)} total)"
+                if len(still_bad) > 25
+                else ""
+            )
+            raise RuntimeError(
+                f"Repair incomplete: {len(still_bad)} song(s) still fail "
+                f"mix==sum(stems){extra}:\n{lines}"
+            )
+        print(
+            f"Repair ok: {len(repair_ids)} song(s) re-decoded and match "
+            "sum(audio stems); full-catalog verify complete.",
+            flush=True,
+        )
+    elif verify_all and not catalog_sum_verified:
+        verify_mixed_stems_on_disk(
+            stems_dir,
+            audio_format=FLAC_AUDIO_FORMAT,
+            jobs=args.jobs,
+            media_dir=media_dir,
+        )
+    elif force_ids:
+        # Dirty resume: only re-verify songs we just touched (cheap vs full catalog).
+        verify_song_ids_match_stem_sums(
+            media_dir,
+            sorted(force_ids),
+            tables_dir=stems_dir,
+            jobs=args.jobs,
+        )
+
     spdmx_csv = media / f"{SPDMX_FILE_NAME}.csv"
     if spdmx_csv.is_file():
         table = pd.read_csv(spdmx_csv)
@@ -383,6 +487,15 @@ def run_summable_mix(args, stems_dir: str, *, media_dir: str) -> None:
                 f"Updated {spdmx_csv} paths → ./{SPDMX_AUDIO_DIR_NAME}/…",
                 flush=True,
             )
+
+    # Song-level table for lab use + build_spdmx packaging (remap, don't rebuild).
+    from synthesis.build_songs_table import write_songs_table
+
+    print("Writing SPDMX_dev/songs.csv …", flush=True)
+    dest_songs = write_songs_table(
+        media, check_files=False, jobs=int(args.jobs),
+    )
+    print(f"Wrote {dest_songs}", flush=True)
 
 
 def run_dry_run(
@@ -517,8 +630,8 @@ def run_dry_run(
         delete_note = ""
         if getattr(args, "delete_bad_mix_sums", False):
             delete_note = (
-                " Would delete mix files that fail sum(stems) "
-                "(then re-run mix to remake)."
+                " Would delete failing mix+audio "
+                "(raw/ untouched; then re-run mix to remake)."
             )
         print(
             "Verify: would check raw completeness, FLAC-decode audio/ + mix/, "
@@ -625,7 +738,7 @@ def main(argv=None):
             expected_n_songs=expected_song_count(args, media_dir),
             jobs=args.jobs,
         )
-        run_summable_mix(args, tables_dir, media_dir=media_dir)
+        run_summable_mix(args, tables_dir, media_dir=media_dir, recipe=recipe)
 
     log_next_pass(recipe, only)
     link_ablations_in_repo(args.output_dir)

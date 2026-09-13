@@ -193,6 +193,7 @@ def train_arm(
     )
     sisdr_loss_weight = float(cfg.get("sisdr_loss_weight") or 0.0)
     stem_min_energy_ratio = float(cfg.get("stem_min_energy_ratio") or 0.0)
+    rebuild_mix_from_stems = bool(cfg.get("rebuild_mix_from_stems", True))
     log_every = int(cfg.get("log_every", 50))
     val_every = max(1, int(cfg.get("val_every", 1000)))
     raw_val_max = cfg.get("val_max_batches")
@@ -208,6 +209,7 @@ def train_arm(
             channels=channels,
             train=True,
             stem_min_energy_ratio=stem_min_energy_ratio,
+            rebuild_mix_from_stems=rebuild_mix_from_stems,
         )
         val_ds_factory = lambda: StemOtherDataset(
             val_csv,
@@ -216,7 +218,8 @@ def train_arm(
             segment_seconds=segment,
             channels=channels,
             train=False,
-            stem_min_energy_ratio=0.0,
+            stem_min_energy_ratio=stem_min_energy_ratio,
+            rebuild_mix_from_stems=rebuild_mix_from_stems,
         )
     else:
         ds = StemPackDataset(

@@ -554,17 +554,32 @@ def verify_mixed_stems_on_disk(
 ) -> None:
     """Require mixed ``audio/`` stems (and ``mix/`` song mixes) to FLAC-decode.
 
-    When ``media_dir`` is set, also checks sample-wise that each
-    ``mix/<song_id>.flac`` equals the sum of ``audio/<song_id>/*.flac``
-    (s16-tolerant). When ``delete_bad_mix_sums`` is True, only mixes with a
-    content sum mismatch are removed (never on read/missing-stem errors);
-    deletions above 5% of the catalog require ``force_delete_bad_mixes``.
+    When ``media_dir`` is set, runs a **single** per-song pass that fully
+    decodes each song's stems + mix and checks sample-wise that
+    ``mix/<song_id>.flac`` equals the sum of claimed ``audio/<song_id>/*.flac``
+    (s16-tolerant). When ``delete_bad_mix_sums`` is True, failing mixes and
+    their ``audio/<song_id>/`` trees are removed (never on read/missing-stem
+    errors; ``raw/`` untouched) so mix can rebuild from ``raw/``. Deletions
+    above 5% of the catalog require ``force_delete_bad_mixes``.
+
+    Without ``media_dir``, only decodes stem paths implied by ``stems.csv``.
     """
+    if media_dir is not None:
+        from synthesis.render_mixes import verify_mixes_match_stem_sums
+
+        verify_mixes_match_stem_sums(
+            media_dir,
+            tables_dir=tables_dir,
+            jobs=jobs,
+            limit=limit,
+            delete_bad=delete_bad_mix_sums,
+            force_delete=force_delete_bad_mixes,
+        )
+        return
+
     paths = mixed_stem_paths_from_tables(
         tables_dir, audio_format=audio_format, media_dir=media_dir,
     )
-    if media_dir is not None:
-        paths.extend(song_mix_paths_from_media(media_dir, tables_dir=tables_dir))
     if not paths:
         raise RuntimeError(f"No stems/mixes to verify under {tables_dir}")
 
@@ -610,18 +625,6 @@ def verify_mixed_stems_on_disk(
             "Then:    uv run python -m synthesis.final --only-pass verify -j 8"
         )
     print(f"verify ok: {len(paths)} file(s) fully decoded.", flush=True)
-
-    if media_dir is not None:
-        from synthesis.render_mixes import verify_mixes_match_stem_sums
-
-        verify_mixes_match_stem_sums(
-            media_dir,
-            tables_dir=tables_dir,
-            jobs=jobs,
-            limit=limit,
-            delete_bad=delete_bad_mix_sums,
-            force_delete=force_delete_bad_mixes,
-        )
 
 
 def resolve_stems_dir(

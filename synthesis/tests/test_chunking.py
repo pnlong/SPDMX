@@ -8,7 +8,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from shared.config import SPDMX_AUDIO_DIR_NAME, SPDMX_FILE_NAME, SPDMX_MID_DIR_NAME
+from shared.config import (
+    SPDMX_AUDIO_DIR_NAME,
+    SPDMX_FILE_NAME,
+    SPDMX_MID_DIR_NAME,
+    SPDMX_SONGS_FILE_NAME,
+)
 from synthesis.build_spdmx import chunk_dataset
 from synthesis.chunking import (
     CHUNKS_FILE_NAME,
@@ -21,6 +26,7 @@ from synthesis.chunking import (
     list_chunk_dirs,
     packaged_audio_rel,
     packaged_mid_rel,
+    rewrite_songs_table_for_chunks,
     rewrite_track_map_for_chunks,
 )
 from synthesis.distribute_spdmx import stage_zenodo_files
@@ -131,6 +137,7 @@ def _write_flat_fixture(root: Path) -> None:
     import soundfile as sf
 
     rows = []
+    song_rows = []
     for song_id, tracks in (("0/1/QmA", 2), ("0/2/QmB", 1)):
         audio = root / SPDMX_AUDIO_DIR_NAME / song_id
         audio.mkdir(parents=True)
@@ -162,8 +169,42 @@ def _write_flat_fixture(root: Path) -> None:
         # Distinct lengths so song_length is a real mix-header value.
         n = 2000 if song_id.endswith("A") else 1000
         sf.write(str(mix), np.zeros(n, dtype=np.float32), 44100, format="FLAC")
+        song_rows.append(
+            {
+                "song_id": song_id,
+                "path": f"./audio/{song_id}",
+                "mid": f"./mid/{song_id}.mid",
+                "mix": f"./mix/{song_id}.flac",
+                "n_tracks": tracks,
+                "song_length": n / 44100.0,
+                "subset:all": True,
+                "subset:bdgp": False,
+            }
+        )
     pd.DataFrame(rows).to_csv(root / f"{SPDMX_FILE_NAME}.csv", index=False)
+    pd.DataFrame(song_rows).to_csv(root / SPDMX_SONGS_FILE_NAME, index=False)
     write_spdmx_release_docs(root)
+
+
+def test_rewrite_songs_table_for_chunks_keeps_song_length():
+    songs = pd.DataFrame(
+        [
+            {
+                "song_id": "0/1/QmA",
+                "path": "./audio/0/1/QmA",
+                "mid": "./mid/0/1/QmA.mid",
+                "mix": "./mix/0/1/QmA.flac",
+                "song_length": 12.5,
+                "subset:all": True,
+                "subset:bdgp": False,
+            }
+        ]
+    )
+    packaged = rewrite_songs_table_for_chunks(songs, {"0/1/QmA": "3"})
+    assert packaged.iloc[0]["chunk"] == "3"
+    assert packaged.iloc[0]["path"] == "./chunk_3/0/1/QmA"
+    assert packaged.iloc[0]["mix"] == "./chunk_3/0/1/QmA/mix.flac"
+    assert float(packaged.iloc[0]["song_length"]) == 12.5
 
 
 def test_publish_dir_leaves_source_if_verify_would_fail(tmp_path: Path, monkeypatch):
@@ -221,7 +262,10 @@ def test_chunk_dataset_builds_separate_release_tree(tmp_path: Path):
     assert (source / SPDMX_AUDIO_DIR_NAME / "0/1/QmA" / "0.flac").is_file()
     assert (source / SPDMX_MID_DIR_NAME / "0/1/QmA.mid").is_file()
     assert "chunk" not in pd.read_csv(source / f"{SPDMX_FILE_NAME}.csv").columns
-    assert not (source / "songs.csv").is_file()
+    assert (source / SPDMX_SONGS_FILE_NAME).is_file()
+    # Packaged songs keep precomputed song_length; paths are remapped.
+    assert songs.iloc[0]["mix"].endswith("/mix.flac")
+    assert str(songs.iloc[0]["path"]).startswith("./chunk_")
 
     for song_id, chunk_id in assignment.items():
         song_dir = dest / chunk_dir_name(chunk_id) / song_id

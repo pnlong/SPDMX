@@ -108,6 +108,8 @@ def test_render_dataset_mixes_updates_csv(tmp_path: Path):
     assert mix_path.is_file()
     table = pd.read_csv(root / f"{SPDMX_FILE_NAME}.csv")
     assert table.iloc[0]["mix"] == f"./{SPDMX_MIX_DIR_NAME}/{song_id}.flac"
+    assert "song_length" in table.columns
+    assert float(table.iloc[0]["song_length"]) > 0
 
     counts2 = render_dataset_mixes(root, jobs=1, force=False)
     assert counts2["skip_exists"] == 1
@@ -284,7 +286,7 @@ def test_verify_mixes_match_stem_sums(tmp_path: Path):
             song_id,
             audio_root=root / SPDMX_AUDIO_DIR_NAME,
             mix_root=root / SPDMX_MIX_DIR_NAME,
-        )
+        )[0]
         is None
     )
     verify_mixes_match_stem_sums(root, jobs=2)
@@ -293,7 +295,7 @@ def test_verify_mixes_match_stem_sums(tmp_path: Path):
 
     # Corrupt mix → verify fails
     sf.write(str(mix), np.full(n, 0.99, np.float32), sr, format="FLAC")
-    err = mix_matches_stem_sum(
+    err, _dur = mix_matches_stem_sum(
         song_id,
         audio_root=root / SPDMX_AUDIO_DIR_NAME,
         mix_root=root / SPDMX_MIX_DIR_NAME,
@@ -302,25 +304,37 @@ def test_verify_mixes_match_stem_sums(tmp_path: Path):
     with pytest.raises(RuntimeError, match="sample-wise sum"):
         verify_mixes_match_stem_sums(root, jobs=1)
 
-    # verify --delete-bad-mix-sums removes the bad file
+    # verify --delete-bad-mix-sums removes the bad mix + audio/
     sf.write(str(mix), np.full(n, 0.99, np.float32), sr, format="FLAC")
-    with pytest.raises(RuntimeError, match="deleted so mix can remake"):
+    with pytest.raises(RuntimeError, match="deleted mix\\+audio so mix can remake"):
         verify_mixes_match_stem_sums(root, jobs=1, delete_bad=True)
     assert not mix.is_file()
+    assert not audio.exists()
 
-    # Repair = delete+remake via normal dirty path
+    # Restore stems for mix-only repair helper check
+    audio.mkdir(parents=True)
+    sf.write(str(audio / "0.flac"), a, sr, format="FLAC")
+    sf.write(str(audio / "1.flac"), b, sr, format="FLAC")
+    from synthesis.render_mixes import render_dataset_mixes
+
     sf.write(str(mix), np.full(n, 0.99, np.float32), sr, format="FLAC")
-    counts = repair_mix_sum_mismatches(root, jobs=1)
+    bad = repair_mix_sum_mismatches(root, jobs=1, also_delete_audio=False)
+    assert any(sid == song_id for sid, _ in bad)
+    assert not mix.is_file()
+    counts = render_dataset_mixes(root, jobs=1, force_ids={song_id})
     assert counts["wrote"] == 1
     assert (
         mix_matches_stem_sum(
             song_id,
             audio_root=root / SPDMX_AUDIO_DIR_NAME,
             mix_root=root / SPDMX_MIX_DIR_NAME,
-        )
+        )[0]
         is None
     )
     verify_mixes_match_stem_sums(root, jobs=1)
+    table = pd.read_csv(root / f"{SPDMX_FILE_NAME}.csv")
+    assert "song_length" in table.columns
+    assert float(table.iloc[0]["song_length"]) == pytest.approx(n / sr, rel=1e-3)
 
 
 @pytest.mark.skipif(
@@ -382,6 +396,9 @@ def test_delete_bad_mixes_skips_non_content_and_preserves_good(tmp_path: Path):
     assert (mix_root / f"{good_id}.flac").is_file()
     assert (mix_root / f"{nostem_id}.flac").is_file()
     assert not (mix_root / f"{bad_id}.flac").is_file()
+    # Default: also wipe audio/ so mix can rebuild from raw/.
+    assert not (audio_root / bad_id).exists()
+    assert (audio_root / good_id).is_dir()
 
 
 @pytest.mark.skipif(

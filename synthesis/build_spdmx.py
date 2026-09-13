@@ -1,16 +1,18 @@
 """Post-render packaging: flat ``SPDMX_dev/`` → chunked ``SPDMX/`` release tree.
 
 Does **not** run synthesis and does **not** mutate the flat production tree.
-After ``synthesis.final`` has written ``audio/``, ``mid/``, ``mix/``, and
-``stems.csv`` under ``SPDMX_dev/``, this script builds a **separate**
-distributable directory (default ``{OUTPUT_DIR}/SPDMX/``):
+After ``synthesis.final`` has written ``audio/``, ``mid/``, ``mix/``,
+``stems.csv``, and ``songs.csv`` under ``SPDMX_dev/``, this script builds a
+**separate** distributable directory (default ``{OUTPUT_DIR}/SPDMX/``):
 
 1. Assigns songs to a fixed number of roughly equal-sized download chunks
    (default 64, LPT bin packing).
 2. Hardlinks (or copies) stems + mix audio + dense MIDI into
    ``chunk_N/<song_id>/{k.flac,mix.flac,mix.mid}``.
 3. Writes packaged ``stems.csv`` (with ``chunk``) + ``chunks.csv`` + LICENSE/README.
-4. Builds song-level ``songs.csv`` (``subset:all``, ``subset:bdgp``, …).
+4. Packages ``songs.csv`` by remapping ``SPDMX_dev/songs.csv`` into chunk paths
+   (preferred; keeps ``song_length``). Falls back to aggregating from packaged
+   ``stems.csv`` if the dev songs table is missing.
 
 The flat ``{OUTPUT_DIR}/SPDMX_dev/`` render stays intact for lab use.
 """
@@ -18,6 +20,7 @@ The flat ``{OUTPUT_DIR}/SPDMX_dev/`` render stays intact for lab use.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -47,6 +50,7 @@ from synthesis.chunking import (
     build_chunks_manifest,
     chunk_dir_name,
     list_chunk_dirs,
+    rewrite_songs_table_for_chunks,
     rewrite_track_map_for_chunks,
     song_media_bytes,
 )
@@ -568,9 +572,39 @@ def chunk_dataset(
     packaged.to_csv(dest / f"{SPDMX_FILE_NAME}.csv", index=False)
     chunks.to_csv(dest / CHUNKS_FILE_NAME, index=False)
     write_spdmx_release_docs(dest)
-    # Media just published; trust packaged stems.csv paths (no second disk scan).
-    print("Writing songs.csv …", flush=True)
-    write_songs_table(dest, check_files=False, jobs=jobs)
+
+    source_songs = source / SPDMX_SONGS_FILE_NAME
+    dest_songs = dest / SPDMX_SONGS_FILE_NAME
+    if source_songs.is_file():
+        print(
+            f"Packaging songs.csv from {source_songs} (remap paths; "
+            "no mix FLAC re-reads) …",
+            flush=True,
+        )
+        songs = rewrite_songs_table_for_chunks(
+            pd.read_csv(source_songs), assignment,
+        )
+        songs.to_csv(dest_songs, index=False)
+        summary = {
+            "path": str(dest_songs),
+            "n_songs": int(len(songs)),
+            "n_with_song_length": (
+                int(songs["song_length"].notna().sum())
+                if "song_length" in songs.columns
+                else 0
+            ),
+            "source": str(source_songs),
+        }
+        with open(dest_songs.with_suffix(".summary.json"), "w") as f:
+            json.dump(summary, f, indent=2)
+    else:
+        # Media just published; trust packaged stems.csv paths (no second disk scan).
+        print(
+            f"No {source_songs.name} under {source}; building songs.csv "
+            "from packaged stems.csv …",
+            flush=True,
+        )
+        write_songs_table(dest, check_files=False, jobs=jobs)
     print("Chunk packaging complete.", flush=True)
     return packaged, chunks, assignment
 

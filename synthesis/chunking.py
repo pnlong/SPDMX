@@ -223,6 +223,46 @@ def rewrite_track_map_for_chunks(
     return out[PACKAGED_TRACK_MAP_COLUMNS + extra]
 
 
+def rewrite_songs_table_for_chunks(
+    songs: pd.DataFrame,
+    song_to_chunk: Mapping[str, str],
+) -> pd.DataFrame:
+    """Remap flat ``songs.csv`` paths into packaged ``chunk_N/...`` locations.
+
+    Keeps ``song_length``, subset flags, and other song-level columns — no
+    mix FLAC re-reads. Used by ``build_spdmx`` when ``SPDMX_dev/songs.csv``
+    was already written by the mix pass.
+    """
+    if "song_id" not in songs.columns:
+        raise ValueError("songs.csv missing required column: song_id")
+    missing = sorted(set(songs["song_id"].astype(str)) - set(song_to_chunk))
+    if missing:
+        preview = ", ".join(missing[:5])
+        more = "" if len(missing) <= 5 else f" (+{len(missing) - 5} more)"
+        raise ValueError(f"No chunk assignment for song_id(s): {preview}{more}")
+
+    out = songs.copy()
+    song_ids = out["song_id"].astype(str)
+    chunks = song_ids.map(lambda s: normalize_chunk_id(song_to_chunk[s]))
+    out["chunk"] = chunks
+    if "path" in out.columns:
+        out["path"] = [
+            packaged_audio_rel(chunk, song)
+            for song, chunk in zip(song_ids, chunks, strict=True)
+        ]
+    if "mid" in out.columns:
+        out["mid"] = [
+            packaged_mid_rel(chunk, song)
+            for song, chunk in zip(song_ids, chunks, strict=True)
+        ]
+    if "mix" in out.columns:
+        out["mix"] = [
+            packaged_mix_rel(chunk, song)
+            for song, chunk in zip(song_ids, chunks, strict=True)
+        ]
+    return out
+
+
 def build_chunks_manifest(
     packaged_table: pd.DataFrame,
     song_to_chunk: Mapping[str, str],

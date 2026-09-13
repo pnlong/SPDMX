@@ -53,12 +53,14 @@ Paper CSV: `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/eval/separation_sisdr.
 Separate from the BDGP / Slakh comparison: 2-source HTDemucs on songs with
 ≥2 stems (~88k). Target = one stem; other = mix − stem.
 
-**v2 training recipe** (`config_multistem.yaml`): stem-weighted L1
-(`stem:other = 5:1`), differentiable −SI-SDR on the stem source
-(`sisdr_loss_weight: 0.5`), energy-aware stem/crop sampling
-(`stem_min_energy_ratio: 0.05`), and `max_steps: 96000`. Plain L1 at 32k
-steps collapsed to the mixture; keep a backup of that run as
-`checkpoints/multistem_v1_baseline/` if you reset.
+**v3 training recipe** (`config_multistem.yaml`): stem-weighted L1
+(`stem:other = 8:1`), differentiable −SI-SDR on the stem source
+(`sisdr_loss_weight: 1.0`), energy-aware stem/crop sampling on **train and
+val** (`stem_min_energy_ratio: 0.05`; val searches tracks × crop grid),
+mix rebuilt as the stem sum (`rebuild_mix_from_stems: true`), and
+`max_steps: 96000`. Plain L1 at 32k steps collapsed to the mixture; v2 used
+weaker weights and val=`tracks[0]`@t=0 (silent intros), so keep backups under
+`checkpoints/multistem_v1_baseline/` / `…_v2_*` if you reset.
 
 ```bash
 # 1) Freeze train/val manifests from songs.csv
@@ -76,5 +78,6 @@ uv run python -m experiments.separation.eval_multistem --write-paper
 
 Checkpoints: `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/checkpoints/multistem/`.
 Success check: stem mean SI-SDR > 0 dB and clearly above `mixture_si_sdr`
-(aim ≥ +2 dB improvement). If loss is still flat by ~20–30k steps, raise
-stem / SI-SDR weights rather than burning the full budget blindly.
+(aim ≥ +2 dB improvement). If loss is still flat by ~20–30k steps after a
+v3 `--reset`, raise stem / SI-SDR weights further rather than burning the
+full budget blindly.

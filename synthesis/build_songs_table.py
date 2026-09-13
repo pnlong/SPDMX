@@ -5,7 +5,8 @@
 
 - ``programs`` — pipe-delimited sorted unique MIDI program numbers (easy makeup filters)
 - ``gm_classes`` — pipe-delimited GM class names (via program / drum flag)
-- ``song_length`` — mix ``.flac`` duration in seconds (via ``soundfile.info``)
+- ``song_length`` — mix ``.flac`` duration in seconds (from ``stems.csv`` when
+  already filled by mix/verify; otherwise ``soundfile.info`` on the mix)
 - ``subset:all`` — every song with ≥1 on-disk stem
 - ``subset:bdgp`` — bass, drums, guitar, and piano all present (GM mapping)
 
@@ -221,7 +222,25 @@ def _build_songs_table_trust_csv(
         )
     )
 
-    # Parallel mix header reads (the NFS-bound step).
+    # Parallel mix header reads only for songs missing song_length on stems.csv.
+    lengths: dict[str, float | None] = {}
+    if "song_length" in work.columns:
+        existing = (
+            grouped["song_length"]
+            .first()
+            .apply(lambda v: float(v) if pd.notna(v) else None)
+        )
+        for sid, dur in existing.items():
+            if dur is not None and float(dur) > 0:
+                lengths[str(sid)] = float(dur)
+        n_cached = len(lengths)
+        if n_cached:
+            print(
+                f"songs:mix-duration reusing {n_cached} song_length value(s) "
+                f"from {SPDMX_FILE_NAME}.csv",
+                flush=True,
+            )
+
     payloads: list[tuple[str, str]] = []
     for sid, mix_rel, path_rel in zip(
         songs["song_id"].astype(str),
@@ -229,6 +248,8 @@ def _build_songs_table_trust_csv(
         songs["path"] if "path" in songs.columns else [None] * len(songs),
         strict=True,
     ):
+        if sid in lengths:
+            continue
         mix_path = ""
         if mix_rel is not None and not (isinstance(mix_rel, float) and pd.isna(mix_rel)):
             cand = root / str(mix_rel).replace("\\", "/").lstrip("./")
@@ -238,27 +259,30 @@ def _build_songs_table_trust_csv(
             mix_path = str(cand)
         payloads.append((sid, mix_path))
 
-    lengths: dict[str, float | None] = {}
-    n_jobs = max(1, int(jobs))
-    label = (
-        "songs:mix-duration"
-        if n_jobs <= 1
-        else f"songs:mix-duration (-j {n_jobs})"
-    )
-    if n_jobs <= 1 or len(payloads) <= 1:
-        for item in tqdm(payloads, desc=label, unit="song"):
-            sid, dur = _duration_job(item)
-            lengths[sid] = dur
-    else:
-        chunksize = max(8, len(payloads) // (n_jobs * 8) or 8)
-        with ThreadPoolExecutor(max_workers=n_jobs) as pool:
-            for sid, dur in tqdm(
-                pool.map(_duration_job, payloads, chunksize=chunksize),
-                total=len(payloads),
-                desc=label,
-                unit="song",
-            ):
+    if payloads:
+        n_jobs = max(1, int(jobs))
+        label = (
+            "songs:mix-duration"
+            if n_jobs <= 1
+            else f"songs:mix-duration (-j {n_jobs})"
+        )
+        if n_jobs <= 1 or len(payloads) <= 1:
+            for item in tqdm(payloads, desc=label, unit="song"):
+                sid, dur = _duration_job(item)
                 lengths[sid] = dur
+        else:
+            chunksize = max(8, len(payloads) // (n_jobs * 8) or 8)
+            with ThreadPoolExecutor(max_workers=n_jobs) as pool:
+                for sid, dur in tqdm(
+                    pool.map(_duration_job, payloads, chunksize=chunksize),
+                    total=len(payloads),
+                    desc=label,
+                    unit="song",
+                ):
+                    lengths[sid] = dur
+    elif not lengths:
+        # No cached lengths and nothing to probe (should be rare).
+        lengths = {sid: None for sid in songs["song_id"].astype(str)}
 
     songs[SONG_LENGTH_COLUMN] = songs["song_id"].astype(str).map(lengths)
     return songs
