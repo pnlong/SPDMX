@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -381,10 +382,59 @@ def write_mp3(waveform: torch.Tensor, path: Path) -> Path:
 
 
 def write_flac(waveform: torch.Tensor, path: Path) -> Path:
-    """Write float32 waveform to FLAC using FLAC_SUBTYPE (PCM_16 on disk)."""
+    """Write float32 waveform to FLAC using FLAC_SUBTYPE (PCM_16 on disk).
+
+    Prefer ffmpeg for the encode: libsndfile's FLAC writer can emit streams that
+    ffmpeg later rejects (non-monotonous DTS / short decode) for some
+    peak-normalized stems, which then fails mix==sum(stems) verify. Fall back
+    to ``soundfile`` only when ffmpeg is unavailable.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     audio = to_stem_numpy(waveform).astype(np.float32)
-    sf.write(str(path), audio, SAMPLE_RATE, format="FLAC", subtype=FLAC_SUBTYPE)
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        sf.write(str(path), audio, SAMPLE_RATE, format="FLAC", subtype=FLAC_SUBTYPE)
+        return path
+
+    if audio.ndim == 1:
+        n_ch = 1
+        pcm = np.ascontiguousarray(audio, dtype=np.float32)
+    else:
+        n_ch = int(audio.shape[1])
+        pcm = np.ascontiguousarray(audio.reshape(-1), dtype=np.float32)
+
+    tmp = path.with_suffix(path.suffix + ".partial")
+    if tmp.exists():
+        tmp.unlink()
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "f32le",
+        "-ar",
+        str(SAMPLE_RATE),
+        "-ac",
+        str(n_ch),
+        "-i",
+        "pipe:0",
+        "-c:a",
+        "flac",
+        "-sample_fmt",
+        "s16",
+        "-f",
+        "flac",
+        str(tmp),
+    ]
+    proc = subprocess.run(cmd, input=pcm.tobytes(), capture_output=True)
+    if proc.returncode != 0 or not tmp.is_file() or tmp.stat().st_size <= 0:
+        if tmp.exists():
+            tmp.unlink()
+        err = (proc.stderr or proc.stdout or b"").decode("utf-8", "replace").strip()
+        raise RuntimeError(f"ffmpeg flac encode failed for {path}: {err or proc.returncode}")
+    tmp.replace(path)
     return path
 
 

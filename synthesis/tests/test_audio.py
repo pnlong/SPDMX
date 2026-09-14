@@ -125,6 +125,7 @@ def test_write_flac_stereo(tmp_path: Path, monkeypatch):
 
     captured = {}
     monkeypatch.setattr(audio_mod, "STEM_CHANNELS", 2)
+    monkeypatch.setattr(audio_mod.shutil, "which", lambda _: None)
 
     def fake_write(path, audio, sr, format, subtype):
         captured.update(shape=audio.shape)
@@ -135,6 +136,21 @@ def test_write_flac_stereo(tmp_path: Path, monkeypatch):
         tmp_path / "stem_0.flac",
     )
     assert captured["shape"] == (2, 2)
+
+
+def test_write_flac_uses_pcm_16_subtype(tmp_path: Path, monkeypatch):
+    import synthesis.audio as audio_mod
+
+    captured = {}
+    monkeypatch.setattr(audio_mod.shutil, "which", lambda _: None)
+
+    def fake_write(path, audio, sr, format, subtype):
+        captured.update(path=path, subtype=subtype, dtype=audio.dtype)
+
+    monkeypatch.setattr(audio_mod.sf, "write", fake_write)
+    write_flac(torch.ones(1, 100), tmp_path / "stem_0.flac")
+    assert captured["subtype"] == FLAC_SUBTYPE
+    assert captured["dtype"] == np.float32
 
 
 def test_loudness_normalize_non_silent():
@@ -356,6 +372,7 @@ def test_write_audio_uses_path_extension_over_format_arg(tmp_path: Path, monkeyp
     import synthesis.audio as audio_mod
 
     captured = {}
+    monkeypatch.setattr(audio_mod.shutil, "which", lambda _: None)
 
     def fake_write(path, audio, sr, format, subtype):
         captured.update(format=format, path=path)
@@ -388,6 +405,7 @@ def test_write_flac_uses_pcm_16_subtype(tmp_path: Path, monkeypatch):
     import synthesis.audio as audio_mod
 
     captured = {}
+    monkeypatch.setattr(audio_mod.shutil, "which", lambda _: None)
 
     def fake_write(path, audio, sr, format, subtype):
         captured.update(path=path, subtype=subtype, dtype=audio.dtype)

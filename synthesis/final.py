@@ -255,7 +255,7 @@ def log_recipe_plan(recipe, *, tables_dir: str, media_dir: str, only: str) -> No
     print(f"  This job: {only}")
 
 
-def log_next_pass(recipe, only: str) -> None:
+def log_next_pass(recipe, only: str, args=None) -> None:
     plan = pass_sequence(recipe)
 
     def _extra(nxt: str) -> str:
@@ -305,7 +305,9 @@ def log_next_pass(recipe, only: str) -> None:
         )
     if only == "mix":
         verify_note = ""
-        if getattr(args, "verify", False) or getattr(args, "repair_mix_sums", False):
+        if args is not None and (
+            getattr(args, "verify", False) or getattr(args, "repair_mix_sums", False)
+        ):
             verify_note = " Includes full-catalog mix=sum verify."
         print(
             "Mix writes summable audio/ stems and mix/<song_id>.flac "
@@ -740,7 +742,7 @@ def main(argv=None):
         )
         run_summable_mix(args, tables_dir, media_dir=media_dir, recipe=recipe)
 
-    log_next_pass(recipe, only)
+    log_next_pass(recipe, only, args)
     link_ablations_in_repo(args.output_dir)
 
 
