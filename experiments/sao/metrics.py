@@ -64,6 +64,20 @@ def _load_clap() -> Any | None:
     finally:
         torch.load = _orig_load  # type: ignore[assignment]
         model.model.load_state_dict = _orig_load_state_dict  # type: ignore[method-assign]
+
+    # Default tokenizer squeezes batch dim 1 → RoBERTa IndexError on modern transformers.
+    roberta = model.tokenize
+
+    def _tokenizer_keep_batch(text):
+        return roberta(
+            text,
+            padding="max_length",
+            truncation=True,
+            max_length=77,
+            return_tensors="pt",
+        )
+
+    model.tokenizer = _tokenizer_keep_batch
     return model
 
 
