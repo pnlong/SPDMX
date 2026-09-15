@@ -41,16 +41,29 @@ def _load_clap() -> Any | None:
     # laion_clap calls torch.load without weights_only=; PyTorch 2.6+ defaults True.
     _orig_load = torch.load
 
-    def _load_ckpt(*args, **kwargs):
+    def _torch_load(*args, **kwargs):
         kwargs.setdefault("weights_only", False)
         return _orig_load(*args, **kwargs)
 
     model = laion_clap.CLAP_Module(enable_fusion=False, device=_clap_device())
-    torch.load = _load_ckpt  # type: ignore[assignment]
+    # Older CLAP ckpts include RoBERTa position_ids; newer transformers reject them.
+    _orig_load_state_dict = model.model.load_state_dict
+
+    def _load_state_dict(state_dict, strict=True):  # noqa: ARG001
+        cleaned = {
+            k: v
+            for k, v in state_dict.items()
+            if not k.endswith("position_ids")
+        }
+        return _orig_load_state_dict(cleaned, strict=False)
+
+    torch.load = _torch_load  # type: ignore[assignment]
+    model.model.load_state_dict = _load_state_dict  # type: ignore[method-assign]
     try:
         model.load_ckpt()
     finally:
         torch.load = _orig_load  # type: ignore[assignment]
+        model.model.load_state_dict = _orig_load_state_dict  # type: ignore[method-assign]
     return model
 
 
