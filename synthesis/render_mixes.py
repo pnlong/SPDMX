@@ -765,6 +765,10 @@ def ffmpeg_sum_stems(
             "[aout]",
             "-c:a",
             "flac",
+            # Match write_flac: default flac compression can emit length-
+            # mismatched streams on some waveforms (ffmpeg 4.4).
+            "-compression_level",
+            "0",
             "-f",
             "flac",
             str(tmp),

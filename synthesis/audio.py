@@ -384,10 +384,12 @@ def write_mp3(waveform: torch.Tensor, path: Path) -> Path:
 def write_flac(waveform: torch.Tensor, path: Path) -> Path:
     """Write float32 waveform to FLAC using FLAC_SUBTYPE (PCM_16 on disk).
 
-    Prefer ffmpeg for the encode: libsndfile's FLAC writer can emit streams that
-    ffmpeg later rejects (non-monotonous DTS / short decode) for some
-    peak-normalized stems, which then fails mix==sum(stems) verify. Fall back
-    to ``soundfile`` only when ffmpeg is unavailable.
+    Encode via a temp WAV + ffmpeg at ``-compression_level 0``. Direct
+    ``soundfile`` FLAC writes, ``f32le`` pipes, and ffmpeg's default flac
+    compression (5) can emit streams that later ffmpeg decodes short (often
+    by 4096/4608 samples) for some peak-normalized stems, which then fails
+    mix==sum(stems) verify. Fall back to ``soundfile`` FLAC only when ffmpeg
+    is unavailable.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     audio = to_stem_numpy(waveform).astype(np.float32)
@@ -396,45 +398,47 @@ def write_flac(waveform: torch.Tensor, path: Path) -> Path:
         sf.write(str(path), audio, SAMPLE_RATE, format="FLAC", subtype=FLAC_SUBTYPE)
         return path
 
-    if audio.ndim == 1:
-        n_ch = 1
-        pcm = np.ascontiguousarray(audio, dtype=np.float32)
-    else:
-        n_ch = int(audio.shape[1])
-        pcm = np.ascontiguousarray(audio.reshape(-1), dtype=np.float32)
-
-    tmp = path.with_suffix(path.suffix + ".partial")
-    if tmp.exists():
-        tmp.unlink()
-    cmd = [
-        ffmpeg,
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "f32le",
-        "-ar",
-        str(SAMPLE_RATE),
-        "-ac",
-        str(n_ch),
-        "-i",
-        "pipe:0",
-        "-c:a",
-        "flac",
-        "-sample_fmt",
-        "s16",
-        "-f",
-        "flac",
-        str(tmp),
-    ]
-    proc = subprocess.run(cmd, input=pcm.tobytes(), capture_output=True)
-    if proc.returncode != 0 or not tmp.is_file() or tmp.stat().st_size <= 0:
+    tmp_wav = path.with_suffix(path.suffix + ".wav.partial")
+    tmp_flac = path.with_suffix(path.suffix + ".partial")
+    for tmp in (tmp_wav, tmp_flac):
         if tmp.exists():
             tmp.unlink()
-        err = (proc.stderr or proc.stdout or b"").decode("utf-8", "replace").strip()
-        raise RuntimeError(f"ffmpeg flac encode failed for {path}: {err or proc.returncode}")
-    tmp.replace(path)
+    try:
+        # WAV float is a faithful intermediate; ffmpeg then writes s16 FLAC.
+        sf.write(str(tmp_wav), audio, SAMPLE_RATE, format="WAV", subtype="FLOAT")
+        # compression_level 0: ffmpeg 4.4 default (5) can emit FLACs whose
+        # STREAMINFO length disagrees with the decoded body (often delta
+        # 4096/4608) for some LUFS/peak-normalized stems; mix==sum then fails.
+        cmd = [
+            ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(tmp_wav),
+            "-c:a",
+            "flac",
+            "-compression_level",
+            "0",
+            "-sample_fmt",
+            "s16",
+            "-f",
+            "flac",
+            str(tmp_flac),
+        ]
+        proc = subprocess.run(cmd, capture_output=True)
+        if proc.returncode != 0 or not tmp_flac.is_file() or tmp_flac.stat().st_size <= 0:
+            err = (proc.stderr or proc.stdout or b"").decode("utf-8", "replace").strip()
+            raise RuntimeError(
+                f"ffmpeg flac encode failed for {path}: {err or proc.returncode}"
+            )
+        tmp_flac.replace(path)
+    finally:
+        if tmp_wav.exists():
+            tmp_wav.unlink()
+        if tmp_flac.exists():
+            tmp_flac.unlink()
     return path
 
 
