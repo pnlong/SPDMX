@@ -111,8 +111,24 @@ def _clap_scores(manifest: list[dict], model: Any | None = None) -> float:
     return float(np.mean(scores)) if scores else float("nan")
 
 
+def _audio_only_dir(src: Path) -> Path:
+    """Temp dir of symlinks to audio files only (FAD scans every file in a folder)."""
+    import tempfile
+
+    exts = {".wav", ".flac", ".mp3", ".ogg", ".m4a", ".aac"}
+    files = sorted(p for p in src.iterdir() if p.is_file() and p.suffix.lower() in exts)
+    if not files:
+        raise FileNotFoundError(f"no audio files under {src}")
+    tmp = Path(tempfile.mkdtemp(prefix="sao_fad_"))
+    for p in files:
+        (tmp / p.name).symlink_to(p.resolve())
+    return tmp
+
+
 def _fad_score(gen_dir: Path, ref_dir: Path | None) -> float:
-    """OpenL3 FAD via frechet_audio_distance if available."""
+    """VGGish FAD via frechet_audio_distance if available."""
+    import shutil
+
     try:
         from frechet_audio_distance import FrechetAudioDistance
     except ImportError:
@@ -121,18 +137,35 @@ def _fad_score(gen_dir: Path, ref_dir: Path | None) -> float:
     if ref_dir is None or not ref_dir.is_dir():
         print(f"reference dir missing ({ref_dir}); FAD=NaN")
         return float("nan")
+
+    ref_audio = gen_audio = None
+    try:
+        ref_audio = _audio_only_dir(ref_dir)
+        gen_audio = _audio_only_dir(gen_dir)
+    except FileNotFoundError as exc:
+        print(f"FAD skipped: {exc}")
+        return float("nan")
+
     fad = FrechetAudioDistance(
         model_name="vggish",
         use_pca=False,
         use_activation=False,
         verbose=False,
     )
-    # Some versions use openl3 — try attribute fallback.
     try:
-        return float(fad.score(str(ref_dir), str(gen_dir)))
+        score = float(fad.score(str(ref_audio), str(gen_audio)))
+        # Some versions return -1 on internal failure.
+        if score < 0:
+            print(f"FAD returned {score} (library error); treating as NaN")
+            return float("nan")
+        return score
     except Exception as exc:  # noqa: BLE001
         print(f"FAD failed: {exc}")
         return float("nan")
+    finally:
+        for d in (ref_audio, gen_audio):
+            if d is not None:
+                shutil.rmtree(d, ignore_errors=True)
 
 
 def main() -> None:
