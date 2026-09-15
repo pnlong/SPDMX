@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -12,18 +13,61 @@ import pandas as pd
 from experiments.sao.paths import ARMS, load_config, resolve_dev_dir
 
 
-def _clap_scores(manifest: list[dict]) -> float:
-    """Mean CLAP audio-text similarity; falls back to NaN if deps missing."""
+def _clap_device() -> str:
+    """Pick a CLAP device; fall back to CPU when the GPU arch is unsupported."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return "cpu"
+    major, _minor = torch.cuda.get_device_capability(0)
+    # Current torch wheels often stop at sm_90; Blackwell is sm_120.
+    if major >= 12:
+        print(
+            f"CLAP: CUDA capability sm_{major}xx unsupported by this PyTorch; using CPU"
+        )
+        return "cpu"
+    return "cuda:0"
+
+
+def _load_clap() -> Any | None:
+    """Load LAION-CLAP; returns None if deps are missing."""
     try:
         import laion_clap
         import torch
+    except ImportError:
+        print("laion-clap / torch not installed; CLAP=NaN")
+        return None
+
+    # laion_clap calls torch.load without weights_only=; PyTorch 2.6+ defaults True.
+    _orig_load = torch.load
+
+    def _load_ckpt(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return _orig_load(*args, **kwargs)
+
+    model = laion_clap.CLAP_Module(enable_fusion=False, device=_clap_device())
+    torch.load = _load_ckpt  # type: ignore[assignment]
+    try:
+        model.load_ckpt()
+    finally:
+        torch.load = _orig_load  # type: ignore[assignment]
+    return model
+
+
+def _clap_scores(manifest: list[dict], model: Any | None = None) -> float:
+    """Mean CLAP audio-text similarity; falls back to NaN if deps missing."""
+    try:
+        import torch
         import torchaudio
     except ImportError:
-        print("laion-clap / torchaudio not installed; CLAP=NaN")
+        print("torchaudio not installed; CLAP=NaN")
         return float("nan")
 
-    model = laion_clap.CLAP_Module(enable_fusion=False)
-    model.load_ckpt()
+    if model is None:
+        model = _load_clap()
+    if model is None:
+        return float("nan")
+
     scores = []
     for row in manifest:
         path = row["path"]
@@ -85,6 +129,7 @@ def main() -> None:
     cfg = load_config(args.config)
     root = resolve_dev_dir(cfg)
     ref_dir = args.ref_dir
+    clap_model = _load_clap()
     rows = []
     for arm in ARMS:
         man_path = root / "generations" / arm / "manifest.json"
@@ -94,7 +139,7 @@ def main() -> None:
         with open(man_path) as f:
             manifest = json.load(f)
         gen_dir = root / "generations" / arm
-        clap = _clap_scores(manifest)
+        clap = _clap_scores(manifest, model=clap_model)
         fad = _fad_score(gen_dir, ref_dir)
         rows.append({"train_arm": arm, "fad": fad, "clap": clap, "n": len(manifest)})
 
