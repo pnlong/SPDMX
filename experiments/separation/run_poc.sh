@@ -18,7 +18,7 @@ uv run python -m experiments.separation.freeze_manifests
 echo "== train Demucs (GPU) =="
 uv run python -m experiments.separation.train --arm all
 
-echo "== eval → submission/data/separation_sisdr.csv =="
+echo "== eval → analysis/paper_data/separation_sisdr.csv (via --write-paper on OUTPUT_DIR) =="
 uv run python -m experiments.separation.eval --arm all --write-paper
 
 echo "== SAO (optional; needs SAO ckpt) =="
@@ -33,6 +33,6 @@ else
 fi
 
 echo "== regenerate paper figures =="
-uv run python -m submission.make_figures --only downstream
+uv run python -m analysis.make_figures --only downstream
 
 echo "Done. Recompile submission/main.tex"

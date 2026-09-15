@@ -187,6 +187,60 @@ def test_plot_gm_program_compare(tmp_path: Path):
     plot_gm_program_compare(original, corrected, out, top_n=10)
     assert out.exists()
 
+    split = tmp_path / "gm_program_counts_compare_by_source.png"
+    plot_gm_program_compare(
+        original,
+        corrected,
+        split,
+        top_n=10,
+        layout="by_source",
+    )
+    assert split.exists()
+
+
+def test_plot_gm_stems_vs_hours(tmp_path: Path):
+    from analysis.plots import plot_gm_stems_vs_hours
+
+    summary = pd.DataFrame(
+        [
+            {
+                "gm_id": 0,
+                "label": "Acoustic Grand Piano (0)",
+                "n_stems": 100,
+                "wall_hours": 10.0,
+                "active_hours": 8.0,
+            },
+            {
+                "gm_id": 52,
+                "label": "Choir Aahs (52)",
+                "n_stems": 40,
+                "wall_hours": 20.0,
+                "active_hours": 12.0,
+            },
+            {"gm_id": DRUM_GM_ID, "label": "Drums", "n_stems": 20, "wall_hours": 5.0, "active_hours": 1.5},
+        ]
+    )
+    out = tmp_path / "gm_stems_vs_hours.pdf"
+    plot_gm_stems_vs_hours(summary, out, top_n=3, hours_col="active_hours")
+    assert out.exists()
+
+
+def test_plot_stems_per_song(tmp_path: Path):
+    from analysis.plots import plot_stems_per_song
+
+    out = tmp_path / "stems_per_song.pdf"
+    plot_stems_per_song(
+        {
+            "labels": ["2", "3", "4", "20+"],
+            "counts": [100, 40, 20, 5],
+            "n_single": 200,
+            "n_multi": 165,
+            "n_total": 365,
+        },
+        out,
+    )
+    assert out.exists()
+
 
 def test_plot_keeps_drums_outside_top_n(tmp_path: Path):
     rows = [

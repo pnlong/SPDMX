@@ -20,6 +20,9 @@ def _savefig(
     """Save a figure with a transparent background (PDF/PNG/SVG)."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.patch.set_alpha(0.0)
+    for ax in fig.axes:
+        ax.set_facecolor("none")
     kwargs: dict = {
         "dpi": dpi,
         "bbox_inches": "tight",
@@ -203,31 +206,21 @@ def plot_gm_program_bar(
     plt.close(fig)
 
 
-def plot_gm_program_compare(
+def _gm_compare_rank_rows(
     stems_original: pd.DataFrame,
     stems_corrected: pd.DataFrame,
-    output_path: str | Path,
     *,
-    top_n: int = 10,
-    rank_by: str = "corrected",
-    show_percentages: bool = False,
-    figsize: tuple[float, float] = (7.0, 3.2),
-):
-    """Grouped horizontal bar chart: original vs register-corrected GM usage.
+    top_n: int,
+    rank_by: str,
+    exclude_gm_ids: set[int] | None = None,
+) -> tuple[list[tuple[int, str, float, float, float]], int, int]:
+    """Return ``(rank_rows, left_total, right_total)`` for GM compare plots.
 
-    Selects the top ``top_n`` programs by ``rank_by`` (``corrected`` or
-    ``original``) stem count and plots each program's share under both
-    inventories. The long tail is omitted (no ``Other`` bucket). Rows are
-    ordered by the ranking inventory (most → least). Default figsize is
-    wide (~2:1) so a column-width include stays short. No figure title.
+    Each rank row is ``(gm_id, label, pdmx_pct, spdmx_pct, rank_pct)``, ordered
+    most → least by the ranking inventory.
     """
-    import seaborn as sns
-
     from analysis.gm_programs import gm_program_paper_label
 
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    xlabel = "Stem share (%)"
     if rank_by not in {"corrected", "original"}:
         raise ValueError("rank_by must be 'corrected' or 'original'")
 
@@ -236,24 +229,21 @@ def plot_gm_program_compare(
     left_total = int(left_counts.sum())
     right_total = int(right_counts.sum())
     rank_counts = right_counts if rank_by == "corrected" else left_counts
-    rank_total = right_total if rank_by == "corrected" else left_total
+    if exclude_gm_ids:
+        rank_counts = rank_counts.drop(
+            labels=[g for g in exclude_gm_ids if g in rank_counts.index],
+            errors="ignore",
+        )
 
-    if rank_counts.empty or rank_total <= 0:
-        fig, ax = plt.subplots(figsize=figsize)
-        ax.set_ylabel("General MIDI Program")
-        ax.set_xlabel(xlabel)
-        _savefig(fig, output_path)
-        plt.close(fig)
-        return
+    if rank_counts.empty or (right_total if rank_by == "corrected" else left_total) <= 0:
+        return [], left_total, right_total
 
     if top_n <= 0 or len(rank_counts) <= top_n:
         ordered = list(rank_counts.sort_values(ascending=False).index)
     else:
         ordered = list(rank_counts.sort_values(ascending=False).head(top_n).index)
 
-    # PDMX = raw MIDI program_change inventory; SPDMX = register-corrected inventory.
-    hue_order = ["PDMX", "SPDMX"]
-    rank_rows: list[tuple[str, float, float, float]] = []
+    rank_rows: list[tuple[int, str, float, float, float]] = []
     for gm_id in ordered:
         label = gm_program_paper_label(int(gm_id))
         left_n = int(left_counts.get(gm_id, 0))
@@ -261,20 +251,56 @@ def plot_gm_program_compare(
         left_pct = 100.0 * left_n / left_total if left_total else 0.0
         right_pct = 100.0 * right_n / right_total if right_total else 0.0
         rank_pct = right_pct if rank_by == "corrected" else left_pct
-        rank_rows.append((label, left_pct, right_pct, rank_pct))
+        rank_rows.append((int(gm_id), label, left_pct, right_pct, rank_pct))
 
-    rank_rows.sort(key=lambda row: (-row[3], row[0]))
-    labels = [label for label, _, _, _ in rank_rows]
+    rank_rows.sort(key=lambda row: (-row[4], row[1]))
+    return rank_rows, left_total, right_total
 
+
+def _gm_compare_plot_df(
+    rank_rows: list[tuple[int, str, float, float, float]],
+) -> tuple[pd.DataFrame, list[str]]:
+    labels = [label for _, label, _, _, _ in rank_rows]
     rows: list[dict] = []
-    for label, left_pct, right_pct, _rank_pct in rank_rows:
+    for _gm_id, label, left_pct, right_pct, _rank_pct in rank_rows:
         rows.append({"label": label, "source": "PDMX", "pct": left_pct})
         rows.append({"label": label, "source": "SPDMX", "pct": right_pct})
-    plot_df = pd.DataFrame(rows)
+    return pd.DataFrame(rows), labels
 
-    sns.set_theme(style="ticks", context="paper")
-    try:
-        fig, ax = plt.subplots(figsize=figsize)
+
+def _draw_gm_compare_bars(
+    ax,
+    plot_df: pd.DataFrame,
+    labels: list[str],
+    *,
+    hue_order: list[str] | None,
+    xlabel: str,
+    ylabel: str | None,
+    show_percentages: bool,
+    legend: bool,
+    color: str | None = None,
+):
+    import seaborn as sns
+
+    if plot_df.empty:
+        ax.set_xlabel(xlabel)
+        if ylabel:
+            ax.set_ylabel(ylabel)
+        return
+
+    if hue_order is None:
+        # Single-source panel: one bar color, no legend clutter.
+        sns.barplot(
+            data=plot_df,
+            y="label",
+            x="pct",
+            order=labels,
+            orient="h",
+            ax=ax,
+            color=color or "C0",
+            saturation=0.9,
+        )
+    else:
         sns.barplot(
             data=plot_df,
             y="label",
@@ -287,23 +313,359 @@ def plot_gm_program_compare(
             palette={"PDMX": "C0", "SPDMX": "C1"},
             saturation=0.9,
         )
-        ax.set_xlabel(xlabel)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel if ylabel else "")
+    ax.set_title("")
+    if legend and hue_order is not None:
+        ax.legend(loc="lower right", frameon=True, fontsize=7, title=None)
+    else:
+        legend_obj = ax.get_legend()
+        if legend_obj is not None:
+            legend_obj.remove()
+    x_max = max(float(plot_df["pct"].max()) * 1.18, 1.0)
+    ax.set_xlim(0, x_max)
+    _style_gm_count_axis(ax)
+    sns.despine(ax=ax)
+    ax.tick_params(axis="y", labelsize=7)
+    ax.tick_params(axis="x", labelsize=7)
+
+    if show_percentages:
+        for container in ax.containers:
+            ax.bar_label(container, fmt="%.0f%%", padding=2, fontsize=6)
+
+
+def plot_gm_program_compare(
+    stems_original: pd.DataFrame,
+    stems_corrected: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    top_n: int = 10,
+    rank_by: str = "corrected",
+    show_percentages: bool = False,
+    figsize: tuple[float, float] = (7.0, 3.2),
+    layout: str = "single",
+):
+    """Horizontal bar chart: original vs register-corrected GM usage.
+
+    Selects the top ``top_n`` programs by ``rank_by`` (``corrected`` or
+    ``original``) stem count and plots each program's share under both
+    inventories. The long tail is omitted (no ``Other`` bucket). Rows are
+    ordered by the ranking inventory (most → least). Piano is always kept
+    when it ranks in the top ``top_n``.
+
+    ``layout="single"`` overlays PDMX/SPDMX as grouped bars.
+    ``layout="by_source"`` uses two panels with the same program list and
+    independent x-scales labeled PDMX and SPDMX. That keeps piano visible in
+    both panels while letting the corrected inventory use its own scale.
+    """
+    import seaborn as sns
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    xlabel = "Stem share (%)"
+    hue_order = ["PDMX", "SPDMX"]
+    if layout not in {"single", "by_source"}:
+        raise ValueError("layout must be 'single' or 'by_source'")
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        rank_rows, _left_total, _right_total = _gm_compare_rank_rows(
+            stems_original,
+            stems_corrected,
+            top_n=top_n,
+            rank_by=rank_by,
+        )
+        plot_df, labels = _gm_compare_plot_df(rank_rows)
+
+        if layout == "single":
+            fig, ax = plt.subplots(figsize=figsize)
+            if plot_df.empty:
+                ax.set_ylabel("General MIDI Program")
+                ax.set_xlabel(xlabel)
+            else:
+                _draw_gm_compare_bars(
+                    ax,
+                    plot_df,
+                    labels,
+                    hue_order=hue_order,
+                    xlabel=xlabel,
+                    ylabel="General MIDI Program",
+                    show_percentages=show_percentages,
+                    legend=True,
+                )
+            fig.tight_layout()
+            _savefig(fig, output_path, pad_inches=0.08)
+            plt.close(fig)
+            return
+
+        # Two panels, same programs (incl. piano), independent x-scales.
+        fig_w, fig_h = figsize
+        fig, axes = plt.subplots(
+            1,
+            2,
+            figsize=(max(fig_w, 7.0), max(fig_h, 3.4)),
+            sharey=True,
+            gridspec_kw={"wspace": 0.08},
+            layout="constrained",
+        )
+        for ax, source, color, title in (
+            (axes[0], "PDMX", "C0", "PDMX"),
+            (axes[1], "SPDMX", "C1", "SPDMX"),
+        ):
+            source_df = plot_df[plot_df["source"] == source] if not plot_df.empty else plot_df
+            _draw_gm_compare_bars(
+                ax,
+                source_df,
+                labels,
+                hue_order=None,
+                xlabel=xlabel,
+                ylabel="General MIDI Program" if ax is axes[0] else None,
+                show_percentages=show_percentages,
+                legend=False,
+                color=color,
+            )
+            ax.set_title(title, fontsize=11, pad=4)
+        # sharey already hides right y tick labels; drop duplicate ylabel text.
+        axes[1].set_ylabel("")
+        _savefig(fig, output_path, pad_inches=0.08)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()
+
+
+def plot_gm_stems_vs_hours(
+    summary: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    top_n: int = 10,
+    rank_by: str = "stems",
+    hours_col: str = "wall_hours",
+    hours_title: str = "Hours",
+    figsize: tuple[float, float] = (7.0, 3.4),
+):
+    """Two-panel SPDMX inventory: stem counts vs hours with %-share bar labels.
+
+    ``summary`` needs ``gm_id``, ``label``, ``n_stems``, and ``hours_col``
+    (default ``wall_hours``; use ``active_hours`` for RMS-gated duration).
+    X-axes are absolute Count / Hours; bar end-labels show corpus share (%).
+    """
+    import seaborn as sns
+
+    from analysis.gm_programs import gm_program_paper_label
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if rank_by not in {"stems", "hours"}:
+        raise ValueError("rank_by must be 'stems' or 'hours'")
+    if hours_col not in {"wall_hours", "active_hours"}:
+        raise ValueError("hours_col must be 'wall_hours' or 'active_hours'")
+
+    df = summary.copy()
+    if df.empty:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.set_xlabel("Count ($\\times 10^3$)")
+        _savefig(fig, output_path)
+        plt.close(fig)
+        return
+
+    if hours_col not in df.columns:
+        raise KeyError(f"summary is missing hours column {hours_col!r}")
+    if "label" not in df.columns:
+        df["label"] = df["gm_id"].map(lambda g: gm_program_paper_label(int(g)))
+    n_total = float(df["n_stems"].sum())
+    h_total = float(df[hours_col].sum())
+    df["stem_share"] = 100.0 * df["n_stems"] / n_total if n_total else 0.0
+    df["hour_share"] = 100.0 * df[hours_col] / h_total if h_total else 0.0
+    sort_col = "n_stems" if rank_by == "stems" else hours_col
+    head = df.sort_values(sort_col, ascending=False).head(int(top_n))
+    labels = [str(x) for x in head["label"].tolist()]
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        fig, axes = plt.subplots(
+            1,
+            2,
+            figsize=(max(figsize[0], 7.0), max(figsize[1], 3.4)),
+            sharey=True,
+            gridspec_kw={"wspace": 0.12},
+            layout="constrained",
+        )
+        scale = 1000.0
+        panel_specs = (
+            (axes[0], head["n_stems"] / scale, head["stem_share"], "C0", "Stems", "Count ($\\times 10^3$)"),
+            (
+                axes[1],
+                head[hours_col] / scale,
+                head["hour_share"],
+                "C1",
+                hours_title,
+                "Hours ($\\times 10^3$)",
+            ),
+        )
+        for ax, values, shares, color, title, xlabel in panel_specs:
+            plot_df = pd.DataFrame(
+                {
+                    "label": labels,
+                    "value": [float(v) for v in values],
+                    "share": [float(s) for s in shares],
+                }
+            )
+            sns.barplot(
+                data=plot_df,
+                y="label",
+                x="value",
+                order=labels,
+                orient="h",
+                ax=ax,
+                color=color,
+                saturation=0.9,
+            )
+            x_max = max(float(plot_df["value"].max()) * 1.28, 1.0)
+            ax.set_xlim(0, x_max)
+            if ax.containers:
+                pct_labels = [f"{share:.0f}%" for share in plot_df["share"]]
+                ax.bar_label(ax.containers[0], labels=pct_labels, padding=2, fontsize=6)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("General MIDI Program" if ax is axes[0] else "")
+            ax.set_title(title, fontsize=11, pad=4)
+            _style_gm_count_axis(ax)
+            sns.despine(ax=ax)
+            ax.tick_params(axis="y", labelsize=7)
+            ax.tick_params(axis="x", labelsize=7)
+        axes[1].set_ylabel("")
+        _savefig(fig, output_path, pad_inches=0.08)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()
+
+
+
+def plot_instrument_active_hours(
+    summary: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    top_n: int = 15,
+    figsize: tuple[float, float] = (3.45, 4.2),
+):
+    """Horizontal bars: wall-clock vs RMS-active hours for top GM programs."""
+    import seaborn as sns
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if summary is None or summary.empty:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.set_xlabel("Hours")
+        ax.set_ylabel("General MIDI Program")
+        _savefig(fig, output_path)
+        plt.close(fig)
+        return
+
+    head = summary.head(int(top_n)).copy()
+    # Plot top → bottom as most → least active hours.
+    head = head.iloc[::-1]
+    rows: list[dict] = []
+    for row in head.itertuples(index=False):
+        label = str(getattr(row, "label"))
+        rows.append({"label": label, "kind": "Wall clock", "hours": float(getattr(row, "wall_hours"))})
+        rows.append({"label": label, "kind": "RMS-active", "hours": float(getattr(row, "active_hours"))})
+    plot_df = pd.DataFrame(rows)
+    labels = [str(x) for x in head["label"].tolist()]
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        fig, ax = plt.subplots(figsize=figsize)
+        sns.barplot(
+            data=plot_df,
+            y="label",
+            x="hours",
+            hue="kind",
+            order=labels,
+            hue_order=["Wall clock", "RMS-active"],
+            orient="h",
+            ax=ax,
+            palette={"Wall clock": "C0", "RMS-active": "C1"},
+            saturation=0.9,
+        )
+        ax.set_xlabel("Hours")
         ax.set_ylabel("General MIDI Program")
         ax.set_title("")
-        ax.legend(loc="lower right", frameon=True, fontsize=8, title=None)
-        x_max = max(float(plot_df["pct"].max()) * 1.18, 1.0)
-        ax.set_xlim(0, x_max)
+        ax.legend(loc="lower right", frameon=True, fontsize=7, title=None)
         _style_gm_count_axis(ax)
         sns.despine(ax=ax)
-        ax.tick_params(axis="y", labelsize=8)
-        ax.tick_params(axis="x", labelsize=8)
-
-        if show_percentages:
-            for container in ax.containers:
-                ax.bar_label(container, fmt="%.0f%%", padding=2, fontsize=7)
-
+        ax.tick_params(axis="y", labelsize=7)
+        ax.tick_params(axis="x", labelsize=7)
         fig.tight_layout()
         _savefig(fig, output_path, pad_inches=0.08)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()
+
+
+def plot_stems_per_song(
+    hist: dict,
+    output_path: str | Path,
+    *,
+    figsize: tuple[float, float] = (3.4, 2.4),
+):
+    """Vertical histogram of stems per song for multi-stem songs.
+
+    Expects the ``tracks_per_song.json`` schema from ``docs/export_page_data``:
+    ``labels``, ``counts``, plus optional ``n_single`` / ``n_multi`` /
+    ``n_total`` for captions (not drawn on the figure).
+    """
+    import seaborn as sns
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    labels = [str(x) for x in hist.get("labels", [])]
+    counts = [int(x) for x in hist.get("counts", [])]
+    if len(labels) != len(counts):
+        raise ValueError("hist labels and counts must have equal length")
+    # Normalize legacy overflow labels that collide with the exact ``20`` tick.
+    labels = [
+        "20+" if lab in {">20+", ">20", "20+"} and i == len(labels) - 1 else lab
+        for i, lab in enumerate(labels)
+    ]
+    # If both an exact ``20`` and a trailing overflow tick exist, merge them.
+    if (
+        len(labels) >= 2
+        and labels[-1] == "20+"
+        and labels[-2] == "20"
+    ):
+        labels = labels[:-2] + ["20+"]
+        counts = counts[:-2] + [counts[-2] + counts[-1]]
+
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.bar(range(len(labels)), counts, color="C0", alpha=0.9, width=0.85)
+        ax.set_xticks(range(len(labels)))
+        # Show every other exact-count tick (keep first and overflow) to avoid
+        # collisions like ``19`` vs ``20+`` at column width.
+        tick_labels: list[str] = []
+        last_i = len(labels) - 1
+        for i, lab in enumerate(labels):
+            if i == 0 or i == last_i or lab.endswith("+"):
+                tick_labels.append(lab)
+            elif lab.isdigit() and int(lab) % 2 == 0:
+                tick_labels.append(lab)
+            else:
+                tick_labels.append("")
+        ax.set_xticklabels(tick_labels, fontsize=6)
+        ax.set_xlabel("Stems per song")
+        ax.set_ylabel("Songs")
+        ax.set_title("")
+        ax.set_axisbelow(True)
+        ax.yaxis.grid(True, linestyle="--", linewidth=0.7, alpha=0.45, color="0.5")
+        ax.xaxis.grid(False)
+        sns.despine(ax=ax)
+        ax.tick_params(axis="y", labelsize=7)
+        ax.tick_params(axis="x", length=2)
+
+        fig.tight_layout()
+        _savefig(fig, output_path, pad_inches=0.06)
         plt.close(fig)
     finally:
         sns.reset_defaults()

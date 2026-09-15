@@ -80,12 +80,14 @@ def _histogram(values: pd.Series, *, max_bin: int = 20, min_bin: int = 1) -> dic
     counts = Counter(int(v) for v in values.dropna().astype(int))
     labels: list[str] = []
     data: list[int] = []
-    for n in range(min_bin, max_bin + 1):
+    # Exact bins up to max_bin-1; final bucket is ``{max_bin}+`` (count ≥ max_bin).
+    last_exact = max(min_bin, max_bin) - 1
+    for n in range(min_bin, last_exact + 1):
         labels.append(str(n))
         data.append(int(counts.get(n, 0)))
-    overflow = sum(c for k, c in counts.items() if k > max_bin)
-    if overflow:
-        labels.append(f">{max_bin}+")
+    overflow = sum(c for k, c in counts.items() if k >= max_bin)
+    if overflow or max_bin >= min_bin:
+        labels.append(f"{max_bin}+")
         data.append(int(overflow))
     return {"labels": labels, "counts": data}
 

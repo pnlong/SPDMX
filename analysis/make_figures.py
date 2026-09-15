@@ -3,26 +3,30 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
 
+from analysis.gm_programs import DRUM_GM_ID, gm_program_paper_label
 from analysis.plots import (
+    _savefig,
     plot_ablation_listening,
     plot_ablation_listening_panels,
     plot_chunk_layout,
     plot_downstream_poc,
-    plot_gm_program_compare,
+    plot_gm_stems_vs_hours,
     plot_sao_metrics,
     plot_separation_multistem,
     plot_separation_sisdr,
+    plot_stems_per_song,
 )
-from shared.config import OUTPUT_DIR
+from shared.config import OUTPUT_DIR, SPDMX_DEV_DIR_NAME, SPDMX_FILE_NAME
 from synthesis.chunking import CHUNKS_FILE_NAME
 
-FIGURES_DIR = Path(__file__).resolve().parent / "figs"
-# Local placeholders under submission/data/; real metrics live on SPDMX_OUTPUT_DIR.
-DATA_DIR = Path(__file__).resolve().parent / "data"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+FIGURES_DIR = REPO_ROOT / "submission" / "figs"
+DATA_DIR = REPO_ROOT / "analysis" / "paper_data"
 SEP_PAPER_CSV = (
     Path(OUTPUT_DIR) / "dev" / "experiments" / "separation" / "eval" / "separation_sisdr.csv"
 )
@@ -43,33 +47,100 @@ INSTRUMENTS_DIR = (
 ORIGINAL_STEMS = INSTRUMENTS_DIR / "gm_program_stems.csv"
 CORRECTED_STEMS = INSTRUMENTS_DIR / "gm_program_stems_corrected.csv"
 CHUNKS_CSV = Path(OUTPUT_DIR) / "SPDMX" / CHUNKS_FILE_NAME
+TRACKS_PER_SONG_JSON = DATA_DIR / "tracks_per_song.json"
+TRACKS_PER_SONG_DOCS = REPO_ROOT / "docs" / "data" / "tracks_per_song.json"
+SPDMX_DEV_STEMS = Path("/deepfreeze/share/SPDMX") / SPDMX_DEV_DIR_NAME / f"{SPDMX_FILE_NAME}.csv"
+SPDMX_DEV_STEMS_FALLBACK = Path(OUTPUT_DIR) / SPDMX_DEV_DIR_NAME / f"{SPDMX_FILE_NAME}.csv"
+ACTIVE_HOURS_CSV = REPO_ROOT / "analysis" / "output" / "active_hours" / "program_active_hours.csv"
+ACTIVE_HOURS_CSV_DATA = DATA_DIR / "program_active_hours.csv"
 
 
 def _resolve_paper_csv(preferred: Path, fallback_name: str) -> Path:
-    """Prefer deepfreeze experiment outputs; fall back to repo submission/data/."""
+    """Prefer deepfreeze experiment outputs; fall back to analysis/paper_data/."""
     if preferred.is_file():
         return preferred
     return DATA_DIR / fallback_name
 
 
+def _spdmx_program_hours_summary(stems_csv: Path) -> pd.DataFrame:
+    stems = pd.read_csv(stems_csv, usecols=["program", "is_drum", "song_length"])
+    gm_ids = [
+        DRUM_GM_ID if bool(is_drum) else int(program)
+        for program, is_drum in zip(stems["program"], stems["is_drum"])
+    ]
+    stems = stems.assign(gm_id=gm_ids)
+    grouped = (
+        stems.groupby("gm_id", sort=False)
+        .agg(n_stems=("song_length", "size"), wall_seconds=("song_length", "sum"))
+        .reset_index()
+    )
+    grouped["wall_hours"] = grouped["wall_seconds"] / 3600.0
+    grouped["label"] = grouped["gm_id"].map(lambda g: gm_program_paper_label(int(g)))
+    return grouped
+
+
+def _attach_active_hours(summary: pd.DataFrame) -> tuple[pd.DataFrame, bool]:
+    """Join RMS-active hours when ``program_active_hours.csv`` is available."""
+    active_path = ACTIVE_HOURS_CSV if ACTIVE_HOURS_CSV.is_file() else ACTIVE_HOURS_CSV_DATA
+    if not active_path.is_file():
+        return summary, False
+    active = pd.read_csv(active_path, usecols=["gm_id", "active_hours", "n_stems"])
+    n_measured = int(active["n_stems"].sum())
+    merged = summary.drop(columns=["active_hours"], errors="ignore").merge(
+        active[["gm_id", "active_hours"]],
+        on="gm_id",
+        how="left",
+    )
+    merged["active_hours"] = merged["active_hours"].fillna(0.0)
+    print(
+        f"using RMS-active hours from {active_path} "
+        f"({n_measured:,} measured stems)",
+        flush=True,
+    )
+    return merged, True
+
+
 def make_gm_program_compare_figure(
     *,
     top_n: int = 10,
-    rank_by: str = "corrected",
-    show_percentages: bool = False,
+    rank_by: str = "stems",
 ) -> Path:
-    original = pd.read_csv(ORIGINAL_STEMS)
-    corrected = pd.read_csv(CORRECTED_STEMS)
+    """Stem-count vs RMS-active (or wall-clock) hour shares for SPDMX."""
+    stems_csv = SPDMX_DEV_STEMS if SPDMX_DEV_STEMS.is_file() else SPDMX_DEV_STEMS_FALLBACK
+    if not stems_csv.is_file():
+        raise FileNotFoundError(f"missing SPDMX stems table: {stems_csv}")
+    summary = _spdmx_program_hours_summary(stems_csv)
+    summary, has_active = _attach_active_hours(summary)
+    hours_col = "active_hours" if has_active else "wall_hours"
     out = FIGURES_DIR / "gm_program_counts_compare.pdf"
-    plot_gm_program_compare(
-        original,
-        corrected,
+    plot_gm_stems_vs_hours(
+        summary,
         out,
         top_n=top_n,
         rank_by=rank_by,
-        show_percentages=show_percentages,
-        figsize=(7.0, 3.2),
+        hours_col=hours_col,
+        hours_title="Hours",
+        figsize=(7.0, 3.4),
     )
+    summary_out = DATA_DIR / "program_stem_hours.csv"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    summary.sort_values("n_stems", ascending=False).to_csv(summary_out, index=False)
+    if has_active:
+        ACTIVE_HOURS_CSV_DATA.parent.mkdir(parents=True, exist_ok=True)
+        src = ACTIVE_HOURS_CSV if ACTIVE_HOURS_CSV.is_file() else ACTIVE_HOURS_CSV_DATA
+        if src.is_file() and src.resolve() != ACTIVE_HOURS_CSV_DATA.resolve():
+            ACTIVE_HOURS_CSV_DATA.write_text(src.read_text())
+    return out
+
+
+def make_stems_per_song_figure() -> Path | None:
+    path = TRACKS_PER_SONG_JSON if TRACKS_PER_SONG_JSON.is_file() else TRACKS_PER_SONG_DOCS
+    if not path.is_file():
+        print(f"skip stems-per-song figure: missing {TRACKS_PER_SONG_JSON} and {TRACKS_PER_SONG_DOCS}")
+        return None
+    hist = json.loads(path.read_text())
+    out = FIGURES_DIR / "stems_per_song.pdf"
+    plot_stems_per_song(hist, out, figsize=(3.45, 2.35))
     return out
 
 
@@ -184,10 +255,11 @@ def _placeholder_figure(
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=figsize)
+    fig.patch.set_alpha(0.0)
+    ax.set_facecolor("none")
     ax.axis("off")
     ax.text(0.5, 0.5, message, ha="center", va="center", fontsize=10)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, bbox_inches="tight", transparent=True)
+    _savefig(fig, path)
     plt.close(fig)
 
 
@@ -196,13 +268,22 @@ def main() -> None:
     parser.add_argument("--top-n", type=int, default=10)
     parser.add_argument(
         "--rank-by",
-        choices=("corrected", "original"),
-        default="corrected",
+        choices=("stems", "hours"),
+        default="stems",
+        help="Rank the shared GM program list by stem count or wall-clock hours.",
     )
-    parser.add_argument("--show-percentages", action="store_true")
     parser.add_argument(
         "--only",
-        choices=("gm", "ablation", "separation", "sao", "downstream", "chunk", "all"),
+        choices=(
+            "gm",
+            "stems",
+            "ablation",
+            "separation",
+            "sao",
+            "downstream",
+            "chunk",
+            "all",
+        ),
         default="all",
     )
     args = parser.parse_args()
@@ -211,16 +292,22 @@ def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
 
-    if args.only in ("gm", "all") and ORIGINAL_STEMS.is_file() and CORRECTED_STEMS.is_file():
-        written.append(
-            make_gm_program_compare_figure(
-                top_n=args.top_n,
-                rank_by=args.rank_by,
-                show_percentages=args.show_percentages,
+    if args.only in ("gm", "all"):
+        stems_csv = SPDMX_DEV_STEMS if SPDMX_DEV_STEMS.is_file() else SPDMX_DEV_STEMS_FALLBACK
+        if stems_csv.is_file():
+            written.append(
+                make_gm_program_compare_figure(
+                    top_n=args.top_n,
+                    rank_by=args.rank_by,
+                )
             )
-        )
-    elif args.only in ("gm", "all"):
-        print(f"skip GM figure: missing {ORIGINAL_STEMS} or {CORRECTED_STEMS}")
+        else:
+            print(f"skip GM figure: missing {stems_csv}")
+
+    if args.only in ("stems", "all"):
+        p = make_stems_per_song_figure()
+        if p:
+            written.append(p)
 
     if args.only in ("ablation", "all"):
         p = make_ablation_listening_figure()
@@ -236,7 +323,6 @@ def main() -> None:
             written.append(p)
 
     if args.only == "downstream":
-        # Kept for ad-hoc use; paper uses separate separation / SAO figures.
         written.append(make_downstream_figure())
 
     if args.only in ("chunk", "all"):
