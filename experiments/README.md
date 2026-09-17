@@ -40,7 +40,7 @@ experiments/
 ├── model_listening/          # Test 2: SAO downstream comparison (port 8768)
 ├── separation/               # Hybrid Demucs matched-budget PoC
 ├── sao/                      # Stable Audio Open fine-tune PoC
-├── transcription/            # Multi-instrument AMT scale-up (C1 / YourMT3)
+├── transcription/            # Multi-instrument AMT scale-up (YourMT3)
 ├── streamgen/                # Streaming accompaniment (stream-music-gen)
 ├── patch_sweep/              # Slakh: soundfonts, FX, program pools
 │   └── soundfonts.yaml       # candidate GM banks (phase 1)

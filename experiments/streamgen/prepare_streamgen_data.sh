@@ -21,7 +21,7 @@
 #   # Smoke: tiny SPDMX index + skip mixdown
 #   bash experiments/streamgen/prepare_streamgen_data.sh --datasets spdmx --max-songs 50 --skip-dump
 #
-#   # Tune DAC GPU chunking (default: 5s windows, batch 4)
+#   # Tune DAC GPU packing (fixed windows packed across stems; default batch 8)
 #   bash experiments/streamgen/prepare_streamgen_data.sh --gpu 1 --win-duration 5 --chunk-batch-size 8
 #
 set -euo pipefail
@@ -38,7 +38,7 @@ DAC_SRC="${DAC_WEIGHTS:-/home/pnlong/jazz-standard-dataset/experiments/live/stre
 DATASETS="slakh2100"
 GPU="${CUDA_VISIBLE_DEVICES:-1}"
 WIN_DURATION=5
-CHUNK_BATCH=4
+CHUNK_BATCH=8
 NUM_WORKERS=8
 MAX_SONGS=""
 SKIP_DAC=0

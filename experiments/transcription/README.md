@@ -1,4 +1,4 @@
-# Transcription C1 — multi-instrument AMT scale-up
+# Transcription — multi-instrument AMT scale-up
 
 **Question:** Holding a multi-instrument AMT model fixed, does more multitrack
 data (SPDMX) beat Slakh2100-redux on Slakh-test note F1?
@@ -55,19 +55,18 @@ uv run python -m experiments.transcription.manifest_to_yourmt3_indexes
 uv run python -m experiments.transcription.manifest_to_yourmt3_indexes --arms spdmx --max-songs 20
 ```
 
-Then train (from YourMT3 `amt/src`, GPU of your choice):
+Then train:
 
 ```bash
-cd experiments/transcription/YourMT3/amt/src
-export PYTHONPATH=$PWD:${PYTHONPATH:-}
+# Slakh arm (GPU 1)
+uv run python -m experiments.transcription.train --arm slakh --gpu 1
 
-# Slakh arm
-CUDA_VISIBLE_DEVICES=1 uv run --project /home/pnlong/spdmx python train.py \
-  c1_slakh_run -d c1_slakh -p spdmx_c1 --max-steps 100000 -wb offline
-
-# SPDMX arm
-CUDA_VISIBLE_DEVICES=2 uv run --project /home/pnlong/spdmx python train.py \
-  c1_spdmx_run -d spdmx -p spdmx_c1 --max-steps 100000 -wb offline
+# SPDMX arm (GPU 2)
+uv run python -m experiments.transcription.train --arm spdmx --gpu 2
 ```
 
-Presets added by the converter: `c1_slakh`, `spdmx`, `spdmx_hm`, `c1_both`, multi `c1_slakh_vs_spdmx`.
+This wraps YourMT3's `amt/src/train.py`. The first positional arg there is only an
+experiment id (checkpoints / W&B); the wrapper defaults it to the arm name.
+Pass extras after `--`, e.g. `-- --precision 32`.
+
+Presets added by the converter: `slakh_redux`, `spdmx`, `spdmx_hm`, `slakh_spdmx`, multi `slakh_vs_spdmx`.

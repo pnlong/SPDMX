@@ -1,4 +1,4 @@
-"""Paths and config for multi-instrument transcription (C1) pilots."""
+"""Paths and config for multi-instrument transcription pilots."""
 
 from __future__ import annotations
 

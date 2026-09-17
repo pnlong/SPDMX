@@ -1,4 +1,4 @@
-# Multi-instrument transcription C1 (YourMT3 / MT3-style scale-up).
+# Multi-instrument transcription (YourMT3 / MT3-style scale-up).
 min_stems: 2
 seed: 43
 # Matched step budget (YourMT3 trainer should honor this when wired).
