@@ -1,11 +1,31 @@
 # SPDMX adapter for stream-music-gen
 
-1. `git clone https://github.com/lukewys/stream-music-gen`
-2. Copy or symlink `spdmx_multitrack.jsonl` into the upstream data root.
-3. Implement `stream_music_gen/dataset/spdmx.py` mirroring `slakh2100.py`:
-   - group by `song_id`
-   - load stem FLACs from `stems[].audio_path`
-   - map `program` / `is_drum` → upstream instrument class ids
-4. Register `spdmx` in extract_causal_dac_32k / extract_rms / dump_audio_mixdown.
-5. Train: `scripts/train_dec_online.py` with `future_visibility: 0`.
-6. Eval: `scripts/gen_pred/gen_and_evaluate.py` on Slakh test.
+Source of truth: `experiments/streamgen/adapters/spdmx.py`
+(installed into the upstream clone as `stream_music_gen/dataset/spdmx.py`).
+
+## One-command data prep
+
+```bash
+# Slakh baseline (default)
+bash experiments/streamgen/prepare_streamgen_data.sh --gpu 1
+
+# SPDMX arm (rebuilds JSONL index, wires adapter)
+bash experiments/streamgen/prepare_streamgen_data.sh --datasets spdmx --gpu 1 --rebuild-index
+
+# Both
+bash experiments/streamgen/prepare_streamgen_data.sh --datasets slakh2100,spdmx --gpu 1
+```
+
+That script runs: index (SPDMX) → DAC extract → RMS → mixdown dump.
+
+## Manual adapter wiring
+
+1. Build index: `uv run python -m experiments.streamgen.prepare_spdmx_index`
+2. Layout under `stream_music_gen_data/spdmx/`:
+   - `spdmx_multitrack.jsonl` → paper_data index
+   - `audio` → `$SPDMX_DATASET_ROOT` (default `/deepfreeze/share/SPDMX/SPDMX`)
+3. Copy adapter + register `spdmx` in `constants.DATASET_SPLITS` and extract/dump scripts
+   (handled by `prepare_streamgen_data.sh`).
+4. Extract / dump with `--datasets spdmx`.
+5. Train `dec_online` with `dataset_names: [spdmx]` (or matched-step Slakh vs SPDMX).
+6. Eval on Slakh test via `scripts/gen_pred/gen_and_evaluate.py`.

@@ -5,34 +5,28 @@
 
 ## One-command setup
 
-From the repo root:
-
 ```bash
 uv run python -m experiments.streamgen.setup_streamgen
+# optional: --with-weights  (or use existing DAC under jazz-standard-dataset)
 ```
 
-That will:
-
-1. Clone `lukewys/stream-music-gen` into `experiments/streamgen/stream-music-gen`
-2. Install filtered Python deps into your current env (keeps your existing torch)
-3. Build / reuse the SPDMX JSONL index under `analysis/paper_data/streamgen_spdmx_index/`
-4. Write `experiments/streamgen/STREAMGEN_READY.md` with next steps
-
-Optional flags:
+## One-command data prep (DAC → RMS → mixdown)
 
 ```bash
-# Also download the causal DAC checkpoint (needed before dataset dump)
-uv run python -m experiments.streamgen.setup_streamgen --with-weights
+# Slakh baseline on GPU 1 (reuses deepfreeze 44.1 kHz FLAC)
+bash experiments/streamgen/prepare_streamgen_data.sh --gpu 1
 
-# Also install evaluation extras (COCOLA / FAD / …)
-uv run python -m experiments.streamgen.setup_streamgen --with-eval
+# SPDMX arm
+bash experiments/streamgen/prepare_streamgen_data.sh --datasets spdmx --gpu 1 --rebuild-index
 
-# Re-clone from scratch
-uv run python -m experiments.streamgen.setup_streamgen --force
+# Smoke
+bash experiments/streamgen/prepare_streamgen_data.sh --datasets spdmx --max-songs 50 --skip-dump --gpu 1
 
-# Code already cloned; only refresh deps + index
-uv run python -m experiments.streamgen.setup_streamgen --skip-clone
+# DAC chunking (VRAM / util): --win-duration SECS --chunk-batch-size N
+bash experiments/streamgen/prepare_streamgen_data.sh --gpu 1 --chunk-batch-size 8
 ```
+
+SPDMX adapter: `experiments/streamgen/adapters/spdmx.py` (see index `ADAPTER.md`).
 
 ## Pilot
 
@@ -40,18 +34,17 @@ uv run python -m experiments.streamgen.setup_streamgen --skip-clone
 - Arms: Slakh | SPDMX multitrack | optional union / hour-matched SPDMX
 - Eval: Slakh-test COCOLA / Beat F1 / FAD; secondary SPDMX held-out
 
-## After setup
+## After data prep — train
 
 ```bash
-# Index only (if you need to rebuild)
-uv run python -m experiments.streamgen.prepare_spdmx_index
-
-# Smoke (first N songs)
-uv run python -m experiments.streamgen.prepare_spdmx_index --max-songs 100
-
-# Placeholder metrics for paper/blog
-uv run python -m experiments.streamgen.train --write-placeholder-metrics
+cd experiments/streamgen/stream-music-gen
+CUDA_VISIBLE_DEVICES=1 uv run --project ../.. \
+  python scripts/train_dec_online.py \
+  --args.load configs/online/decoder_online_future_visibility_0.yml \
+  --save_dir /deepfreeze/share/SPDMX/dev/experiments/streamgen/logs/dec_online_fv0_slakh \
+  --batch_size 8 --precision 16-mixed
 ```
 
-Training still uses upstream `scripts/train_dec_online.py` — see `STREAMGEN_READY.md`
-and `{index}/ADAPTER.md` after setup. Blog: `docs/blog/streamgen.html`.
+Placeholder metrics: `uv run python -m experiments.streamgen.train --write-placeholder-metrics`
+
+Blog: `docs/blog/streamgen.html`.
