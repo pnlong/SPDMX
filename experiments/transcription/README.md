@@ -43,15 +43,31 @@ uv run python -m experiments.transcription.setup_yourmt3 --skip-clone
 | `both` | Union |
 | `spdmx_hour_matched` | Optional ~145 h SPDMX subsample |
 
-## After setup
+## After setup — build YourMT3 indexes + train
+
+Convert CSV manifests → `yourmt3_indexes` (16 kHz WAV + note caches):
 
 ```bash
-# Manifests only (if you need to rebuild)
-uv run python -m experiments.transcription.prepare_manifest
+# Full (Slakh + SPDMX). Writes under deepfreeze …/transcription/yourmt3_data
+uv run python -m experiments.transcription.manifest_to_yourmt3_indexes
 
-# Placeholder metrics CSV for the paper/blog
-uv run python -m experiments.transcription.train --write-placeholder-metrics
+# Smoke
+uv run python -m experiments.transcription.manifest_to_yourmt3_indexes --arms spdmx --max-songs 20
 ```
 
-Training still uses YourMT3’s own CLI inside `YourMT3/amt/src` — see `YOURMT3_READY.md`
-after setup. Blog: `docs/blog/transcription.html`.
+Then train (from YourMT3 `amt/src`, GPU of your choice):
+
+```bash
+cd experiments/transcription/YourMT3/amt/src
+export PYTHONPATH=$PWD:${PYTHONPATH:-}
+
+# Slakh arm
+CUDA_VISIBLE_DEVICES=1 uv run --project /home/pnlong/spdmx python train.py \
+  c1_slakh_run -d c1_slakh -p spdmx_c1 --max-steps 100000 -wb offline
+
+# SPDMX arm
+CUDA_VISIBLE_DEVICES=2 uv run --project /home/pnlong/spdmx python train.py \
+  c1_spdmx_run -d spdmx -p spdmx_c1 --max-steps 100000 -wb offline
+```
+
+Presets added by the converter: `c1_slakh`, `spdmx`, `spdmx_hm`, `c1_both`, multi `c1_slakh_vs_spdmx`.

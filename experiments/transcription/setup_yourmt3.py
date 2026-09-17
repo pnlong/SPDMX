@@ -221,6 +221,10 @@ def main(argv: list[str] | None = None) -> None:
     print()
     print("Done. YourMT3 setup complete.")
     print(f"Next: open {ready}")
+    print(
+        "Then build indexes:\n"
+        "  uv run python -m experiments.transcription.manifest_to_yourmt3_indexes"
+    )
 
 
 if __name__ == "__main__":
