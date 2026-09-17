@@ -6,21 +6,48 @@ Offline parameter sweeps and tuning runs. Experiment **code and config** live he
 
 **Tuning docs:** [`TUNING.md`](TUNING.md) — shared methodology, staged Slakh plan, preset sweep scope, result-recording conventions.
 
+## Collaborator setup (ICASSP pilots)
+
+**→ Copy/paste for a new machine with Deep Freeze: [`COLLABORATOR_SETUP.md`](COLLABORATOR_SETUP.md)**
+
+After clone + `uv sync`:
+
+```bash
+uv run python -m experiments.setup_pilots
+```
+
+That configures `.env` checks, deepfreeze symlinks, YourMT3, and stream-music-gen in one shot.
+
+Individual setups (same machine, later):
+
+```bash
+uv run python -m experiments.transcription.setup_yourmt3
+uv run python -m experiments.streamgen.setup_streamgen
+```
+
 ## Layout
 
 ```
 experiments/
 ├── README.md
+├── COLLABORATOR_SETUP.md     # Slack-ready Deep Freeze pilot setup
+├── setup_pilots.py           # one-command YourMT3 + StreamGen
 ├── TUNING.md                 # methodology for patch + preset tuning
 ├── probe_stems.yaml          # shared probe set (24 stems: 3 per category × 8)
 ├── listening/                # sweep listening-test server (port 8766)
 ├── listening_shared/         # shared 0–100 slider UI + scale helpers
 ├── ablation_listening/       # Test 1: A1–B2 dataset comparison (port 8767)
 ├── model_listening/          # Test 2: SAO downstream comparison (port 8768)
+├── separation/               # Hybrid Demucs matched-budget PoC
+├── sao/                      # Stable Audio Open fine-tune PoC
+├── transcription/            # Multi-instrument AMT scale-up (C1 / YourMT3)
+├── streamgen/                # Streaming accompaniment (stream-music-gen)
 ├── patch_sweep/              # Slakh: soundfonts, FX, program pools
 │   └── soundfonts.yaml       # candidate GM banks (phase 1)
 └── preset_sweep/             # SA3 init_noise_level + prompt tuning
 ```
+
+Paper/Blog pilots for transcription and StreamGen: see each package `README.md` and `docs/blog/`.
 
 ## Setup
 

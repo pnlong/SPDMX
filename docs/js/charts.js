@@ -244,21 +244,53 @@ function audioPeers(comparison) {
   );
 }
 
+export async function renderHomeStats() {
+  const summary = await loadJSON("data/summary.json").catch(() => null);
+  if (!summary) return;
+  const fmt = (n) =>
+    typeof n === "number"
+      ? n >= 1000
+        ? Math.round(n).toLocaleString("en-US")
+        : String(n)
+      : "—";
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+  set("stat-songs", fmt(summary.release_songs));
+  const hours = summary.release_hours ?? summary.release_hours_approx;
+  set(
+    "stat-hours",
+    hours != null && Number.isFinite(Number(hours))
+      ? Math.round(Number(hours)).toLocaleString("en-US")
+      : "—"
+  );
+  set("stat-multi-songs", fmt(summary.multitrack_songs));
+  set(
+    "stat-multi-hours",
+    summary.multitrack_hours != null && Number.isFinite(Number(summary.multitrack_hours))
+      ? Math.round(Number(summary.multitrack_hours)).toLocaleString("en-US")
+      : "—"
+  );
+}
+
 export async function renderCharts() {
   if (typeof Chart === "undefined") return;
   Chart.defaults.backgroundColor = "transparent";
   Chart.defaults.color = INK;
 
-  const [comparison, tracks, gm, programs, backends, chunks, duration, summary] =
+  const [comparison, tracks, gm, programs, programHours, backends, chunks, duration, summary, songHours] =
     await Promise.all([
       loadJSON("data/comparison.json").catch(() => ({})),
       loadJSON("data/tracks_per_song.json").catch(() => null),
       loadJSON("data/gm_classes.json").catch(() => null),
       loadJSON("data/programs_top.json").catch(() => null),
+      loadJSON("data/programs_stems_hours.json").catch(() => null),
       loadJSON("data/backends.json").catch(() => null),
       loadJSON("data/chunks.json").catch(() => null),
       loadJSON("data/duration.json").catch(() => null),
       loadJSON("data/summary.json").catch(() => null),
+      loadJSON("data/song_hours_by_stems.json").catch(() => null),
     ]);
 
   if (summary) {
@@ -282,6 +314,13 @@ export async function renderCharts() {
         : "—"
     );
     set("stat-chunks", fmt(summary.n_chunks));
+    set("stat-multi-songs", fmt(summary.multitrack_songs));
+    set(
+      "stat-multi-hours",
+      summary.multitrack_hours != null && Number.isFinite(Number(summary.multitrack_hours))
+        ? Math.round(Number(summary.multitrack_hours)).toLocaleString("en-US")
+        : "—"
+    );
   }
 
   const peers = audioPeers(comparison);
@@ -303,7 +342,76 @@ export async function renderCharts() {
     );
   }
 
-  if (tracks) {
+  if (songHours?.labels?.length && document.getElementById("chart-song-hours")) {
+    const el = document.getElementById("chart-song-hours");
+    const fmtPlain = (v) => {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0) return "";
+      if (n >= 1) return Math.round(n).toLocaleString("en-US");
+      return String(n);
+    };
+    new Chart(el, {
+      type: "bar",
+      data: {
+        labels: songHours.labels,
+        datasets: [
+          {
+            label: "SPDMX",
+            data: songHours.spdmx?.hours || [],
+            backgroundColor: PALETTE.amber,
+          },
+          {
+            label: "Slakh2100",
+            data: songHours.slakh?.hours || [],
+            backgroundColor: PALETTE.marigoldSoft,
+          },
+        ],
+      },
+      options: {
+        ...CHART_DEFAULTS,
+        plugins: {
+          ...CHART_DEFAULTS.plugins,
+          legend: { ...CHART_DEFAULTS.plugins.legend, display: true },
+          tooltip: {
+            ...CHART_DEFAULTS.plugins.tooltip,
+            callbacks: {
+              label(ctx) {
+                const raw = ctx.parsed.y ?? ctx.raw;
+                return ` ${ctx.dataset.label}: ${fmtCount(raw)} song-hours`;
+              },
+            },
+          },
+        },
+        scales: {
+          ...CHART_DEFAULTS.scales,
+          y: {
+            ...CHART_DEFAULTS.scales.y,
+            type: "logarithmic",
+            title: { display: true, text: "Song hours", color: MUTED },
+            ticks: {
+              ...CHART_DEFAULTS.scales.y.ticks,
+              callback: (v) => fmtPlain(v),
+            },
+          },
+          x: {
+            ...CHART_DEFAULTS.scales.x,
+            title: { display: true, text: "Stems per song", color: MUTED },
+          },
+        },
+      },
+    });
+    const note = document.getElementById("song-hours-note");
+    if (note && songHours.spdmx) {
+      const mH = Math.round(Number(songHours.spdmx.multitrack_hours || 0)).toLocaleString(
+        "en-US"
+      );
+      const mS = Number(songHours.spdmx.multitrack_songs || 0).toLocaleString("en-US");
+      note.textContent =
+        `Interactive version of the paper stems-per-song figure. ` +
+        `Y-axis is mix duration once per song (not stem-hours). ` +
+        `SPDMX multitrack: ${mS} songs / ${mH} h. Slakh includes all 2,100 tracks.`;
+    }
+  } else if (tracks && document.getElementById("chart-tracks")) {
     barChart("chart-tracks", tracks.labels, tracks.counts, {
       color: PALETTE.sand,
       compactTicks: true,
@@ -318,7 +426,7 @@ export async function renderCharts() {
       note.textContent =
         `${nSingle.toLocaleString("en-US")} songs (${pct}%) are single-stem` +
         (nTotal ? ` of ${Number(nTotal).toLocaleString("en-US")}` : "") +
-        `. The bars show only multi-stem songs, where most have just a few parts and a long tail reaches dozens of stems.`;
+        `. The bars show only multi-stem songs.`;
     }
   }
 
@@ -331,8 +439,47 @@ export async function renderCharts() {
     });
   }
 
-  if (programs) {
+  if (programHours?.labels?.length) {
+    const labels = programHours.labels;
+    if (document.getElementById("chart-program-stems")) {
+      barChart("chart-program-stems", labels, programHours.n_stems, {
+        horizontal: true,
+        color: PALETTE.amberDeep,
+        compactTicks: true,
+        valueLabel: "Stems",
+      });
+      const note = document.getElementById("program-stems-note");
+      if (note) {
+        note.textContent =
+          programHours.note ||
+          `Top ${labels.length} GM programs by stem count after register correction.`;
+      }
+    }
+    if (document.getElementById("chart-program-hours")) {
+      barChart("chart-program-hours", labels, programHours.hours, {
+        horizontal: true,
+        color: PALETTE.bronze,
+        compactTicks: true,
+        valueLabel: "Hours",
+      });
+      const note = document.getElementById("program-hours-note");
+      if (note) {
+        const kind =
+          programHours.hours_kind === "active"
+            ? "RMS-active (non-silent) hours"
+            : "wall-clock stem hours";
+        note.textContent =
+          `Same program ranking as stems. Bars show ${kind}.`;
+      }
+    }
+  } else if (programs) {
     barChart("chart-programs", programs.labels, programs.counts, {
+      horizontal: true,
+      color: PALETTE.amberDeep,
+      compactTicks: true,
+      valueLabel: "Stems",
+    });
+    barChart("chart-program-stems", programs.labels, programs.counts, {
       horizontal: true,
       color: PALETTE.amberDeep,
       compactTicks: true,

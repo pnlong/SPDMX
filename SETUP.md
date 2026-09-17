@@ -5,6 +5,10 @@ Step-by-step guide to set up spdmx on a new machine. Everything Python-related l
 **Joining an existing production synthesis job** (shared Deep Freeze, sharded
 GPU rendering): see [`synthesis/FINAL_SETUP.md`](synthesis/FINAL_SETUP.md).
 
+**ICASSP pilots** (YourMT3 transcription + StreamGen) on a Deep Freeze machine:
+see [`experiments/COLLABORATOR_SETUP.md`](experiments/COLLABORATOR_SETUP.md)
+(`uv run python -m experiments.setup_pilots`).
+
 ---
 
 ## What you get

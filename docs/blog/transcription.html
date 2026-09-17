@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multi-instrument transcription · SPDMX Blog</title>
+  <link rel="icon" href="../assets/favicon.ico" sizes="any">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script type="module" src="../js/blog.js"></script>
+</head>
+<body>
+  <header class="site-header"></header>
+  <main>
+    <article class="section post">
+      <p class="blog-meta"><a href="index.html">Blog</a> · Transcription · WIP</p>
+      <h1>Multi-instrument transcription (C1)</h1>
+      <p>
+        <strong>Question:</strong> holding a multi-instrument AMT model fixed, does training on more
+        multitrack data (SPDMX) beat Slakh2100-redux on Slakh-test note F1?
+      </p>
+      <p>
+        We follow the MT3 / YourMT3 mixture→multi-instrument MIDI setup. SPDMX supplies
+        aligned <code>mix.flac</code> + <code>mix.mid</code> for songs with ≥2 stems
+        (~2,734 song-hours). Arms: Slakh-redux | SPDMX multitrack | optional union, matched steps.
+        Primary eval: Slakh test note F1; secondary: SPDMX held-out.
+      </p>
+      <p><em>Metrics and audio examples will land here when the pilot finishes.</em></p>
+      <p>Scaffold: <code>experiments/transcription/</code>.</p>
+    </article>
+  </main>
+  <footer class="site-footer"></footer>
+</body>
+</html>

@@ -5,13 +5,16 @@
   "pdmx_all_valid_hours": 6248.0,
   "release_hours": 5469.0042280171,
   "release_hours_rounded": 5469,
-  "hours_note": "Release hours = sum(songs.csv song_length)/3600 over 253982 release songs (exact 5469.004…). PDMX all_valid remains ~6248h for the parent symbolic set.",
+  "hours_note": "Release hours = sum(songs.csv song_length)/3600 over 253982 release songs (exact 5469.004\u2026). PDMX all_valid remains ~6248h for the parent symbolic set.",
   "sample_rate_hz": 44100,
   "channels": 1,
   "audio_format": "flac",
   "target_lufs": -23.0,
   "realify": false,
-  "backends": {"fluidsynth": 432620, "midi_ddsp": 57539},
+  "backends": {
+    "fluidsynth": 432620,
+    "midi_ddsp": 57539
+  },
   "mean_stems_per_song": 1.93,
   "median_stems_per_song": 1,
   "max_stems_per_song": 66,
@@ -20,11 +23,39 @@
   "songs_exactly_1_stem": 165579,
   "subset_bdgp_songs": 632,
   "comparison_table": {
-    "MUSDB18": {"songs": 150, "hours": 10, "type": "recorded"},
-    "MedleyDB": {"songs": 122, "hours": 7.2, "type": "recorded"},
-    "MoisesDB": {"songs": 240, "hours": 14.4, "type": "recorded"},
-    "Slakh2100": {"songs": 2100, "hours": 145, "type": "synth"},
-    "PDMX": {"songs": 254035, "hours": 6248, "type": "symbolic"},
-    "SPDMX": {"songs": 253982, "hours": 5469, "type": "synth"}
-  }
+    "MUSDB18": {
+      "songs": 150,
+      "hours": 10,
+      "type": "recorded"
+    },
+    "MedleyDB": {
+      "songs": 122,
+      "hours": 7.2,
+      "type": "recorded"
+    },
+    "MoisesDB": {
+      "songs": 240,
+      "hours": 14.4,
+      "type": "recorded"
+    },
+    "Slakh2100": {
+      "songs": 2100,
+      "hours": 145,
+      "type": "synth"
+    },
+    "PDMX": {
+      "songs": 254035,
+      "hours": 6248,
+      "type": "symbolic"
+    },
+    "SPDMX": {
+      "songs": 253982,
+      "hours": 5469,
+      "type": "synth"
+    }
+  },
+  "multitrack_songs": 88403,
+  "multitrack_hours": 2733.6,
+  "multitrack_song_frac": 0.348,
+  "multitrack_hour_frac": 0.4998
 }

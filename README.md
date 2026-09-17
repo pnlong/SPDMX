@@ -18,6 +18,8 @@ Turn the [PDMX](https://zenodo.org/records/13763756) symbolic music dataset into
 
 **→ Join an existing production job on a new GPU machine: [`synthesis/FINAL_SETUP.md`](synthesis/FINAL_SETUP.md)**
 
+**→ ICASSP pilots (YourMT3 + StreamGen) on a Deep Freeze machine: [`experiments/COLLABORATOR_SETUP.md`](experiments/COLLABORATOR_SETUP.md)**
+
 Quick start (synthesis + analysis only):
 
 ```bash

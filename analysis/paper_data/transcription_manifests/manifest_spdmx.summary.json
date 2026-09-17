@@ -1,0 +1,10 @@
+{
+  "arm": "spdmx",
+  "n_rows": 88403,
+  "by_split": {
+    "test": 4420,
+    "train": 79563,
+    "validation": 4420
+  },
+  "hours": 2733.5508910178883
+}

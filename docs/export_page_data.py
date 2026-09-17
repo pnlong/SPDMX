@@ -134,12 +134,28 @@ def export_summary(stats: dict, songs: pd.DataFrame, chunks: pd.DataFrame) -> di
     hours = release_hours_from_songs(songs)
     if hours is None:
         hours = float(stats.get("release_hours_approx", 6248))
+    n_tracks = pd.to_numeric(songs.get("n_tracks"), errors="coerce")
+    multi_mask = n_tracks >= 2
+    multi_songs = int(multi_mask.sum()) if len(songs) else 0
+    multi_hours = None
+    if "song_length" in songs.columns and multi_songs:
+        lengths = pd.to_numeric(songs.loc[multi_mask, "song_length"], errors="coerce")
+        lengths = lengths[lengths > 0]
+        if not lengths.empty:
+            multi_hours = float(lengths.sum() / 3600.0)
+    if multi_hours is None:
+        multi_hours = float(stats.get("multitrack_hours", 0.0))
+    n_songs = int(stats.get("release_songs", len(songs)))
     return {
-        "release_songs": int(stats.get("release_songs", len(songs))),
+        "release_songs": n_songs,
         "release_stems": int(stats.get("release_stems", 0)),
         # One mix duration per song (song_length); do not sum stem lengths.
         "release_hours": round(hours, 1),
         "release_hours_approx": round(hours, 1),
+        "multitrack_songs": multi_songs,
+        "multitrack_hours": round(multi_hours, 1),
+        "multitrack_song_frac": round(multi_songs / n_songs, 4) if n_songs else 0.0,
+        "multitrack_hour_frac": round(multi_hours / hours, 4) if hours else 0.0,
         "hours_source": (
             "sum(songs.csv song_length) / 3600 — mix duration per song, not stems"
             if "song_length" in songs.columns
@@ -195,6 +211,47 @@ def export_programs_top(stems: pd.DataFrame, *, top_n: int = 20) -> dict:
     ]
     counts = work["label"].value_counts().head(top_n)
     return {"labels": counts.index.tolist(), "counts": [int(v) for v in counts.values]}
+
+
+def export_programs_stems_hours(
+    summary_csv: Path | None = None,
+    *,
+    top_n: int = 15,
+) -> dict | None:
+    """Top GM programs by stem count with matching non-silent (or wall) hours.
+
+    Used by the About page as two interactive charts (stems / hours).
+    """
+    repo = Path(__file__).resolve().parents[1]
+    path = summary_csv or (repo / "analysis" / "paper_data" / "program_stem_hours.csv")
+    if not path.is_file():
+        return None
+    df = pd.read_csv(path)
+    if "n_stems" not in df.columns or "label" not in df.columns:
+        return None
+    hours_col = "active_hours" if "active_hours" in df.columns else "wall_hours"
+    if hours_col not in df.columns:
+        return None
+    # Strip trailing `` (N)`` GM ids from paper labels for cleaner web ticks.
+    labels_clean = (
+        df["label"]
+        .astype(str)
+        .str.replace(r"\s*\(\d+\)\s*$", "", regex=True)
+    )
+    df = df.assign(label_web=labels_clean).sort_values("n_stems", ascending=False).head(top_n)
+    return {
+        "labels": df["label_web"].tolist(),
+        "n_stems": [int(v) for v in df["n_stems"]],
+        "hours": [round(float(v), 2) for v in df[hours_col]],
+        "hours_kind": "active" if hours_col == "active_hours" else "wall",
+        "top_n": int(top_n),
+        "note": (
+            "Same top programs by stem count. Hours are RMS-active "
+            "(non-silent windows) when available."
+            if hours_col == "active_hours"
+            else "Same top programs by stem count. Hours are wall-clock stem durations."
+        ),
+    }
 
 
 def export_chunks(chunks: pd.DataFrame) -> dict:
@@ -718,6 +775,13 @@ def main() -> None:
     _write_json(data_dir / "tracks_per_song.json", export_tracks_per_song(songs))
     _write_json(data_dir / "gm_classes.json", export_gm_classes(songs))
     _write_json(data_dir / "programs_top.json", export_programs_top(stems))
+    programs_hours = export_programs_stems_hours()
+    if programs_hours is not None:
+        _write_json(data_dir / "programs_stems_hours.json", programs_hours)
+    # Keep paper song-hours-by-stems chart data in sync when present.
+    paper_hours = REPO_ROOT / "analysis" / "paper_data" / "song_hours_by_stems.json"
+    if paper_hours.is_file():
+        shutil.copy2(paper_hours, data_dir / "song_hours_by_stems.json")
     _write_json(data_dir / "chunks.json", export_chunks(chunks))
     comparison = {
         k: dict(v)

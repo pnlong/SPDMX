@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StreamGen accompaniment · SPDMX Blog</title>
+  <link rel="icon" href="../assets/favicon.ico" sizes="any">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script type="module" src="../js/blog.js"></script>
+</head>
+<body>
+  <header class="site-header"></header>
+  <main>
+    <article class="section post">
+      <p class="blog-meta"><a href="index.html">Blog</a> · Streaming · WIP</p>
+      <h1>StreamGen accompaniment</h1>
+      <p>
+        <strong>Question:</strong> does training
+        <a href="https://github.com/lukewys/stream-music-gen">stream-music-gen</a>
+        (Wu et&nbsp;al., 2025) on SPDMX multitrack improve over the Slakh baseline under
+        matched steps?
+      </p>
+      <p>
+        Pilot config: <code>dec_online</code>, <code>future_visibility = 0</code>.
+        Arms: Slakh | SPDMX multitrack | optional union. Eval: Slakh-test COCOLA / Beat F1 / FAD;
+        secondary SPDMX held-out. Domain gap is a known risk (as in Demucs).
+      </p>
+      <p><em>Metrics and audio examples will land here when the pilot finishes.</em></p>
+      <p>Scaffold: <code>experiments/streamgen/</code>.</p>
+    </article>
+  </main>
+  <footer class="site-footer"></footer>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>About · SPDMX</title>
+  <meta name="description" content="SPDMX dataset layout, download recipe, and scale plots.">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+  <script type="module" src="js/about.js"></script>
+</head>
+<body>
+  <header class="site-header"></header>
+  <main>
+    <section class="section">
+      <div class="section-head">
+        <h2>Get the data</h2>
+        <p>
+          Filter with the CSV tables first, then download only the ~27 GiB chunk
+          archives you need. Each song directory holds stems, a linear-sum mix, and paired MIDI.
+        </p>
+      </div>
+      <figure class="figure-block">
+        <img src="assets/chunk_layout.svg" alt="SPDMX release tree" width="1200" height="490">
+        <figcaption>
+          Release tree: filter with the CSVs, download ~27 GiB <code>chunk_N</code> archives,
+          then open <code>chunk_N/&lt;song_id&gt;/</code> for stems, mix, and paired MIDI.
+        </figcaption>
+      </figure>
+      <div class="two-col">
+        <div>
+          <h3>Download recipe</h3>
+          <ol class="steps">
+            <li>Get <code>stems.csv</code>, <code>songs.csv</code>, <code>chunks.csv</code>.</li>
+            <li>Filter songs (e.g. <code>subset:bdgp</code> or <code>n_tracks &gt;= 2</code>) then restrict stems.</li>
+            <li>Read distinct <code>chunk</code> ids and fetch those <code>chunk_N.zip</code> files.</li>
+            <li>Unzip beside the CSVs so <code>./chunk_N/&lt;song_id&gt;/…</code> resolves.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Per-song contents</h3>
+          <ul class="plain">
+            <li><strong>track</strong> — contiguous index after dropping empty PDMX tracks (<code>{track}.flac</code>).</li>
+            <li><strong>program / is_drum</strong> — General MIDI identity after name-based correction.</li>
+            <li><strong>mix.flac</strong> — raw linear sum of stems (mono).</li>
+            <li><strong>mix.mid</strong> — paired MIDI aligned to the stems.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Songs per chunk</h3>
+        <canvas id="chart-chunks" height="120"></canvas>
+        <p class="chart-note">
+          Archives are sized for ~27 GiB downloads, not equal song counts.
+        </p>
+      </div>
+    </section>
+
+    <section class="section alt">
+      <div class="section-head">
+        <h2>Dataset at a glance</h2>
+        <p>Interactive plots mirroring the paper figures. Song-hours count mix duration once per song.</p>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card chart-card-wide">
+          <h3>Song hours by stems per song</h3>
+          <canvas id="chart-song-hours" height="200"></canvas>
+          <p class="chart-note" id="song-hours-note">
+            SPDMX vs Slakh2100 (log y). For each stem count, y is total mix hours of those songs.
+          </p>
+        </div>
+        <div class="chart-card">
+          <h3>Scale vs peers</h3>
+          <canvas id="chart-comparison" height="180"></canvas>
+          <p class="chart-note">
+            On mix duration, SPDMX is about an order of magnitude beyond Slakh2100.
+          </p>
+        </div>
+        <div class="chart-card">
+          <h3>Stems per GM program</h3>
+          <canvas id="chart-program-stems" height="260"></canvas>
+          <p class="chart-note" id="program-stems-note">
+            Top programs by stem count after GM register correction.
+          </p>
+        </div>
+        <div class="chart-card">
+          <h3>Hours per GM program</h3>
+          <canvas id="chart-program-hours" height="260"></canvas>
+          <p class="chart-note" id="program-hours-note">
+            Same ranking; hours are non-silent (RMS-active) stem time when available.
+          </p>
+        </div>
+        <div class="chart-card">
+          <h3>GM classes (songs)</h3>
+          <canvas id="chart-gm" height="220"></canvas>
+          <p class="chart-note">Piano covers most of the catalog; ensemble and orchestral families form a smaller second tier.</p>
+        </div>
+        <div class="chart-card">
+          <h3>Render recipe</h3>
+          <canvas id="chart-backends" height="160"></canvas>
+          <p class="chart-note" id="backends-note"></p>
+        </div>
+        <div class="chart-card">
+          <h3>Song length (mix)</h3>
+          <canvas id="chart-duration" height="180"></canvas>
+          <p class="chart-note" id="duration-note"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer"></footer>
+</body>
+</html>

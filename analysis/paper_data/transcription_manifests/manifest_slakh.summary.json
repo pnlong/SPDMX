@@ -1,0 +1,10 @@
+{
+  "arm": "slakh",
+  "n_rows": 1710,
+  "by_split": {
+    "test": 151,
+    "train": 1289,
+    "validation": 270
+  },
+  "hours": 118.25994497354496
+}

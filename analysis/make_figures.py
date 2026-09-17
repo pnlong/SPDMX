@@ -19,6 +19,7 @@ from analysis.plots import (
     plot_sao_metrics,
     plot_separation_multistem,
     plot_separation_sisdr,
+    plot_song_hours_by_stems,
     plot_stems_per_song,
 )
 from shared.config import OUTPUT_DIR, SPDMX_DEV_DIR_NAME, SPDMX_FILE_NAME
@@ -49,6 +50,8 @@ CORRECTED_STEMS = INSTRUMENTS_DIR / "gm_program_stems_corrected.csv"
 CHUNKS_CSV = Path(OUTPUT_DIR) / "SPDMX" / CHUNKS_FILE_NAME
 TRACKS_PER_SONG_JSON = DATA_DIR / "tracks_per_song.json"
 TRACKS_PER_SONG_DOCS = REPO_ROOT / "docs" / "data" / "tracks_per_song.json"
+SONG_HOURS_BY_STEMS_JSON = DATA_DIR / "song_hours_by_stems.json"
+SONG_HOURS_BY_STEMS_DOCS = REPO_ROOT / "docs" / "data" / "song_hours_by_stems.json"
 SPDMX_DEV_STEMS = Path("/deepfreeze/share/SPDMX") / SPDMX_DEV_DIR_NAME / f"{SPDMX_FILE_NAME}.csv"
 SPDMX_DEV_STEMS_FALLBACK = Path(OUTPUT_DIR) / SPDMX_DEV_DIR_NAME / f"{SPDMX_FILE_NAME}.csv"
 ACTIVE_HOURS_CSV = REPO_ROOT / "analysis" / "output" / "active_hours" / "program_active_hours.csv"
@@ -134,12 +137,25 @@ def make_gm_program_compare_figure(
 
 
 def make_stems_per_song_figure() -> Path | None:
+    """Song-hours vs stems/song (SPDMX vs Slakh); falls back to legacy counts."""
+    hours_path = (
+        SONG_HOURS_BY_STEMS_JSON
+        if SONG_HOURS_BY_STEMS_JSON.is_file()
+        else SONG_HOURS_BY_STEMS_DOCS
+    )
+    out = FIGURES_DIR / "stems_per_song.pdf"
+    if hours_path.is_file():
+        payload = json.loads(hours_path.read_text(encoding="utf-8"))
+        plot_song_hours_by_stems(payload, out, figsize=(3.45, 2.45), log_y=True)
+        return out
     path = TRACKS_PER_SONG_JSON if TRACKS_PER_SONG_JSON.is_file() else TRACKS_PER_SONG_DOCS
     if not path.is_file():
-        print(f"skip stems-per-song figure: missing {TRACKS_PER_SONG_JSON} and {TRACKS_PER_SONG_DOCS}")
+        print(
+            f"skip stems-per-song figure: missing {hours_path} and count hist "
+            f"({TRACKS_PER_SONG_JSON} / {TRACKS_PER_SONG_DOCS})"
+        )
         return None
-    hist = json.loads(path.read_text())
-    out = FIGURES_DIR / "stems_per_song.pdf"
+    hist = json.loads(path.read_text(encoding="utf-8"))
     plot_stems_per_song(hist, out, figsize=(3.45, 2.35))
     return out
 

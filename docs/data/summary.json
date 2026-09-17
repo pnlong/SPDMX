@@ -20,5 +20,9 @@
     "basic": 59395,
     "slakh": 373225,
     "midi_ddsp": 57539
-  }
+  },
+  "multitrack_songs": 88403,
+  "multitrack_hours": 2733.6,
+  "multitrack_song_frac": 0.348,
+  "multitrack_hour_frac": 0.4998
 }

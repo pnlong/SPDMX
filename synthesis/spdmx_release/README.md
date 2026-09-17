@@ -158,6 +158,9 @@ uv run python -m synthesis.build_songs_table --spdmx-root /path/to/SPDMX
 
 ## Zenodo download
 
+See [`ZENODO.md`](ZENODO.md) for upload logistics, size limits, recommended
+multi-record layout, and copy-paste deposit text.
+
 On Zenodo, metadata files and chunk archives are **separate downloads**:
 
 1. Download `stems.csv`, `songs.csv`, `chunks.csv`, `LICENSE`, and `README.md`.

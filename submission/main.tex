@@ -3,6 +3,8 @@
 % --------------------------------------------------------------------------
 \documentclass{article}
 \usepackage{spconf,amsmath,graphicx,hyperref,booktabs}
+\usepackage{xcolor}
+\newcommand{\edc}[1]{\textcolor{purple}{#1}}
 
 \newcommand{\demourl}{https://pnlong.github.io/SPDMX/}
 
@@ -17,15 +19,17 @@
 \maketitle
 %
 \begin{abstract}
-Recorded multitrack stems remain scarce for modern separation and generative audio models, while large synthesized alternatives often depend on closed commercial instruments.
-We present \textbf{SPDMX} (Synthesized PDMX), to our knowledge the largest public-domain multitrack stem audio corpus, derived from the PDMX symbolic collection.
+Recorded \edc{should this be multi-track?} multitrack stems remain scarce for modern separation and generative audio models, while large synthesized alternatives often depend on closed commercial instruments.
+We present \textbf{SPDMX} (Synthesized PDMX), \edc{"to our knowledge" sounds kinda unsure }to our knowledge the largest public-domain \edc{multitrack comment from above} multitrack stem audio corpus, derived from the PDMX symbolic collection.
 Construction has three stages: score cleaning (General MIDI program correction; empty tracks removed), a listening study that selects an open FluidSynth / MIDI-DDSP render recipe, and full-corpus assembly with loudness- and velocity-aware mixing.
-The release has approximately $254$K songs, $490$K mono stems, and $5{,}469$ hours at $44.1$\,kHz, sharing song identity with PDMX so symbolic metadata and scores pair with the audio.
+The release has $253{,}982$ songs ($5{,}469$ song-hours) and $490{,}159$ mono stems at $44.1$\,kHz; $88{,}403$ songs ($2{,}734$ song-hours) have two or more stems.
+Song identity is shared with PDMX so symbolic metadata and scores pair with the audio.
 Matched-budget Hybrid Demucs and Stable Audio Open fine-tunes provide training checks against Slakh2100 under SI-SDR, FAD, and CLAP.
+Extended demos, plots, and experiment notes live on the project page.
 \end{abstract}
 %
 \begin{keywords}
-Public-domain music, multitrack stems, symbolic-to-audio, source separation, generative audio
+Public-domain music, multitrack stems, symbolic-to-audio, source separation, generative audio \edc{add dataset?}
 \end{keywords}
 %
 \section{Introduction}
@@ -35,24 +39,25 @@ Music source separation, accompaniment generation, automatic mixing, and stem-co
 Vision~\cite{deng2009imagenet,schuhmann2022laion}, large-scale text~\cite{raffel2020exploring,gao2020pile}, and broader audio and speech~\cite{gemmeke2017audio,panayotov2015librispeech} have massive public corpora; music does not.
 Commercial recordings are abundant, yet copyright bars most of them as open training data, especially paired stems.
 Open recorded multitracks such as MUSDB18~\cite{rafii2019musdb18}, MedleyDB~\cite{bittner2014medleydb}, and MoisesDB~\cite{pereira2023moisesdb} are realistic but small (Table~\ref{tab:datasets}), even though more data and augmentation help separation~\cite{uhlich2017improving,pretet2019singing,stoter2018sigsep}.
-Slakh2100~\cite{manilow2019cutting} scales synthesis with professional sample libraries, but those instruments are not redistributable, and $2{,}100$ songs / $145$ hours remain far below public-domain symbolic scale.
+Slakh2100~\cite{manilow2019cutting} scales synthesis with professional sample libraries, but those instruments are not redistributable, and $2{,}100$ songs / $145$ hours remain far below public-domain symbolic scale. \edc{good, points out the main issues with music datasets}
 
+\edc{could maybe use a small blurb on where the actual songs in PDMX come from, in case the reader is not familiar with PDMX, highlighting the crowdsourced nature of the songs in the dataset}
 PDMX~\cite{long2024pdmx,xu2024generating} provides MusicXML and MIDI at public-domain scale (over $250$K scores, about $6{,}250$ hours).
 Naive General MIDI (GM) soundfont renders of that material sound dry and synthetic; short soundfont notes poorly match acoustic sustain for winds, brass, and strings.
 No public stem corpus yet renders that symbolic scale with open, redistributable instruments.
 
-We introduce \textbf{SPDMX} (synthesized PDMX), a listening-tuned stem release from PDMX and, to our knowledge, the largest public-domain multitrack stem audio dataset: $253{,}982$ songs, $490{,}159$ mono stems, and $5{,}469$ hours of redistributable audio, song-aligned with PDMX and over $100{\times}$ more songs than Slakh2100.
+We introduce \textbf{SPDMX} (synthesized PDMX), a listening-tuned stem release from PDMX and, to our knowledge, the largest public-domain multitrack stem audio dataset: $253{,}982$ songs ($5{,}469$ song-hours) with $490{,}159$ mono stems, of which $88{,}403$ songs ($2{,}734$ song-hours) are multitrack ($\geq 2$ stems), song-aligned with PDMX and over $100{\times}$ more songs than Slakh2100.
 Our contributions are as follows:
 \begin{enumerate}
 \setlength{\itemsep}{0.15em}
 \setlength{\parsep}{0pt}
 \setlength{\topsep}{0.35em}
-\item We release that corpus with PDMX-aligned metadata and scores.
+\item We release \edc{rephrase? "that corpus" reads a lil odd} that corpus with PDMX-aligned metadata and scores.
 \item We define an open synthesis protocol with GM register correction, FluidSynth~\cite{fluidsynth} soundfont variety, selective MIDI-DDSP~\cite{engel2020ddsp,wu2022midi} for sustained instruments, and loudness- and velocity-aware mixing.
 \item We run an ablation listening study on perceived realism to choose the production render recipe.
 \item We report matched-budget Hybrid Demucs~\cite{defossez2021hybrid} and Stable Audio Open (SAO)~\cite{evans2024stable} training checks against Slakh2100.
 \end{enumerate}
-Upon acceptance, we will make the dataset and code public.\footnote{\url{\demourl}.}
+The project page is the primary hub for demos, download notes, and experiment write-ups;\footnote{\url{\demourl}.} upon acceptance we will make the dataset and code public.
 
 \begin{table}[t]
 \centering
@@ -151,17 +156,19 @@ The frozen recipe is applied to every cleaned song under redistributable synthes
 Independent per-stem loudness matching would erase MIDI velocity balance, so each stem is loudness-normalized toward $-23$\,LUFS~\cite{series2011algorithms} with peak limiting, then scaled by the ratio of that track's maximum note-on velocity to the song maximum.
 A single anti-clip peak gain on the stem sum, applied uniformly, keeps stems linearly summable (mixture equals stem sum)~\cite{manilow2019cutting}.
 
-SPDMX has $253{,}982$ songs and $490{,}159$ mono FLAC stems ($5{,}469$ hours), plus paired MIDI.
-Of these, $88{,}403$ ($34.8\%$) have more than one stem (mean $1.93$; max $66$; Fig.~\ref{fig:stems_per_song}).
+SPDMX has $253{,}982$ songs ($5{,}469$ song-hours) and $490{,}159$ mono FLAC stems, plus paired MIDI.
+Song-hours are mixture durations counted once per song (not multiplied by stem count).
+Of these, $88{,}403$ songs ($34.8\%$; $2{,}734$ song-hours, $50.0\%$ of hours) have two or more stems (corpus mean $1.93$ stems/song; max $66$; Fig.~\ref{fig:stems_per_song}).
 A BDGP-eligible slice (bass, drums, guitar, and piano present) supports matched Slakh comparisons.
-Songs share identity with PDMX (MusicXML, metadata, and audio without separate alignment) and use only open synthesizers.
+Songs share identity with PDMX (MusicXML, metadata, and audio without separate alignment) and \edc{maybe more info on the synthesizer pipeline/what open synthesizers?} use only open synthesizers.
 
 \begin{figure}[t]
   \centering
   \centerline{\includegraphics[width=\columnwidth]{figs/stems_per_song.pdf}}
-  \caption{Stems per song among the $88{,}403$ multi-stem releases ($34.8\%$).
-  Single-stem songs ($165{,}579$; $65.2\%$) are omitted.
-  Most multi-stem songs have two to four parts ($49{,}299$ / $11{,}418$ / $11{,}184$), with a long tail to $66$.}
+  \caption{Song-hours versus stems per song for SPDMX and Slakh2100 (log $y$).
+  For each $x{=}n$, $y$ is the sum of mix durations over songs with exactly $n$ stems (overflow $20{+}$).
+  SPDMX singles ($165{,}579$ songs) are omitted; Slakh2100 includes all $2{,}100$ tracks ($145$\,h).
+  Multitrack SPDMX totals $2{,}734$ song-hours across $88{,}403$ songs.}
   \label{fig:stems_per_song}
 \end{figure}
 
@@ -180,7 +187,7 @@ Table~\ref{tab:separation} reports mean SI-SDR~\cite{leroux2019sdr}.
 In-domain, SPDMX (BDGP) is learnable, and the union largely keeps Slakh-test performance while transferring to SPDMX (BDGP).
 Solo arms fail cross-domain, consistent with prior evidence that synth-trained separators transfer poorly to mismatched acoustics~\cite{manilow2019cutting,bugler2020study}.
 MUSDB18 bass and drums remain hard for all synth-trained arms, as in Slakh-only training on MUSDB~\cite{manilow2019cutting}.
-
+\edc{its pretty interesting that SPDMX has the best performance on MUSDB18, even better than Slackh U SPDMX. Whats your intution there? could maybe go in the 4.1 section along with whatever the implications are of that.}
 \begin{table}[t]
 \centering
 \caption{Matched-step Hybrid Demucs mean SI-SDR (dB).
@@ -233,11 +240,49 @@ SPDMX (full) & $4.46$ & $0.289$ \\
 
 Paired mixtures and stems remain scarce for open research: recorded multitracks are small, and prior large synthetic corpora rely on closed commercial instruments.
 SPDMX addresses that gap by turning public-domain PDMX scores into redistributable multitrack audio with open FluidSynth banks, selective MIDI-DDSP where listening favors it, and loudness- and velocity-aware mixing.
-The release has $253{,}982$ songs, $490{,}159$ mono stems, and $5{,}469$ hours at $44.1$\,kHz, song-aligned with PDMX, and over $100{\times}$ more songs than Slakh2100.
+The release has $253{,}982$ songs ($5{,}469$ song-hours) and $490{,}159$ mono stems at $44.1$\,kHz, including $88{,}403$ multitrack songs ($2{,}734$ song-hours), song-aligned with PDMX, and over $100{\times}$ more songs than Slakh2100.
 Matched-step Hybrid Demucs and Stable Audio Open fine-tunes show that SPDMX is learnable in-domain and usable beside Slakh under SI-SDR, FAD, and CLAP, offering a fully open path to stem supervision at public-domain scale.
-We release the corpus and render recipe to support separation, generative, and stem-conditioned work at public-domain scale.
-Future work includes larger listening studies, stronger generative evaluations, and better MIDI-to-audio methods for more expressive, realistic synthesis.
-Beyond our explorations here, we hope SPDMX enables large-scale work on stem-conditioned and accompaniment generation, automatic mixing, and joint symbolic and audio modeling without copyrighted recordings.
+We release the corpus and render recipe to support separation, generative, and stem-conditioned work at public-domain scale; demos and experiment notes are on the project page.
+Ongoing matched-step pilots study whether SPDMX multitrack scale improves multi-instrument transcription~\cite{gardner2022mt3,chang2024yourmt3} and streaming accompaniment~\cite{wu2025streaming} over Slakh baselines (Tables~\ref{tab:transcription}--\ref{tab:streamgen}; full write-ups on the project Blog).
+Beyond our explorations here, we hope SPDMX enables large-scale work on stem-conditioned generation, automatic mixing, transcription, and joint symbolic and audio modeling without copyrighted recordings.
+
+\begin{table}[t]
+\centering
+\caption{Matched-step multi-instrument transcription (note F1).
+Values pending YourMT3 pilot; primary test set is Slakh2100-redux.}
+\label{tab:transcription}
+\vspace{1mm}
+\setlength{\tabcolsep}{4pt}
+\footnotesize
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Train arm & Slakh test & SPDMX held-out \\
+\midrule
+Slakh & -- & -- \\
+SPDMX (multitrack) & -- & -- \\
+Slakh~$\cup$~SPDMX & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Matched-step StreamGen streaming accompaniment ($t_f{=}0$).
+Metrics pending; primary test set is Slakh.}
+\label{tab:streamgen}
+\vspace{1mm}
+\setlength{\tabcolsep}{4pt}
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Train arm & COCOLA & Beat $F_1$ & FAD \\
+\midrule
+Slakh & -- & -- & -- \\
+SPDMX (multitrack) & -- & -- & -- \\
+Slakh~$\cup$~SPDMX & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Compliance with Ethical Standards}
 \label{sec:ethics}

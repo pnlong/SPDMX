@@ -1,0 +1,17 @@
+{
+  "n_songs": 50,
+  "by_split": {
+    "train": 46,
+    "test": 2,
+    "validation": 2
+  },
+  "future_visibility": 0,
+  "train_steps": 100000,
+  "upstream": "https://github.com/lukewys/stream-music-gen",
+  "preprocess_notes": [
+    "Clone lukewys/stream-music-gen",
+    "Add dataset adapter reading this JSONL (mirror slakh2100.py)",
+    "Run extract_causal_dac_32k \u2192 extract_rms \u2192 dump_audio_mixdown",
+    "Train dec_online with future_visibility=0 under matched steps"
+  ]
+}

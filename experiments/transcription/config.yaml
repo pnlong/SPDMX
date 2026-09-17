@@ -1,0 +1,12 @@
+# Multi-instrument transcription C1 (YourMT3 / MT3-style scale-up).
+min_stems: 2
+seed: 43
+# Matched step budget (YourMT3 trainer should honor this when wired).
+train_steps: 100000
+val_fraction: 0.05
+test_fraction: 0.05
+# Slakh: use redux only (exclude omitted/) for AMT.
+slakh_include_omitted: false
+arms: [slakh, spdmx, both]
+# Optional hour-matched SPDMX subsample (~Slakh song-hours).
+hour_matched_hours: 145.0

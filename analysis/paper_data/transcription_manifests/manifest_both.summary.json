@@ -1,0 +1,10 @@
+{
+  "arm": "both",
+  "n_rows": 90113,
+  "by_split": {
+    "test": 4571,
+    "train": 80852,
+    "validation": 4690
+  },
+  "hours": 2851.810835991434
+}

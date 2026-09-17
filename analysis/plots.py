@@ -608,12 +608,7 @@ def plot_stems_per_song(
     *,
     figsize: tuple[float, float] = (3.4, 2.4),
 ):
-    """Vertical histogram of stems per song for multi-stem songs.
-
-    Expects the ``tracks_per_song.json`` schema from ``docs/export_page_data``:
-    ``labels``, ``counts``, plus optional ``n_single`` / ``n_multi`` /
-    ``n_total`` for captions (not drawn on the figure).
-    """
+    """Legacy song-count histogram (prefer ``plot_song_hours_by_stems``)."""
     import seaborn as sns
 
     output_path = Path(output_path)
@@ -623,17 +618,11 @@ def plot_stems_per_song(
     counts = [int(x) for x in hist.get("counts", [])]
     if len(labels) != len(counts):
         raise ValueError("hist labels and counts must have equal length")
-    # Normalize legacy overflow labels that collide with the exact ``20`` tick.
     labels = [
         "20+" if lab in {">20+", ">20", "20+"} and i == len(labels) - 1 else lab
         for i, lab in enumerate(labels)
     ]
-    # If both an exact ``20`` and a trailing overflow tick exist, merge them.
-    if (
-        len(labels) >= 2
-        and labels[-1] == "20+"
-        and labels[-2] == "20"
-    ):
+    if len(labels) >= 2 and labels[-1] == "20+" and labels[-2] == "20":
         labels = labels[:-2] + ["20+"]
         counts = counts[:-2] + [counts[-2] + counts[-1]]
 
@@ -642,8 +631,6 @@ def plot_stems_per_song(
         fig, ax = plt.subplots(figsize=figsize)
         ax.bar(range(len(labels)), counts, color="C0", alpha=0.9, width=0.85)
         ax.set_xticks(range(len(labels)))
-        # Show every other exact-count tick (keep first and overflow) to avoid
-        # collisions like ``19`` vs ``20+`` at column width.
         tick_labels: list[str] = []
         last_i = len(labels) - 1
         for i, lab in enumerate(labels):
@@ -663,7 +650,90 @@ def plot_stems_per_song(
         sns.despine(ax=ax)
         ax.tick_params(axis="y", labelsize=7)
         ax.tick_params(axis="x", length=2)
+        fig.tight_layout()
+        _savefig(fig, output_path, pad_inches=0.06)
+        plt.close(fig)
+    finally:
+        sns.reset_defaults()
 
+
+def plot_song_hours_by_stems(
+    payload: dict,
+    output_path: str | Path,
+    *,
+    figsize: tuple[float, float] = (3.45, 2.45),
+    log_y: bool = True,
+):
+    """Grouped bars: song-hours vs stems/song for SPDMX and Slakh.
+
+    Expects ``song_hours_by_stems.json``: ``labels``, ``spdmx.hours``, ``slakh.hours``.
+    Y values are mixture/song hours (not stem-hours).
+    """
+    import numpy as np
+    import seaborn as sns
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    labels = [str(x) for x in payload.get("labels", [])]
+    spdmx = payload.get("spdmx") or {}
+    slakh = payload.get("slakh") or {}
+    h_spdmx = [float(x) for x in spdmx.get("hours", [])]
+    h_slakh = [float(x) for x in slakh.get("hours", [])]
+    if not labels or len(h_spdmx) != len(labels) or len(h_slakh) != len(labels):
+        raise ValueError("payload labels/hours length mismatch")
+
+    x = np.arange(len(labels))
+    width = 0.4
+    sns.set_theme(style="ticks", context="paper")
+    try:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.bar(
+            x - width / 2,
+            h_spdmx,
+            width,
+            label="SPDMX",
+            color="C0",
+            alpha=0.9,
+        )
+        ax.bar(
+            x + width / 2,
+            h_slakh,
+            width,
+            label="Slakh2100",
+            color="C1",
+            alpha=0.9,
+        )
+        ax.set_xticks(x)
+        tick_labels: list[str] = []
+        last_i = len(labels) - 1
+        for i, lab in enumerate(labels):
+            if i == 0 or i == last_i or lab.endswith("+"):
+                tick_labels.append(lab)
+            elif lab.isdigit() and int(lab) % 2 == 0:
+                tick_labels.append(lab)
+            else:
+                tick_labels.append("")
+        ax.set_xticklabels(tick_labels, fontsize=6)
+        ax.set_xlabel("Stems per song")
+        ax.set_ylabel("Song hours")
+        if log_y:
+            from matplotlib.ticker import FuncFormatter, LogLocator
+
+            ax.set_yscale("log")
+            floor = 1e-2
+            ax.set_ylim(bottom=floor)
+            ax.yaxis.set_major_locator(LogLocator(base=10.0))
+            ax.yaxis.set_major_formatter(
+                FuncFormatter(lambda x, _pos: f"{x:g}" if x > 0 else "")
+            )
+        ax.legend(fontsize=7, frameon=False, loc="upper right")
+        ax.set_axisbelow(True)
+        ax.yaxis.grid(True, linestyle="--", linewidth=0.7, alpha=0.45, color="0.5")
+        ax.xaxis.grid(False)
+        sns.despine(ax=ax)
+        ax.tick_params(axis="y", labelsize=7)
+        ax.tick_params(axis="x", length=2)
         fig.tight_layout()
         _savefig(fig, output_path, pad_inches=0.06)
         plt.close(fig)

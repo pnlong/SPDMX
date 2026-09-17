@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SPDMX: Public-Domain Multitrack Stem Audio at Scale</title>
-  <meta name="description" content="sPDMX turns PDMX symbolic scores into open multitrack stem audio at corpus scale.">
+  <meta name="description" content="SPDMX turns PDMX symbolic scores into open multitrack stem audio at corpus scale.">
   <link rel="icon" href="assets/favicon.ico" sizes="any">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="icon" type="image/png" sizes="96x96" href="assets/favicon-96x96.png">
@@ -14,41 +14,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/home.js"></script>
 </head>
 <body>
-  <header class="site-header">
-    <a class="brand" href="#top">
-      <img class="brand-mark" src="assets/logo.png" alt="SPDMX" width="40" height="40" onerror="this.style.display='none'">
-      <span class="brand-name">SPDMX</span>
-    </a>
-    <button
-      class="nav-toggle"
-      type="button"
-      aria-label="Open menu"
-      aria-controls="site-nav"
-      aria-expanded="false"
-    >
-      <span class="nav-toggle-bar" aria-hidden="true"></span>
-      <span class="nav-toggle-bar" aria-hidden="true"></span>
-      <span class="nav-toggle-bar" aria-hidden="true"></span>
-    </button>
-    <nav class="nav" id="site-nav">
-      <a href="#paper">📄 Paper</a>
-      <a id="nav-dataset" href="#dataset">📦 Dataset</a>
-      <a href="https://github.com/pnlong/SPDMX">💻 Code</a>
-      <a href="https://zenodo.org/records/15571083">🎼 PDMX</a>
-      <a href="#listen">🎧 Listen</a>
-      <a href="#soundfonts">🎹 Soundfonts</a>
-      <a href="#cite">📚 Cite</a>
-    </nav>
-  </header>
+  <header class="site-header"></header>
 
   <main id="top">
     <section class="hero">
       <div class="hero-brand">
-        <img class="hero-logo" src="assets/logo.png" alt="sPDMX" width="88" height="88">
+        <img class="hero-logo" src="assets/logo.png" alt="SPDMX" width="88" height="88">
       </div>
       <h1 class="paper-title">SPDMX: Public-Domain Multitrack Stem Audio at Scale</h1>
       <p class="authors">
@@ -56,20 +30,17 @@
       </p>
       <p class="affiliation">University of California, San Diego</p>
       <div class="cta-row">
-        <!-- Set Paper (arXiv/PDF) and Dataset (Zenodo record) URLs when available. -->
-        <a class="btn" href="#paper">📄 Paper</a>
-        <a class="btn primary" id="link-dataset" href="#dataset">📦 Dataset</a>
-        <a class="btn" href="https://github.com/pnlong/SPDMX">💻 Code</a>
-        <a class="btn" href="https://zenodo.org/records/15571083">🎼 PDMX</a>
-        <a class="btn" href="#listen">🎧 Listen</a>
-        <a class="btn" href="#soundfonts">🎹 Soundfonts</a>
-        <a class="btn" href="#cite">📚 Cite</a>
+        <a class="btn primary" href="about.html">About &amp; download</a>
+        <a class="btn" href="listen.html">Listen</a>
+        <a class="btn" href="blog/index.html">Blog</a>
+        <a class="btn" href="https://github.com/pnlong/SPDMX">Code</a>
+        <a class="btn" href="https://zenodo.org/records/15571083">PDMX</a>
       </div>
       <ul class="stat-strip" id="stat-strip" aria-label="Dataset scale">
         <li><strong id="stat-songs">—</strong><span>songs</span></li>
-        <li><strong id="stat-stems">—</strong><span>stems</span></li>
-        <li><strong id="stat-hours">—</strong><span>hours</span></li>
-        <li><strong id="stat-chunks">—</strong><span>chunks</span></li>
+        <li><strong id="stat-hours">—</strong><span>song hours</span></li>
+        <li><strong id="stat-multi-songs">—</strong><span>multitrack songs</span></li>
+        <li><strong id="stat-multi-hours">—</strong><span>multitrack hours</span></li>
       </ul>
       <p class="hero-abstract">
         Recorded multitrack stems remain scarce for modern separation and generative
@@ -78,7 +49,7 @@
         stem corpus from PDMX: scores are cleaned, rendered with open soundfonts and
         selective MIDI-DDSP, then loudness- and velocity-aware mixed into mono stems
         and mixes at 44.1 kHz—sharing song identity with PDMX so symbolic metadata
-        stays usable alongside the audio.
+        stays usable alongside the audio. Song-hours count mix duration once per song.
       </p>
       <div class="hero-panel">
         <code>chunk_N / song_id /</code>
@@ -91,126 +62,7 @@
       </div>
     </section>
 
-    <section id="layout" class="section">
-      <div class="section-head">
-        <h2>What’s on disk</h2>
-        <p>
-          Filter with the CSV tables first, then download only the ~27 GiB chunk
-          archives you need. Each song directory holds stems, a
-          linear-sum mix, and paired MIDI.
-        </p>
-      </div>
-      <figure class="figure-block">
-        <img src="assets/chunk_layout.svg" alt="SPDMX release tree: metadata CSVs, chunk archives, and per-song stems/mix/MIDI" width="1200" height="490">
-        <figcaption>
-          Release tree: filter with the CSVs, download ~27 GiB <code>chunk_N</code> archives,
-          then open <code>chunk_N/&lt;song_id&gt;/</code> for stems, mix, and paired MIDI.
-        </figcaption>
-      </figure>
-      <div class="two-col">
-        <div>
-          <h3>Download recipe</h3>
-          <ol class="steps">
-            <li>Get <code>stems.csv</code>, <code>songs.csv</code>, <code>chunks.csv</code>.</li>
-            <li>Filter songs (e.g. <code>subset:bdgp</code>) then restrict stems.</li>
-            <li>Read distinct <code>chunk</code> ids and fetch those <code>chunk_N.zip</code> files.</li>
-            <li>Unzip beside the CSVs so <code>./chunk_N/&lt;song_id&gt;/…</code> resolves.</li>
-          </ol>
-        </div>
-        <div>
-          <h3>Per-song contents</h3>
-          <ul class="plain">
-            <li><strong>track</strong> — contiguous index after dropping empty PDMX tracks (<code>{track}.flac</code>).</li>
-            <li><strong>program / is_drum</strong> — General MIDI identity after name-based correction.</li>
-            <li><strong>mix.flac</strong> — raw linear sum of stems (mono).</li>
-            <li><strong>mix.mid</strong> — paired MIDI aligned to the stems.</li>
-          </ul>
-        </div>
-      </div>
-      <div class="chart-card">
-        <h3>Songs per chunk</h3>
-        <canvas id="chart-chunks" height="120"></canvas>
-        <p class="chart-note">
-          Archives are sized for ~27 GiB downloads, not equal song counts. Longer or
-          denser songs pack fewer titles into a chunk, so bar heights vary even though
-          download cost stays roughly uniform.
-        </p>
-      </div>
-    </section>
-
-    <section id="stats" class="section alt">
-      <div class="section-head">
-        <h2>Dataset at a glance</h2>
-        <p>Scale and inventory plots that did not fit in the paper.</p>
-      </div>
-      <div class="chart-grid">
-        <div class="chart-card">
-          <h3>Scale vs peers</h3>
-          <canvas id="chart-comparison" height="180"></canvas>
-          <p class="chart-note">
-            On mix duration, SPDMX is about an order of magnitude beyond Slakh2100 and
-            two orders beyond recorded multitrack sets: open synth stems at symbolic-corpus
-            scale rather than studio-session scale.
-          </p>
-        </div>
-        <div class="chart-card">
-          <h3>Stems per song (multi-stem)</h3>
-          <canvas id="chart-tracks" height="180"></canvas>
-          <p class="chart-note" id="tracks-note"></p>
-        </div>
-        <div class="chart-card">
-          <h3>GM classes (songs)</h3>
-          <canvas id="chart-gm" height="220"></canvas>
-          <p class="chart-note">
-            Piano covers most of the catalog; ensemble and orchestral families form a
-            smaller but still substantial second tier, while niche GM classes appear in
-            only a thin slice of songs.
-          </p>
-        </div>
-        <div class="chart-card">
-          <h3>Top programs (stems)</h3>
-          <canvas id="chart-programs" height="220"></canvas>
-          <p class="chart-note">
-            Acoustic Grand alone accounts for the majority of stems, mirroring
-            piano-heavy public-domain scores, with choir and drums as the next clear peaks.
-          </p>
-        </div>
-        <div class="chart-card">
-          <h3>Render recipe</h3>
-          <canvas id="chart-backends" height="160"></canvas>
-          <p class="chart-note" id="backends-note"></p>
-        </div>
-        <div class="chart-card">
-          <h3>Song length (mix)</h3>
-          <canvas id="chart-duration" height="180"></canvas>
-          <p class="chart-note" id="duration-note"></p>
-        </div>
-      </div>
-    </section>
-
-    <section id="listen" class="section">
-      <div class="section-head">
-        <h2>Listen</h2>
-        <p>
-          Clips from the release. Play starts every stem in sync; Mute and Solo change
-          who you hear. Only one demo plays at a time.
-        </p>
-      </div>
-      <div id="demo-root" class="demo-root"></div>
-    </section>
-
-    <section id="soundfonts" class="section alt">
-      <div class="section-head">
-        <h2>Soundfonts</h2>
-        <p id="soundfonts-blurb">
-          FluidSynth banks behind the release. Basic stems use SGM-V2.01;
-          varied stems draw from listening-selected shortlists.
-        </p>
-      </div>
-      <div id="soundfonts-root" class="soundfonts-root"></div>
-    </section>
-
-    <section id="cite" class="section">
+    <section id="cite" class="section alt">
       <div class="section-head">
         <h2>Citation &amp; license</h2>
         <p>
@@ -238,14 +90,12 @@
 }</code></pre>
       <p class="license">
         Release license: CC BY 4.0 (PDMX scores are public domain; see the dataset
-        <code>LICENSE</code>). Project page:
-        <a href="https://pnlong.github.io/SPDMX/">pnlong.github.io/SPDMX</a>.
+        <code>LICENSE</code>). This site is the primary hub for demos, plots, and
+        experiment write-ups.
       </p>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <p>sPDMX · <a href="https://github.com/pnlong/SPDMX">GitHub</a></p>
-  </footer>
+  <footer class="site-footer"></footer>
 </body>
 </html>

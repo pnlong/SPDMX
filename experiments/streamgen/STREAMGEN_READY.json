@@ -1,0 +1,20 @@
+{
+  "upstream_root": "/home/pnlong/spdmx/experiments/streamgen/stream-music-gen",
+  "index_dir": "/home/pnlong/spdmx/analysis/paper_data/streamgen_spdmx_index",
+  "index": "/home/pnlong/spdmx/analysis/paper_data/streamgen_spdmx_index/spdmx_multitrack.jsonl",
+  "hour_matched": "/home/pnlong/spdmx/analysis/paper_data/streamgen_spdmx_index/spdmx_hour_matched.jsonl",
+  "dac_weights": null,
+  "github": "https://github.com/lukewys/stream-music-gen",
+  "pilot": {
+    "script": "scripts/train_dec_online.py",
+    "config": "configs/online/decoder_online_future_visibility_0.yml",
+    "future_visibility": 0
+  },
+  "note": "Upstream requires Python >=3.11 and pins torch 2.5.x; this setup keeps your existing torch and installs the package with --no-deps.",
+  "next": [
+    "cd /home/pnlong/spdmx/experiments/streamgen/stream-music-gen",
+    "# Wire SPDMX JSONL adapter (see ADAPTER.md in the index dir)",
+    "# extract_causal_dac_32k \u2192 extract_rms \u2192 dump_audio_mixdown",
+    "python scripts/train_dec_online.py --args.load configs/online/decoder_online_future_visibility_0.yml --save_dir logs/dec_online_future_visibility_0"
+  ]
+}

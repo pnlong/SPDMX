@@ -39,3 +39,15 @@ In `assets/`:
 - `logo.png` — hero + header mark
 - `favicon.ico` / `favicon.svg` / `favicon-96x96.png` — tab icons
 - `apple-touch-icon.png`, `web-app-manifest-*.png`, `site.webmanifest`
+
+## Site map
+
+| Page | Role |
+|------|------|
+| `index.html` | Home — stats (total + multitrack songs/hours), Cite |
+| `about.html` | Download + plots |
+| `listen.html` | Stem demos |
+| `soundfonts.html` | Banks |
+| `blog/` | Experiment posts (Demucs, SAO, Transcription, StreamGen) |
+
+Nav is injected by `js/chrome.js` (hamburger on small screens).

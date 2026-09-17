@@ -1,0 +1,11 @@
+# StreamGen pilot — lukewys/stream-music-gen on SPDMX multitrack.
+min_stems: 2
+seed: 43
+train_steps: 100000
+# Pilot config matching decoder_online_future_visibility_0.yml
+future_visibility: 0
+chunk_duration_s: null  # k=1 frame regime when null
+val_fraction: 0.05
+test_fraction: 0.05
+hour_matched_hours: 145.0
+upstream_repo: https://github.com/lukewys/stream-music-gen

@@ -242,6 +242,22 @@ def test_plot_stems_per_song(tmp_path: Path):
     assert out.exists()
 
 
+def test_plot_song_hours_by_stems(tmp_path: Path):
+    from analysis.plots import plot_song_hours_by_stems
+
+    out = tmp_path / "song_hours_by_stems.pdf"
+    plot_song_hours_by_stems(
+        {
+            "labels": ["2", "3", "4", "20+"],
+            "spdmx": {"hours": [100.0, 40.0, 20.0, 5.0]},
+            "slakh": {"hours": [0.0, 0.0, 0.5, 2.0]},
+        },
+        out,
+        log_y=True,
+    )
+    assert out.exists()
+
+
 def test_plot_keeps_drums_outside_top_n(tmp_path: Path):
     rows = [
         {"gm_id": i, "program": i, "is_drum": False, "gm_class": "piano", "category": "default"}

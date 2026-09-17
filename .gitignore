@@ -26,5 +26,10 @@ synthesis/ddsp/third_party/ddsp-piano/
 # Local copy of MIDI-DDSP URMP weights (after midi_ddsp_download_model_weights)
 models/midi_ddsp/
 
-# Local clone of stable-audio-tools for SAO PoC (see experiments/sao/README.md)
+# Local clones for experiment stacks
 experiments/sao/stable-audio-tools/
+experiments/transcription/YourMT3/
+experiments/streamgen/stream-music-gen/
+experiments/transcription/YOURMT3_READY.json
+experiments/transcription/YOURMT3_READY.md
+

@@ -150,6 +150,56 @@ a:hover {
   color: var(--ink);
 }
 
+.nav a.is-active {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.28em;
+}
+
+.blog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.blog-list li {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.blog-list a {
+  color: var(--ink);
+  text-decoration: none;
+  font-family: var(--display);
+  font-size: 1.25rem;
+}
+
+.blog-list a:hover {
+  color: var(--amber, #c46a12);
+}
+
+.blog-meta {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.post h1 {
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 3vw, 2.1rem);
+  margin: 0.35rem 0 1rem;
+}
+
+.post p {
+  max-width: 65ch;
+  line-height: 1.55;
+}
+
 .hero {
   display: flex;
   flex-direction: column;
@@ -413,6 +463,10 @@ figcaption code {
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 1rem 1.1rem 1.2rem;
+}
+
+.chart-card-wide {
+  grid-column: 1 / -1;
 }
 
 .chart-card h3 {
