@@ -211,6 +211,11 @@ def main(argv: list[str] | None = None) -> None:
         _run(["git", "lfs", "pull"], cwd=args.dest, check=False)
 
     _install_deps(args.dest, skip_install=args.skip_install)
+    from experiments.transcription.patch_yourmt3 import apply_yourmt3_patches
+
+    patched = apply_yourmt3_patches(args.dest / "amt" / "src")
+    for p in patched:
+        print(f"patched {p}")
     manifests = _ensure_manifests(rebuild=args.rebuild_manifests)
     ready = _write_ready(args.dest, manifests)
     print()

@@ -130,6 +130,11 @@ def main(argv: list[str] | None = None) -> None:
             "Run: uv run python -m experiments.transcription.setup_yourmt3"
         )
 
+    from experiments.transcription.patch_yourmt3 import apply_yourmt3_patches
+
+    for p in apply_yourmt3_patches(YOURMT3_SRC):
+        print(f"patched {p}")
+
     extra = list(args.yourmt3_args or [])
     if extra and extra[0] == "--":
         extra = extra[1:]
