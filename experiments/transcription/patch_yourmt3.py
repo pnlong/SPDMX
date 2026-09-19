@@ -134,6 +134,17 @@ def _patch_train_py(path: Path) -> bool:
     return True
 
 
+def _patch_torch_load(path: Path) -> bool:
+    """PyTorch 2.6 defaults torch.load to weights_only=True; YourMT3 ckpts pickle TaskManager."""
+    text = path.read_text(encoding="utf-8")
+    old = 'torch.load(dir_info["last_ckpt_path"])'
+    new = 'torch.load(dir_info["last_ckpt_path"], weights_only=False)'
+    if old not in text:
+        return False
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    return True
+
+
 def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     """Apply local YourMT3 fixes. Returns list of patched file paths."""
     src = Path(yourmt3_src) if yourmt3_src is not None else YOURMT3_SRC
@@ -142,8 +153,12 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     patched: list[str] = []
     init_train = src / "model" / "init_train.py"
     train_py = src / "train.py"
+    test_py = src / "test.py"
     if init_train.is_file() and _patch_init_train(init_train):
         patched.append(str(init_train))
     if train_py.is_file() and _patch_train_py(train_py):
         patched.append(str(train_py))
+    for ckpt_py in (train_py, test_py):
+        if ckpt_py.is_file() and _patch_torch_load(ckpt_py):
+            patched.append(str(ckpt_py))
     return patched
