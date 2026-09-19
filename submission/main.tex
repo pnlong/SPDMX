@@ -1,10 +1,8 @@
-% SPDMX — ICASSP proceedings draft
-% Uses: spconf.sty, IEEEbib.bst
+% SPDMX — ICASSP proceedings outline
+% This file contains narrative notes only. Replace each note block with prose.
 % --------------------------------------------------------------------------
 \documentclass{article}
-\usepackage{spconf,amsmath,graphicx,hyperref,booktabs}
-\usepackage{xcolor}
-\newcommand{\edc}[1]{\textcolor{purple}{#1}}
+\usepackage{spconf,hyperref}
 
 \newcommand{\demourl}{https://pnlong.github.io/SPDMX/}
 
@@ -15,282 +13,279 @@
 
 \begin{document}
 %\ninept
-%
 \maketitle
-%
-\begin{abstract}
-Recorded \edc{should this be multi-track?} multitrack stems remain scarce for modern separation and generative audio models, while large synthesized alternatives often depend on closed commercial instruments.
-We present \textbf{SPDMX} (Synthesized PDMX), \edc{"to our knowledge" sounds kinda unsure }to our knowledge the largest public-domain \edc{multitrack comment from above} multitrack stem audio corpus, derived from the PDMX symbolic collection.
-Construction has three stages: score cleaning (General MIDI program correction; empty tracks removed), a listening study that selects an open FluidSynth / MIDI-DDSP render recipe, and full-corpus assembly with loudness- and velocity-aware mixing.
-The release has $253{,}982$ songs ($5{,}469$ song-hours) and $490{,}159$ mono stems at $44.1$\,kHz; $88{,}403$ songs ($2{,}734$ song-hours) have two or more stems.
-Song identity is shared with PDMX so symbolic metadata and scores pair with the audio.
-Matched-budget Hybrid Demucs and Stable Audio Open fine-tunes provide training checks against Slakh2100 under SI-SDR, FAD, and CLAP.
-Extended demos, plots, and experiment notes live on the project page.
-\end{abstract}
-%
-\begin{keywords}
-Public-domain music, multitrack stems, symbolic-to-audio, source separation, generative audio \edc{add dataset?}
-\end{keywords}
-%
+
+% ABSTRACT — one sentence or compact clause for each move:
+% - Problem: legally redistributable multitrack audio is scarce; existing
+%   resources trade off realism, scale, and redistributability.
+% - Opportunity and obstacle: public-domain symbolic music offers scale, but
+%   naive rendering produces acoustically weak stems.
+% - Solution: introduce SPDMX, a listening-guided, fully redistributable
+%   rendering of PDMX with aligned scores, MIDI, stems, and mixtures.
+% - Method: correct score metadata, select category-specific open renderers
+%   through a listening study, and preserve musical balance during mixing.
+% - Scale: 253,982 songs, 5,469 song-hours, and 490,159 mono stems; distinguish
+%   clearly between the full corpus and the 88,403 songs with two or more stems.
+% - Evidence: matched-budget source-separation experiments test in-domain
+%   learnability, complementarity with Slakh2100, and transfer to recorded
+%   datasets including MUSDB18, MoisesDB, and MedleyDB.
+% - Takeaway: SPDMX makes large-scale stem supervision reproducible and
+%   redistributable from source score to final mixture.
+
+% KEYWORD CANDIDATES:
+% Public-domain music; audio datasets; multitrack stems; symbolic-to-audio;
+% music source separation.
+
 \section{Introduction}
 \label{sec:intro}
 
-Music source separation, accompaniment generation, automatic mixing, and stem-conditioned synthesis need paired mixtures and stems.
-Vision~\cite{deng2009imagenet,schuhmann2022laion}, large-scale text~\cite{raffel2020exploring,gao2020pile}, and broader audio and speech~\cite{gemmeke2017audio,panayotov2015librispeech} have massive public corpora; music does not.
-Commercial recordings are abundant, yet copyright bars most of them as open training data, especially paired stems.
-Open recorded multitracks such as MUSDB18~\cite{rafii2019musdb18}, MedleyDB~\cite{bittner2014medleydb}, and MoisesDB~\cite{pereira2023moisesdb} are realistic but small (Table~\ref{tab:datasets}), even though more data and augmentation help separation~\cite{uhlich2017improving,pretet2019singing,stoter2018sigsep}.
-Slakh2100~\cite{manilow2019cutting} scales synthesis with professional sample libraries, but those instruments are not redistributable, and $2{,}100$ songs / $145$ hours remain far below public-domain symbolic scale. \edc{good, points out the main issues with music datasets}
+% PARAGRAPH 1 — NEED
+% Topic sentence: Modern music models require paired mixtures and stems, but
+% legally redistributable multitrack audio remains scarce.
+% - Name motivating tasks: separation, accompaniment generation, automatic
+%   mixing, and stem-conditioned synthesis.
+% - Briefly contrast music with fields that have massive public corpora.
 
-\edc{could maybe use a small blurb on where the actual songs in PDMX come from, in case the reader is not familiar with PDMX, highlighting the crowdsourced nature of the songs in the dataset}
-PDMX~\cite{long2024pdmx,xu2024generating} provides MusicXML and MIDI at public-domain scale (over $250$K scores, about $6{,}250$ hours).
-Naive General MIDI (GM) soundfont renders of that material sound dry and synthetic; short soundfont notes poorly match acoustic sustain for winds, brass, and strings.
-No public stem corpus yet renders that symbolic scale with open, redistributable instruments.
+% PARAGRAPH 2 — THE EXISTING TRADE-OFF
+% Topic sentence: Existing resources trade off realism, scale, and
+% redistributability.
+% - Recorded datasets (MUSDB18, MedleyDB, MoisesDB): realistic but small and/or
+%   restricted.
+% - Slakh2100: synthetic and larger, but built with non-redistributable
+%   commercial instruments and still small relative to symbolic collections.
+% - State the gap explicitly: no existing resource combines all three goals.
+% - Place the dataset comparison table here.
 
-We introduce \textbf{SPDMX} (synthesized PDMX), a listening-tuned stem release from PDMX and, to our knowledge, the largest public-domain multitrack stem audio dataset: $253{,}982$ songs ($5{,}469$ song-hours) with $490{,}159$ mono stems, of which $88{,}403$ songs ($2{,}734$ song-hours) are multitrack ($\geq 2$ stems), song-aligned with PDMX and over $100{\times}$ more songs than Slakh2100.
-Our contributions are as follows:
-\begin{enumerate}
-\setlength{\itemsep}{0.15em}
-\setlength{\parsep}{0pt}
-\setlength{\topsep}{0.35em}
-\item We release \edc{rephrase? "that corpus" reads a lil odd} that corpus with PDMX-aligned metadata and scores.
-\item We define an open synthesis protocol with GM register correction, FluidSynth~\cite{fluidsynth} soundfont variety, selective MIDI-DDSP~\cite{engel2020ddsp,wu2022midi} for sustained instruments, and loudness- and velocity-aware mixing.
-\item We run an ablation listening study on perceived realism to choose the production render recipe.
-\item We report matched-budget Hybrid Demucs~\cite{defossez2021hybrid} and Stable Audio Open (SAO)~\cite{evans2024stable} training checks against Slakh2100.
-\end{enumerate}
-The project page is the primary hub for demos, download notes, and experiment write-ups;\footnote{\url{\demourl}.} upon acceptance we will make the dataset and code public.
+% PARAGRAPH 3 — OPPORTUNITY AND TECHNICAL OBSTACLE
+% Topic sentence: Public-domain symbolic collections offer a path to scale, but
+% naive rendering produces acoustically unconvincing stems.
+% - Briefly explain PDMX's crowdsourced provenance, public-domain status,
+%   contents, and scale for readers unfamiliar with it.
+% - Explain why direct General MIDI rendering is insufficient: dry timbres and
+%   poor sustain for winds, brass, and strings.
 
-\begin{table}[t]
-\centering
-\caption{Comparison of multitrack and symbolic resources against SPDMX, to our knowledge the largest public-domain multitrack stem audio release.
-Hours are mixture or score duration as reported by each source.
-License is Res.\ (restricted), PD (public domain), or Open.
-Under Vocals, R denotes recorded singing, S denotes synthesized or choir-style vocals, and a dash denotes none or not applicable.}
-\label{tab:datasets}
-\vspace{1mm}
-\setlength{\tabcolsep}{2.2pt}
-\footnotesize
-\begin{tabular}{@{}lrrlllcc@{}}
-\toprule
-Dataset & Songs & Hours & Type & Stems & License & MIDI & Vocals \\
-\midrule
-MUSDB18~\cite{rafii2019musdb18} & 150 & $\sim$10 & Recorded & 4 & Res. & \checkmark & R \\
-MedleyDB~\cite{bittner2014medleydb} & 122 & $\sim$7 & Recorded & var. & Res. & $\times$ & R \\
-MoisesDB~\cite{pereira2023moisesdb} & 240 & $\sim$14 & Recorded & hier. & Res. & $\times$ & R \\
-Slakh2100~\cite{manilow2019cutting} & 2100 & 145 & Synthetic & 4--48 & Res. & \checkmark & -- \\
-PDMX~\cite{long2024pdmx} & 254077 & 6250 & Symbolic & -- & PD & \checkmark & -- \\
-\midrule
-\textbf{SPDMX} & 253982 & 5469 & Synthetic & var. & Open & \checkmark & S \\
-\bottomrule
-\end{tabular}
-\end{table}
+% PARAGRAPH 4 — SPDMX
+% Topic sentence: We introduce SPDMX, a listening-guided rendering of PDMX that
+% pairs public-domain scores with redistributable stems and mixtures at
+% unprecedented scale.
+% - Give headline corpus statistics.
+% - Distinguish all rendered songs from the multitrack subset.
+% - Emphasize the complete open chain: source score, MIDI, synthesizers,
+%   rendering protocol, stems, mixtures, and metadata.
+% - Use "to our knowledge" once and support the largest-dataset claim with the
+%   comparison table.
+
+% PARAGRAPH 5 — CONTRIBUTIONS AND PAPER PROMISE
+% Topic sentence: SPDMX combines a fully open synthesis protocol,
+% listener-selected rendering strategies, and task-based evaluations.
+% - Contribution 1: aligned symbolic and audio corpus at public-domain scale.
+% - Contribution 2: category-specific hybrid FluidSynth/MIDI-DDSP recipe.
+% - Contribution 3: perceptual study used to freeze that recipe.
+% - Contribution 4: matched-budget source-separation evaluation spanning
+%   synthetic and recorded test domains.
+% - End with release status and project-page link; avoid making the project
+%   page carry evidence needed to understand the paper.
 
 \section{Related work}
 \label{sec:prior}
 
-Open recorded multitrack datasets~\cite{rafii2019musdb18,bittner2014medleydb,pereira2023moisesdb} are small, and prior large-scale stem synthesis has used closed commercial instruments.
-Slakh~\cite{manilow2019cutting} is the closest precedent, which rendered Lakh MIDI~\cite{raffel2015large,raffel2016learning} with closed VSTs to study how data quantity and quality affect separation.
-SPDMX keeps that stem-and-mixture setup, but renders public-domain scores with \emph{open} synthesizers at PDMX scale: over $100{\times}$ more songs and about $38{\times}$ more hours than Slakh, and fully redistributable (Table~\ref{tab:datasets}).
+% PARAGRAPH 1 — RECORDED MULTITRACK DATA
+% Topic sentence: Recorded multitrack datasets provide realistic supervision
+% but remain too small and restricted for large-scale open training.
+% - Situate MUSDB18, MedleyDB, and MoisesDB.
+% - Explain what realism provides and what scale/licensing prevents.
 
-MIDI-DDSP~\cite{wu2022midi}, a DDSP-based~\cite{engel2020ddsp} model trained on URMP~\cite{li2018creating}, showed that neural MIDI-to-audio can yield high-quality synthetic corpora, continued by the Chamber Ensemble Generator~\cite{wu2022chamber}.
-We use that approach where listening favors it over FluidSynth soundfonts.
+% PARAGRAPH 2 — SYNTHETIC STEM DATA
+% Topic sentence: Synthetic datasets increase scale, but prior large
+% collections depend on proprietary sample libraries.
+% - Present Slakh2100 as the closest precedent.
+% - Explain what SPDMX retains: coherent stems and mixtures from symbolic music.
+% - Explain what SPDMX changes: public-domain scores, open renderers, much
+%   greater scale, and end-to-end redistributability.
+
+% PARAGRAPH 3 — NEURAL MIDI SYNTHESIS
+% Topic sentence: Neural MIDI synthesis can improve realism for selected
+% instruments, motivating a hybrid rather than single-renderer pipeline.
+% - Discuss MIDI-DDSP, URMP, and the Chamber Ensemble Generator.
+% - Set up the listening study: renderer choice is empirical and
+%   instrument-dependent, not an assumption that neural synthesis always wins.
 
 \section{SPDMX Dataset}
 \label{sec:dataset}
 
-SPDMX has three stages: clean PDMX scores, choose an open render recipe by listening, then assemble the full release under that recipe.
+% SECTION FRAMING
+% Topic sentence: Constructing an open stem corpus from symbolic scores
+% requires solving three problems: unreliable instrumentation metadata,
+% uneven rendering quality, and mixture assembly that preserves musical
+% balance.
+% - Map these problems directly to the three subsections below.
 
 \subsection{Initial data cleaning}
 \label{ssec:cleaning}
 
-PDMX MIDI programs often disagree with track names (e.g., a named violin encoded as piano).
-We correct GM programs from track-name aliases before rendering and drop tracks with no note events.
-Fig.~\ref{fig:gm_programs} shows the corrected inventory by stem count and non-silent hours: for each rendered stem we sum only $0.25$\,s windows whose RMS amplitude is at least $0.01$ ($\approx -40$\,dBFS), excluding near-silent gaps between notes and trailing padding.
-Mass concentrates in piano, choir/voice, drums, and common orchestral families.
-Piano dominates stem count ($57\%$) more than non-silent hours ($41\%$): many scores include a piano track, but those parts are often sparse or short, so they contribute less audible time per stem than sustained choir or orchestral lines.
+% PARAGRAPH 1 — WHY CLEANING IS NECESSARY
+% Topic sentence: We first correct instrument metadata and remove empty tracks
+% so that each rendered stem has a reliable semantic identity.
+% - Explain disagreement between track names and General MIDI programs.
+% - Describe alias-based program correction and removal of tracks without notes.
+% - State limitations of heuristic correction if relevant.
 
-\begin{figure}[t]
-  \centering
-  \centerline{\includegraphics[width=\columnwidth]{figs/gm_program_counts_compare.pdf}}
-  \caption{Top GM programs in SPDMX after register correction (non-empty tracks), ranked by stem count.
-  The left panel shows stem counts and the right panel shows non-silent hours.
-  Axes are in thousands; bar labels are corpus shares.}
-  \label{fig:gm_programs}
-\end{figure}
+% PARAGRAPH 2 — WHAT THE CLEANED INVENTORY CONTAINS
+% Topic sentence: The cleaned corpus is dominated by piano, voice/choir,
+% drums, and common orchestral families, with different distributions by stem
+% count and audible duration.
+% - Define non-silent hours and the RMS threshold.
+% - Explain why piano's share of stems exceeds its share of non-silent hours.
+% - Place the corrected-program inventory figure here.
 
-Naive single-bank GM rendering remains dry and synthetic, and short soundfont notes poorly match acoustic sustain for winds, brass, and strings.
-That motivates listening among open FluidSynth banks and selective MIDI-DDSP.
+% TRANSITION
+% Topic sentence: Cleaning makes the symbolic controls reliable, but it does
+% not resolve the acoustic limitations of naive single-bank rendering.
+% - Motivate the category-specific listening comparison.
 
 \subsection{Listening study}
 \label{ssec:listening}
 
-We use listening tests to choose a render recipe for each instrument category.
-Every track becomes a mono stem at $44.1$\,kHz.
-The \emph{basic} soundfont strategy uses one GM bank (\texttt{SGM-V2.01}).
-The \emph{varied} strategy samples a shortlist of redistributable soundfonts per category, including \texttt{FluidR3\_GM}, \texttt{GeneralUser GS}, \texttt{Arachno}, and \texttt{Airfont}, plus a light reverb FX profile, for Slakh-like timbral variety without proprietary libraries.
-For eligible monophonic strings, brass, and winds, MIDI-DDSP~\cite{wu2022midi} can replace the soundfont; we fall back to FluidSynth for polyphonic parts, instruments outside the MIDI-DDSP (URMP) inventory, and all other GM programs.
-Voice-class tracks use choir or voice soundfonts (lyric singing synthesis is out of scope).
+% PARAGRAPH 1 — DESIGN SPACE
+% Topic sentence: Because no open synthesizer performs best across all
+% instrument families, we compare category-specific FluidSynth and MIDI-DDSP
+% rendering strategies.
+% - Define basic and varied FluidSynth conditions.
+% - List representative redistributable soundfonts and the light reverb setup.
+% - Define MIDI-DDSP eligibility and FluidSynth fallbacks.
+% - Clarify treatment of voice tracks and exclusion of lyric synthesis.
 
-We compare four families: basic, varied, MIDI-DDSP over basic fallbacks, and MIDI-DDSP over varied fallbacks.
-The open reference is the basic soundfont, and when present, it also appears as a hidden reference among shuffled unlabeled conditions.
-Each trial is a 10-second stem excerpt scored for perceived realism ($0$--$100$).
-The set has two stems in each of ten categories ($20$ pages) and $N{=}8$ listeners (Fig.~\ref{fig:ablation_listening}).
+% PARAGRAPH 2 — STUDY DESIGN
+% Topic sentence: Listeners rate four rendering families for perceived realism
+% under shuffled, instrument-balanced comparisons.
+% - Four families: basic; varied; MIDI-DDSP with basic fallback; MIDI-DDSP with
+%   varied fallback.
+% - State excerpt length, number of categories and stems, listener count,
+%   rating scale, reference handling, and randomization.
+% - Be precise about the unit of analysis and how scores are aggregated.
 
-We freeze one path per category, choosing the highest mean by default.
-When basic only narrowly beats varied, we keep varied for diversity.
-SPDMX uses basic for drums, organ, and guitar, and varied for piano, voice, mallet, and residual classes; strings and brass use MIDI-DDSP over basic, and wind uses MIDI-DDSP over varied ($\star$ in Fig.~\ref{fig:ablation_listening}).
-
-\begin{figure*}[t]
-  \centering
-  \centerline{\includegraphics[width=\textwidth]{figs/ablation_listening.pdf}}
-  \caption{Ablation listening realism ($0$--$100$) by instrument category for basic, varied, and MIDI-DDSP hybrids.
-  Boxes are per-listener means ($N{=}8$; two stems per category).
-  MIDI-DDSP panels appear only where neural synthesis can apply.
-  Stars mark the frozen SPDMX recipe.}
-  \label{fig:ablation_listening}
-\end{figure*}
+% PARAGRAPH 3 — DECISION RULE AND RESULT
+% Topic sentence: Listener preferences support a hybrid recipe whose renderer
+% depends on instrument family.
+% - State the default highest-mean rule and the diversity exception.
+% - Give the frozen assignment by category.
+% - Place the listening-study figure here.
+% - Avoid implying statistical significance unless it is tested and reported.
 
 \subsection{Final assembly}
 \label{ssec:assembly}
 
-The frozen recipe is applied to every cleaned song under redistributable synthesizers.
-Independent per-stem loudness matching would erase MIDI velocity balance, so each stem is loudness-normalized toward $-23$\,LUFS~\cite{series2011algorithms} with peak limiting, then scaled by the ratio of that track's maximum note-on velocity to the song maximum.
-A single anti-clip peak gain on the stem sum, applied uniformly, keeps stems linearly summable (mixture equals stem sum)~\cite{manilow2019cutting}.
+% PARAGRAPH 1 — MIXING PROBLEM AND SOLUTION
+% Topic sentence: We preserve MIDI velocity relationships while controlling
+% loudness and clipping so that released stems remain linearly summable.
+% - Explain why independent loudness normalization would erase intended balance.
+% - Describe the -23 LUFS target, peak limiting, velocity-ratio scaling, and
+%   one uniform anti-clipping gain on the stem sum.
+% - State explicitly that each mixture equals the sum of its released stems.
 
-SPDMX has $253{,}982$ songs ($5{,}469$ song-hours) and $490{,}159$ mono FLAC stems, plus paired MIDI.
-Song-hours are mixture durations counted once per song (not multiplied by stem count).
-Of these, $88{,}403$ songs ($34.8\%$; $2{,}734$ song-hours, $50.0\%$ of hours) have two or more stems (corpus mean $1.93$ stems/song; max $66$; Fig.~\ref{fig:stems_per_song}).
-A BDGP-eligible slice (bass, drums, guitar, and piano present) supports matched Slakh comparisons.
-Songs share identity with PDMX (MusicXML, metadata, and audio without separate alignment) and \edc{maybe more info on the synthesizer pipeline/what open synthesizers?} use only open synthesizers.
-
-\begin{figure}[t]
-  \centering
-  \centerline{\includegraphics[width=\columnwidth]{figs/stems_per_song.pdf}}
-  \caption{Song-hours versus stems per song for SPDMX and Slakh2100 (log $y$).
-  For each $x{=}n$, $y$ is the sum of mix durations over songs with exactly $n$ stems (overflow $20{+}$).
-  SPDMX singles ($165{,}579$ songs) are omitted; Slakh2100 includes all $2{,}100$ tracks ($145$\,h).
-  Multitrack SPDMX totals $2{,}734$ song-hours across $88{,}403$ songs.}
-  \label{fig:stems_per_song}
-\end{figure}
+% PARAGRAPH 2 — RELEASE CONTENTS AND SCALE
+% Topic sentence: The resulting corpus provides aligned scores, MIDI, stems,
+% and mixtures for 253,982 songs, including 88,403 multitrack songs.
+% - Report 5,469 total song-hours, 490,159 mono FLAC stems at 44.1 kHz, and
+%   2,734 multitrack song-hours.
+% - Define song-hours and explain why they are not multiplied by stem count.
+% - Report stem-count distribution and identify the BDGP comparison slice.
+% - Explain identity-based alignment with PDMX metadata and MusicXML.
+% - Name the open synthesis components and their redistribution terms.
+% - Place the stems-per-song figure here.
 
 \section{Experiments}
 \label{sec:experiments}
 
-We verify SPDMX with two matched-step training studies: Hybrid Demucs~\cite{defossez2021hybrid} source separation and Stable Audio Open~\cite{evans2024stable} fine-tuning.
+% SECTION FRAMING
+% Topic sentence: We evaluate whether SPDMX provides learnable supervision for
+% source separation and whether it generalizes across synthetic and recorded
+% datasets under matched training budgets.
+% - State that this is a dataset validation study, not a claim of
+%   state-of-the-art separation performance.
+% - Explain exactly what "matched" controls: steps, examples, duration, or
+%   another budget.
 
 \subsection{Source separation}
 \label{ssec:separation}
 
-Hybrid Demucs~\cite{defossez2021hybrid} recovers bass, drums, guitar, and piano from coherent mixtures.
-For a head-to-head with Slakh2100, we map SPDMX parts to those classes and keep songs with all four (about $36$\,h of SPDMX training audio vs.\ $83$\,h of Slakh under our manifests).
-We compare three matched-step arms: Slakh, SPDMX (BDGP), and Slakh~$\cup$~SPDMX (BDGP).
-Table~\ref{tab:separation} reports mean SI-SDR~\cite{leroux2019sdr}.
-In-domain, SPDMX (BDGP) is learnable, and the union largely keeps Slakh-test performance while transferring to SPDMX (BDGP).
-Solo arms fail cross-domain, consistent with prior evidence that synth-trained separators transfer poorly to mismatched acoustics~\cite{manilow2019cutting,bugler2020study}.
-MUSDB18 bass and drums remain hard for all synth-trained arms, as in Slakh-only training on MUSDB~\cite{manilow2019cutting}.
-\edc{its pretty interesting that SPDMX has the best performance on MUSDB18, even better than Slackh U SPDMX. Whats your intution there? could maybe go in the 4.1 section along with whatever the implications are of that.}
-\begin{table}[t]
-\centering
-\caption{Matched-step Hybrid Demucs mean SI-SDR (dB).
-In this table, SPDMX refers to the bass, drums, guitar, and piano slice.
-Slakh / SPDMX averages use those four stems; MUSDB averages bass and drums.}
-\label{tab:separation}
-\vspace{1mm}
-\setlength{\tabcolsep}{3pt}
-\footnotesize
-\begin{tabular}{@{}l@{\hspace{0.9em}}c@{\hspace{0.9em}}c@{\hspace{0.9em}}c@{}}
-\toprule
-Train & Slakh & SPDMX & MUSDB18 \\
-\midrule
-Slakh & $\mathbf{7.0}$ & $-1.9$ & $-1.7$ \\
-SPDMX & $-1.7$ & $\mathbf{6.7}$ & $\mathbf{-0.5}$ \\
-Slakh~$\cup$~SPDMX & $6.6$ & $5.4$ & $-0.7$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+% PARAGRAPH 1 — RESEARCH QUESTION AND SETUP
+% Topic sentence: We first test whether SPDMX supports in-domain source
+% separation, complements Slakh across synthetic domains, and transfers to
+% recorded multitrack datasets.
+% - Define Hybrid Demucs and the bass/drums/guitar/piano target classes.
+% - Explain SPDMX-to-class mapping and the all-four-stems eligibility filter.
+% - Report training-set hours and the three matched-budget arms.
+% - Define SI-SDR, aggregation, and uncertainty/repeated runs.
+% - Identify the evaluation domains: held-out SPDMX, Slakh2100, MUSDB18,
+%   MoisesDB, and MedleyDB.
+% - Explain how each dataset's stem taxonomy is mapped to common target classes;
+%   report results only for classes that can be compared fairly.
 
-\subsection{Generative fine-tuning}
-\label{ssec:sao}
+% PARAGRAPH 2 — PRIMARY RESULT
+% Topic sentence: SPDMX provides strong in-domain supervision, while joint
+% training retains much of Slakh performance and substantially improves
+% transfer to SPDMX.
+% - Report the in-domain and union results.
+% - Interpret poor cross-domain performance as evidence of acoustic mismatch.
+% - Keep claims proportional to the observed differences.
+% - Place the separation table here.
 
-SPDMX is mainly a large public-domain audio corpus with paired MIDI, so mixtures support generative fine-tuning beyond the four-stem filter.
-SAO~1.0~\cite{evans2024stable} is fine-tuned from the public checkpoint on loudness-normalized mixtures with simple instrumental captions under three matched-step arms: Slakh, SPDMX (BDGP), and full SPDMX.
-Held-out generations for a fixed prompt set ($n{=}100$) are scored with VGGish Fr\'{e}chet audio distance~\cite{kilgour2018fr,cramer2019look} against Slakh held-out mixes and LAION-CLAP~\cite{wu2023large} (Table~\ref{tab:sao}).
-The matched SPDMX arm is close to Slakh; full-corpus fine-tuning under the same step budget is weaker on both metrics.
-FAD favors Slakh-like acoustics here because the reference set is Slakh held-out mixes, and FAD is known to be sensitive to reference choice~\cite{gui2024adapting}.
-
-\begin{table}[t]
-\centering
-\caption{Matched-step SAO fine-tunes scored with VGGish FAD ($\downarrow$; Slakh held-out mix references) and LAION-CLAP ($\uparrow$).}
-\label{tab:sao}
-\vspace{1mm}
-\setlength{\tabcolsep}{5pt}
-\small
-\begin{tabular}{@{}lcc@{}}
-\toprule
-Train arm & FAD $\downarrow$ & CLAP $\uparrow$ \\
-\midrule
-Slakh & $\mathbf{1.41}$ & $\mathbf{0.340}$ \\
-SPDMX (BDGP) & $1.57$ & $0.321$ \\
-SPDMX (full) & $4.46$ & $0.289$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+% PARAGRAPH 3 — CROSS-DATASET GENERALIZATION
+% Topic sentence: We next evaluate whether models trained on synthetic stems
+% transfer to recorded music across MUSDB18, MoisesDB, and MedleyDB.
+% - Present each external dataset separately or with per-dataset columns; do
+%   not average across datasets with different taxonomies or distributions.
+% - For the completed MUSDB18 comparison, report the weak transfer of all
+%   synthetic training arms and note SPDMX's best point estimate cautiously.
+% - Add MoisesDB and MedleyDB results once available; until then, describe them
+%   as planned evaluations rather than evidence.
+% - Use repeated runs or uncertainty before interpreting small differences.
+% - If supported, discuss timbral diversity, rendering artifacts, class
+%   balance, and dataset taxonomy as possible causes of transfer differences.
+% - State the broader implication: openness and scale do not by themselves
+%   eliminate the synthetic-to-recorded domain gap.
+% - Place the cross-dataset separation table here.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-Paired mixtures and stems remain scarce for open research: recorded multitracks are small, and prior large synthetic corpora rely on closed commercial instruments.
-SPDMX addresses that gap by turning public-domain PDMX scores into redistributable multitrack audio with open FluidSynth banks, selective MIDI-DDSP where listening favors it, and loudness- and velocity-aware mixing.
-The release has $253{,}982$ songs ($5{,}469$ song-hours) and $490{,}159$ mono stems at $44.1$\,kHz, including $88{,}403$ multitrack songs ($2{,}734$ song-hours), song-aligned with PDMX, and over $100{\times}$ more songs than Slakh2100.
-Matched-step Hybrid Demucs and Stable Audio Open fine-tunes show that SPDMX is learnable in-domain and usable beside Slakh under SI-SDR, FAD, and CLAP, offering a fully open path to stem supervision at public-domain scale.
-We release the corpus and render recipe to support separation, generative, and stem-conditioned work at public-domain scale; demos and experiment notes are on the project page.
-Ongoing matched-step pilots study whether SPDMX multitrack scale improves multi-instrument transcription~\cite{gardner2022mt3,chang2024yourmt3} and streaming accompaniment~\cite{wu2025streaming} over Slakh baselines (Tables~\ref{tab:transcription}--\ref{tab:streamgen}; full write-ups on the project Blog).
-Beyond our explorations here, we hope SPDMX enables large-scale work on stem-conditioned generation, automatic mixing, transcription, and joint symbolic and audio modeling without copyrighted recordings.
+% PARAGRAPH 1 — RETURN TO THE CENTRAL TRADE-OFF
+% Topic sentence: SPDMX addresses the scale--redistributability gap in
+% multitrack music data without relying on copyrighted recordings or
+% proprietary instruments.
+% - Briefly restate the listening-guided hybrid pipeline and release scale.
+% - Avoid repeating every implementation detail or metric.
 
-\begin{table}[t]
-\centering
-\caption{Matched-step multi-instrument transcription (note F1).
-Values pending YourMT3 pilot; primary test set is Slakh2100-redux.}
-\label{tab:transcription}
-\vspace{1mm}
-\setlength{\tabcolsep}{4pt}
-\footnotesize
-\begin{tabular}{@{}lcc@{}}
-\toprule
-Train arm & Slakh test & SPDMX held-out \\
-\midrule
-Slakh & -- & -- \\
-SPDMX (multitrack) & -- & -- \\
-Slakh~$\cup$~SPDMX & -- & -- \\
-\bottomrule
-\end{tabular}
-\end{table}
+% PARAGRAPH 2 — WHAT THE EVIDENCE ESTABLISHES
+% Topic sentence: Matched-budget source-separation experiments test whether
+% SPDMX is learnable in-domain, complements Slakh, and transfers across recorded
+% evaluation datasets.
+% - Keep the conclusion conservative: validation and utility, not superiority.
+% - Summarize MoisesDB and MedleyDB only after those results are available.
+% - Treat synthetic-to-recorded transfer as a limitation if the broader
+%   evaluation confirms the current MUSDB18 result.
 
-\begin{table}[t]
-\centering
-\caption{Matched-step StreamGen streaming accompaniment ($t_f{=}0$).
-Metrics pending; primary test set is Slakh.}
-\label{tab:streamgen}
-\vspace{1mm}
-\setlength{\tabcolsep}{4pt}
-\footnotesize
-\begin{tabular}{@{}lccc@{}}
-\toprule
-Train arm & COCOLA & Beat $F_1$ & FAD \\
-\midrule
-Slakh & -- & -- & -- \\
-SPDMX (multitrack) & -- & -- & -- \\
-Slakh~$\cup$~SPDMX & -- & -- & -- \\
-\bottomrule
-\end{tabular}
-\end{table}
+% PARAGRAPH 3 — CAPABILITY ENABLED
+% Topic sentence: By jointly releasing symbolic scores, MIDI, stems, and
+% mixtures under redistributable terms, SPDMX enables music-model research at a
+% scale previously available only through restricted data and proprietary
+% synthesis.
+% - Name likely uses: separation, stem-conditioned generation, automatic
+%   mixing, transcription, accompaniment, and joint symbolic/audio modeling.
+% - Give the project-page URL and concrete release status.
+% - Mention transcription and accompaniment pilots only as future work unless
+%   completed results are included; omit pending-result tables.
 
 \section{Compliance with Ethical Standards}
 \label{sec:ethics}
 
-SPDMX is derived from public-domain PDMX and released for open research redistribution.
-Rendering uses redistributable soundfonts and open MIDI-DDSP weights, not closed commercial VST sample libraries.
-
-\bibliographystyle{IEEEbib}
-\bibliography{main}
+% PARAGRAPH 1 — PROVENANCE AND REDISTRIBUTION
+% Topic sentence: SPDMX is derived from public-domain PDMX and uses only
+% redistributable synthesis components.
+% - Document score provenance, soundfont licenses, MIDI-DDSP weights, and any
+%   release restrictions or attribution requirements.
+% - Contrast the pipeline with closed commercial VST sample libraries.
+% - Note relevant limitations or potential misuse if required by the venue.
 
 \end{document}

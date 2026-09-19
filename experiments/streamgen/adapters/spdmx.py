@@ -103,14 +103,19 @@ class Spdmx(Dataset):
 
         link = self.root_dir / self.AUDIO_LINK_NAME
         if audio_root is not None:
-            self.base_dir = Path(audio_root).expanduser().resolve()
+            self._audio_root = Path(audio_root).expanduser().resolve()
+            self.base_dir = self._audio_root
         elif link.exists():
-            self.base_dir = link.resolve()
+            # Keep the symlink path (…/spdmx/audio) so DAC create_metadata can
+            # emit paths under stream_music_gen_data without leaving that tree.
+            self.base_dir = link
+            self._audio_root = link.resolve()
         else:
-            self.base_dir = _default_spdmx_audio_root().resolve()
-        if not self.base_dir.is_dir():
+            self._audio_root = _default_spdmx_audio_root().resolve()
+            self.base_dir = self._audio_root
+        if not self._audio_root.is_dir():
             raise FileNotFoundError(
-                f"SPDMX audio root missing: {self.base_dir}. "
+                f"SPDMX audio root missing: {self._audio_root}. "
                 f"Create {link} → SPDMX release, or set SPDMX_DATASET_ROOT."
             )
 
@@ -119,9 +124,10 @@ class Spdmx(Dataset):
         )
 
         logger.info(
-            "SPDMX split=%s index=%s audio_root=%s",
+            "SPDMX split=%s index=%s audio_root=%s base_dir=%s",
             self.split,
             self.index_path,
+            self._audio_root,
             self.base_dir,
         )
         self.all_metadata = self._load_metadata(regenerate_metadata)
@@ -135,7 +141,7 @@ class Spdmx(Dataset):
             return None
         path = Path(absolute)
         try:
-            return str(path.resolve().relative_to(self.base_dir))
+            return str(path.resolve().relative_to(self._audio_root))
         except ValueError:
             # Path outside audio root — keep absolute under a stable key.
             logger.warning("stem outside SPDMX root, skipping: %s", absolute)

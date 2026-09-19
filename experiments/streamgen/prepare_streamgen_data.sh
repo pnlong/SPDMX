@@ -21,8 +21,8 @@
 #   # Smoke: tiny SPDMX index + skip mixdown
 #   bash experiments/streamgen/prepare_streamgen_data.sh --datasets spdmx --max-songs 50 --skip-dump
 #
-#   # Tune DAC GPU packing (fixed windows packed across stems; default batch 8)
-#   bash experiments/streamgen/prepare_streamgen_data.sh --gpu 1 --win-duration 5 --chunk-batch-size 8
+#   # Smaller mixdown dump (default train is 1M examples ≈ days)
+#   bash experiments/streamgen/prepare_streamgen_data.sh --skip-dac --skip-rms --train-max 50000
 #
 set -euo pipefail
 
@@ -62,6 +62,9 @@ while [[ $# -gt 0 ]]; do
     --chunk-batch-size) CHUNK_BATCH="$2"; shift 2 ;;
     --num-workers) NUM_WORKERS="$2"; shift 2 ;;
     --max-songs) MAX_SONGS="$2"; shift 2 ;;
+    --train-max) TRAIN_MAX="$2"; shift 2 ;;
+    --valid-max) VALID_MAX="$2"; shift 2 ;;
+    --test-max) TEST_MAX="$2"; shift 2 ;;
     --rebuild-index) REBUILD_INDEX=1; shift ;;
     --skip-dac) SKIP_DAC=1; shift ;;
     --skip-rms) SKIP_RMS=1; shift ;;
@@ -87,6 +90,7 @@ echo "  data:     $DATA_ROOT"
 echo "  datasets: ${DATASET_ARR[*]}"
 echo "  GPU:      $GPU"
 echo "  DAC win:  ${WIN_DURATION}s × batch ${CHUNK_BATCH}"
+echo "  dump:     train_max=${TRAIN_MAX} valid_max=${VALID_MAX} test_max=${TEST_MAX}"
 
 [[ -d "$UPSTREAM" ]] || {
   echo "Missing upstream clone. Run: uv run python -m experiments.streamgen.setup_streamgen" >&2
