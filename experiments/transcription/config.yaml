@@ -1,8 +1,12 @@
 # Multi-instrument transcription (YourMT3 / MT3-style scale-up).
 min_stems: 2
 seed: 43
-# Matched step budget (YourMT3 trainer should honor this when wired).
+# Step-based training (full multitrack epochs are huge; don't wait for epoch end).
 train_steps: 100000
+# Lightning val_check_interval: run validation every N optimizer steps.
+val_interval_steps: 2000
+# Caps how many train crops count as one "epoch" for the sampler / progress.
+samples_per_epoch: 90000
 val_fraction: 0.05
 test_fraction: 0.05
 # Slakh: use redux only (exclude omitted/) for AMT.

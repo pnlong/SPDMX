@@ -57,6 +57,8 @@ def _build_cmd(
     exp_id: str,
     project: str,
     max_steps: int,
+    val_interval: int,
+    samples_per_epoch: int,
     wandb_mode: str,
     extra: list[str],
 ) -> list[str]:
@@ -71,6 +73,10 @@ def _build_cmd(
         project,
         "--max-steps",
         str(max_steps),
+        "--val-interval",
+        str(val_interval),
+        "--train-num-samples-per-epoch",
+        str(samples_per_epoch),
         "-wb",
         wandb_mode,
         *extra,
@@ -91,6 +97,18 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--exp-id", type=str, default=None, help="YourMT3 run / checkpoint id (default: <arm>)")
     parser.add_argument("--project", type=str, default="transcription", help="W&B project name (-p)")
     parser.add_argument("--max-steps", type=int, default=None, help="Override config train_steps")
+    parser.add_argument(
+        "--val-interval",
+        type=int,
+        default=None,
+        help="Validate every N steps (YourMT3 -vit; default: config val_interval_steps)",
+    )
+    parser.add_argument(
+        "--samples-per-epoch",
+        type=int,
+        default=None,
+        help="Train crops per epoch for sampler (YourMT3 -se; default: config samples_per_epoch)",
+    )
     parser.add_argument(
         "--wandb",
         choices=("offline", "online", "disabled"),
@@ -140,12 +158,24 @@ def main(argv: list[str] | None = None) -> None:
         extra = extra[1:]
 
     max_steps = args.max_steps if args.max_steps is not None else int(cfg.get("train_steps", 100000))
+    val_interval = (
+        args.val_interval
+        if args.val_interval is not None
+        else int(cfg.get("val_interval_steps", 2000))
+    )
+    samples_per_epoch = (
+        args.samples_per_epoch
+        if args.samples_per_epoch is not None
+        else int(cfg.get("samples_per_epoch", 90000))
+    )
     exp_id = args.exp_id or args.arm
     cmd = _build_cmd(
         arm=args.arm,
         exp_id=exp_id,
         project=args.project,
         max_steps=max_steps,
+        val_interval=val_interval,
+        samples_per_epoch=samples_per_epoch,
         wandb_mode=args.wandb,
         extra=extra,
     )

@@ -65,6 +65,9 @@ uv run python -m experiments.transcription.train --arm slakh --gpu 1
 uv run python -m experiments.transcription.train --arm spdmx --gpu 2
 ```
 
+Defaults are **step-based**: `--max-steps 100000`, validate every `--val-interval 2000` steps
+(not once per epoch). Override via flags or `experiments/transcription/config.yaml`.
+
 This wraps YourMT3's `amt/src/train.py`. The first positional arg there is only an
 experiment id (checkpoints / W&B); the wrapper defaults it to the arm name.
 Pass extras after `--`, e.g. `-- --precision 32`.
