@@ -145,6 +145,72 @@ def _patch_torch_load(path: Path) -> bool:
     return True
 
 
+_STEP_BAR = '''
+class StepProgressBar(TQDMProgressBar):
+    """Show global optimizer steps, not Lightning's per-epoch counter."""
+
+    def _step_total(self, trainer) -> int:
+        total = getattr(trainer, "max_steps", None)
+        try:
+            total = int(total)
+        except (TypeError, ValueError):
+            return -1
+        return total
+
+    def on_train_start(self, trainer, pl_module) -> None:
+        super().on_train_start(trainer, pl_module)
+        total = self._step_total(trainer)
+        if total > 0:
+            self.train_progress_bar.total = total
+            self.train_progress_bar.n = trainer.global_step
+            self.train_progress_bar.set_description(f"Step {trainer.global_step}/{total}")
+
+    def on_train_epoch_start(self, trainer, pl_module) -> None:
+        total = self._step_total(trainer)
+        if total > 0:
+            self.train_progress_bar.set_description(f"Step {trainer.global_step}/{total}")
+            return
+        super().on_train_epoch_start(trainer, pl_module)
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
+        total = self._step_total(trainer)
+        if total > 0:
+            n = min(int(trainer.global_step), total)
+            if self._should_update(n, total):
+                self.train_progress_bar.n = n
+                self.train_progress_bar.set_description(f"Step {n}/{total}")
+                self.train_progress_bar.set_postfix(self.get_metrics(trainer, pl_module))
+            return
+        super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
+
+
+'''
+
+
+def _patch_step_progress(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8")
+    if "class StepProgressBar" in text and "StepProgressBar()" in text:
+        return False
+    if "from pytorch_lightning.callbacks import TQDMProgressBar" not in text:
+        text = text.replace(
+            "from pytorch_lightning.callbacks import LearningRateMonitor\n",
+            "from pytorch_lightning.callbacks import LearningRateMonitor\n"
+            "from pytorch_lightning.callbacks import TQDMProgressBar\n",
+            1,
+        )
+    if "class StepProgressBar" not in text:
+        needle = "def initialize_trainer("
+        if needle not in text:
+            raise SystemExit(f"could not insert StepProgressBar in {path}")
+        text = text.replace(needle, _STEP_BAR + needle, 1)
+    text = text.replace(
+        "callbacks=[checkpoint_callback, lr_monitor],",
+        "callbacks=[checkpoint_callback, lr_monitor, StepProgressBar()],",
+    )
+    path.write_text(text, encoding="utf-8")
+    return True
+
+
 def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     """Apply local YourMT3 fixes. Returns list of patched file paths."""
     src = Path(yourmt3_src) if yourmt3_src is not None else YOURMT3_SRC
@@ -156,6 +222,8 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     test_py = src / "test.py"
     if init_train.is_file() and _patch_init_train(init_train):
         patched.append(str(init_train))
+    if init_train.is_file() and _patch_step_progress(init_train):
+        patched.append(str(init_train) + " (step bar)")
     if train_py.is_file() and _patch_train_py(train_py):
         patched.append(str(train_py))
     for ckpt_py in (train_py, test_py):
