@@ -211,6 +211,45 @@ def _patch_step_progress(path: Path) -> bool:
     return True
 
 
+def _patch_limit_val_batches(train_py: Path, init_train: Path) -> bool:
+    """Add --limit-val-batches CLI and wire it into Lightning TRAINER config."""
+    changed = False
+    train_text = train_py.read_text(encoding="utf-8")
+    if "--limit-val-batches" not in train_text:
+        lines = train_text.splitlines(keepends=True)
+        out: list[str] = []
+        inserted = False
+        for line in lines:
+            out.append(line)
+            if (not inserted) and "'--val-interval'" in line and "add_argument" in line:
+                out.append(
+                    "parser.add_argument('-lvb', '--limit-val-batches', type=int, default=None, "
+                    "help='cap validation to this many batches (Lightning limit_val_batches). "
+                    "If None, use config (full val set).')\n"
+                )
+                inserted = True
+        if not inserted:
+            raise SystemExit(f"could not find val-interval arg in {train_py}")
+        train_py.write_text("".join(out), encoding="utf-8")
+        changed = True
+
+    init_text = init_train.read_text(encoding="utf-8")
+    marker = 'getattr(args, "limit_val_batches", None)'
+    if marker not in init_text:
+        block = '''    if stage == 'train' and args.val_interval is not None:
+        shared_cfg["TRAINER"]["check_val_every_n_epoch"] = None
+        shared_cfg["TRAINER"]["val_check_interval"] = int(args.val_interval)
+'''
+        insert = block + '''    if stage == 'train' and getattr(args, "limit_val_batches", None) is not None:
+        shared_cfg["TRAINER"]["limit_val_batches"] = int(args.limit_val_batches)
+'''
+        if block not in init_text:
+            raise SystemExit(f"could not patch limit_val_batches into {init_train}")
+        init_train.write_text(init_text.replace(block, insert, 1), encoding="utf-8")
+        changed = True
+    return changed
+
+
 def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     """Apply local YourMT3 fixes. Returns list of patched file paths."""
     src = Path(yourmt3_src) if yourmt3_src is not None else YOURMT3_SRC
@@ -229,4 +268,6 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     for ckpt_py in (train_py, test_py):
         if ckpt_py.is_file() and _patch_torch_load(ckpt_py):
             patched.append(str(ckpt_py))
+    if train_py.is_file() and init_train.is_file() and _patch_limit_val_batches(train_py, init_train):
+        patched.append(str(train_py) + " (limit-val-batches)")
     return patched

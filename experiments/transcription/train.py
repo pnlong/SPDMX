@@ -59,6 +59,7 @@ def _build_cmd(
     max_steps: int,
     val_interval: int,
     samples_per_epoch: int,
+    limit_val_batches: int,
     wandb_mode: str,
     extra: list[str],
 ) -> list[str]:
@@ -77,6 +78,8 @@ def _build_cmd(
         str(val_interval),
         "--train-num-samples-per-epoch",
         str(samples_per_epoch),
+        "--limit-val-batches",
+        str(limit_val_batches),
         "-wb",
         wandb_mode,
         *extra,
@@ -108,6 +111,12 @@ def main(argv: list[str] | None = None) -> None:
         type=int,
         default=None,
         help="Train crops per epoch for sampler (YourMT3 -se; default: config samples_per_epoch)",
+    )
+    parser.add_argument(
+        "--limit-val-batches",
+        type=int,
+        default=None,
+        help="Max validation batches per val pass (default: config limit_val_batches)",
     )
     parser.add_argument(
         "--wandb",
@@ -168,6 +177,11 @@ def main(argv: list[str] | None = None) -> None:
         if args.samples_per_epoch is not None
         else int(cfg.get("samples_per_epoch", 90000))
     )
+    limit_val_batches = (
+        args.limit_val_batches
+        if args.limit_val_batches is not None
+        else int(cfg.get("limit_val_batches", 32))
+    )
     exp_id = args.exp_id or args.arm
     cmd = _build_cmd(
         arm=args.arm,
@@ -176,6 +190,7 @@ def main(argv: list[str] | None = None) -> None:
         max_steps=max_steps,
         val_interval=val_interval,
         samples_per_epoch=samples_per_epoch,
+        limit_val_batches=limit_val_batches,
         wandb_mode=args.wandb,
         extra=extra,
     )

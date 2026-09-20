@@ -7,6 +7,8 @@ train_steps: 100000
 val_interval_steps: 2000
 # Caps how many train crops count as one "epoch" for the sampler / progress.
 samples_per_epoch: 90000
+# Cap Lightning validation to this many batches (full val is ~270 and very slow).
+limit_val_batches: 32
 val_fraction: 0.05
 test_fraction: 0.05
 # Slakh: use redux only (exclude omitted/) for AMT.
