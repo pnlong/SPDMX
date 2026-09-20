@@ -250,6 +250,73 @@ def _patch_limit_val_batches(train_py: Path, init_train: Path) -> bool:
     return changed
 
 
+def _patch_auto_resume(train_py: Path, init_train: Path) -> bool:
+    """Full Lightning resume via ckpt_path + periodic last.ckpt saves on step."""
+    changed = False
+    train_text = train_py.read_text(encoding="utf-8")
+    broken = '''    # last_ckpt_path can be None
+    if dir_info["last_ckpt_path"] is not None:
+        checkpoint = torch.load(dir_info["last_ckpt_path"], weights_only=False)
+        state_dict = checkpoint['state_dict']
+        model.load_state_dict(state_dict, strict=False)
+        trainer.fit(model, datamodule=dm)
+    else:
+        trainer.fit(model, ckpt_path=dir_info["last_ckpt_path"], datamodule=dm)
+'''
+    broken_old = '''    # last_ckpt_path can be None
+    if dir_info["last_ckpt_path"] is not None:
+        checkpoint = torch.load(dir_info["last_ckpt_path"])
+        state_dict = checkpoint['state_dict']
+        model.load_state_dict(state_dict, strict=False)
+        trainer.fit(model, datamodule=dm)
+    else:
+        trainer.fit(model, ckpt_path=dir_info["last_ckpt_path"], datamodule=dm)
+'''
+    fixed = '''    # Auto-resume: same project/exp_id → amt/logs/<project>/<exp_id>/checkpoints/last.ckpt
+    # Pass ckpt_path so Lightning restores optimizer, scheduler, and global_step.
+    trainer.fit(model, ckpt_path=dir_info["last_ckpt_path"], datamodule=dm)
+'''
+    if "Auto-resume: same project/exp_id" not in train_text:
+        if broken in train_text:
+            train_py.write_text(train_text.replace(broken, fixed, 1), encoding="utf-8")
+            changed = True
+        elif broken_old in train_text:
+            train_py.write_text(train_text.replace(broken_old, fixed, 1), encoding="utf-8")
+            changed = True
+
+    init_text = init_train.read_text(encoding="utf-8")
+    if "every_n_train_steps" not in init_text:
+        old_block = '''    if stage == 'train' and args.val_interval is not None:
+        shared_cfg["TRAINER"]["check_val_every_n_epoch"] = None
+        shared_cfg["TRAINER"]["val_check_interval"] = int(args.val_interval)
+'''
+        new_block = '''    if stage == 'train' and args.val_interval is not None:
+        shared_cfg["TRAINER"]["check_val_every_n_epoch"] = None
+        shared_cfg["TRAINER"]["val_check_interval"] = int(args.val_interval)
+        shared_cfg["CHECKPOINT"]["every_n_train_steps"] = int(args.val_interval)
+        shared_cfg["CHECKPOINT"]["save_on_train_epoch_end"] = False
+'''
+        if old_block in init_text:
+            init_text = init_text.replace(old_block, new_block, 1)
+            early = (
+                '    # define checkpoint callback\n'
+                '    checkpoint_callback = ModelCheckpoint(**shared_cfg["CHECKPOINT"],)\n\n'
+            )
+            if early in init_text and init_text.find(early) < init_text.find("every_n_train_steps"):
+                init_text = init_text.replace(early, "", 1)
+                marker = 'shared_cfg["CHECKPOINT"]["save_on_train_epoch_end"] = False\n'
+                init_text = init_text.replace(
+                    marker,
+                    marker
+                    + "\n    # define checkpoint callback (after CHECKPOINT overrides above)\n"
+                    + '    checkpoint_callback = ModelCheckpoint(**shared_cfg["CHECKPOINT"],)\n',
+                    1,
+                )
+            init_train.write_text(init_text, encoding="utf-8")
+            changed = True
+    return changed
+
+
 def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     """Apply local YourMT3 fixes. Returns list of patched file paths."""
     src = Path(yourmt3_src) if yourmt3_src is not None else YOURMT3_SRC
@@ -270,4 +337,6 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
             patched.append(str(ckpt_py))
     if train_py.is_file() and init_train.is_file() and _patch_limit_val_batches(train_py, init_train):
         patched.append(str(train_py) + " (limit-val-batches)")
+    if train_py.is_file() and init_train.is_file() and _patch_auto_resume(train_py, init_train):
+        patched.append(str(train_py) + " (auto-resume)")
     return patched

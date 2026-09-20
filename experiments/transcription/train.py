@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Which data arm to train",
     )
     parser.add_argument("--gpu", type=str, default=None, help="CUDA device id(s), sets CUDA_VISIBLE_DEVICES")
-    parser.add_argument("--exp-id", type=str, default=None, help="YourMT3 run / checkpoint id (default: <arm>)")
+    parser.add_argument("--exp-id", type=str, default=None, help="YourMT3 run / checkpoint id (default: <arm>; reuse to auto-resume)")
     parser.add_argument("--project", type=str, default="transcription", help="W&B project name (-p)")
     parser.add_argument("--max-steps", type=int, default=None, help="Override config train_steps")
     parser.add_argument(

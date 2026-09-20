@@ -69,6 +69,11 @@ Defaults are **step-based**: `--max-steps 100000`, validate every `--val-interva
 (not once per epoch), and `--limit-val-batches 32` so each val pass stays short.
 Override via flags or `experiments/transcription/config.yaml`.
 
+**Resume:** re-run the same command. Checkpoints live under
+`YourMT3/amt/logs/transcription/<exp-id>/checkpoints/last.ckpt`
+(`--exp-id` defaults to the arm name). A matching `last.ckpt` is loaded automatically
+(optimizer + step). `last.ckpt` is rewritten every `--val-interval` steps.
+
 This wraps YourMT3's `amt/src/train.py`. The first positional arg there is only an
 experiment id (checkpoints / W&B); the wrapper defaults it to the arm name.
 Pass extras after `--`, e.g. `-- --precision 32`.
