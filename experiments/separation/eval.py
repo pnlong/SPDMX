@@ -213,7 +213,29 @@ def eval_medleydb_bdgp(
                 refs[target] = sum_stems(parts) if len(parts) > 1 else parts[0]
         if not refs:
             continue
-        mix, _ = load_mono(mix_path, sample_rate=sample_rate)
+        ref_len = max(r.shape[0] for r in refs.values())
+        mix: np.ndarray | None = None
+        try:
+            cand, _ = load_mono(mix_path, sample_rate=sample_rate)
+            # Some MedleyDB MIX files are mislabeled AAC/ALAC and only partially decode.
+            if cand.shape[0] >= max(1, int(0.5 * ref_len)):
+                mix = cand
+            else:
+                print(
+                    f"MedleyDB {track_id}: MIX decode too short "
+                    f"({cand.shape[0]} < 0.5*{ref_len}); using stem sum"
+                )
+        except Exception as exc:  # noqa: BLE001
+            print(f"MedleyDB {track_id}: MIX unreadable ({exc}); using stem sum")
+        if mix is None:
+            all_parts = []
+            for p in sorted(stem_dir.glob(f"{track_id}_STEM_*.wav")):
+                audio, _ = load_mono(p, sample_rate=sample_rate)
+                all_parts.append(audio)
+            if not all_parts:
+                print(f"MedleyDB {track_id}: no stems to rebuild MIX; skipping")
+                continue
+            mix = sum_stems(all_parts)
         est = separate_track(model, mix, sample_rate=sample_rate, device=device)
         for t, ref in refs.items():
             n = min(est[t].shape[0], ref.shape[0], mix.shape[0])

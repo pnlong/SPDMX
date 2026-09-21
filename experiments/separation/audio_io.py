@@ -9,19 +9,35 @@ import soundfile as sf
 
 
 def audio_duration_seconds(path: Path) -> float:
-    info = sf.info(str(path))
+    try:
+        info = sf.info(str(path))
+    except Exception:
+        return 0.0
     if info.samplerate <= 0:
         return 0.0
     return float(info.frames) / float(info.samplerate)
 
 
 def load_mono(path: Path, *, sample_rate: int | None = None) -> tuple[np.ndarray, int]:
-    audio, sr = sf.read(str(path), always_2d=True)
-    mono = audio.mean(axis=1).astype(np.float32)
-    if sample_rate is not None and sr != sample_rate:
+    """Load audio as mono float32.
+
+    Prefer soundfile (WAV/FLAC). Fall back to torchaudio for MedleyDB quirks
+    where a ``.wav`` file is actually AAC/ALAC in an MP4 container.
+    """
+    path = Path(path)
+    try:
+        audio, sr = sf.read(str(path), always_2d=True)
+        mono = audio.mean(axis=1).astype(np.float32)
+    except Exception:
+        import torchaudio
+
+        wav, sr = torchaudio.load(str(path))  # (C, T)
+        mono = wav.mean(dim=0).numpy().astype(np.float32)
+        sr = int(sr)
+    if sample_rate is not None and int(sr) != sample_rate:
         import librosa
 
-        mono = librosa.resample(mono, orig_sr=sr, target_sr=sample_rate)
+        mono = librosa.resample(mono, orig_sr=int(sr), target_sr=sample_rate)
         sr = sample_rate
     return mono, int(sr)
 
