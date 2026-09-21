@@ -137,8 +137,17 @@ def _patch_train_py(path: Path) -> bool:
 def _patch_torch_load_compat(train_py: Path) -> bool:
     """Make Lightning resume work on PyTorch 2.6+ (weights_only default)."""
     text = train_py.read_text(encoding="utf-8")
-    if "_torch_load_checkpoint" in text or "add_safe_globals([TaskManager])" in text:
-        return False
+    changed = False
+    if 'kwargs.setdefault("weights_only", False)' in text:
+        text = text.replace(
+            'kwargs.setdefault("weights_only", False)',
+            'kwargs["weights_only"] = False  # Lightning may pass True; full ckpts need False',
+        )
+        changed = True
+    if "_torch_load_checkpoint" in text and "add_safe_globals([TaskManager])" in text:
+        if changed:
+            train_py.write_text(text, encoding="utf-8")
+        return changed
     needle = "from utils.utils import str2bool\n"
     if needle not in text:
         raise SystemExit(f"could not patch torch.load compat into {train_py}")
@@ -153,7 +162,8 @@ _torch_load = torch.load
 
 
 def _torch_load_checkpoint(*args, **kwargs):
-    kwargs.setdefault("weights_only", False)
+    # Lightning may pass weights_only=True; full trainer ckpts need False.
+    kwargs["weights_only"] = False
     return _torch_load(*args, **kwargs)
 
 
