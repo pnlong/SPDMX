@@ -134,6 +134,35 @@ def _patch_train_py(path: Path) -> bool:
     return True
 
 
+def _patch_torch_load_compat(train_py: Path) -> bool:
+    """Make Lightning resume work on PyTorch 2.6+ (weights_only default)."""
+    text = train_py.read_text(encoding="utf-8")
+    if "_torch_load_checkpoint" in text or "add_safe_globals([TaskManager])" in text:
+        return False
+    needle = "from utils.utils import str2bool\n"
+    if needle not in text:
+        raise SystemExit(f"could not patch torch.load compat into {train_py}")
+    insert = needle + '''
+# PyTorch 2.6+ defaults torch.load(weights_only=True). Lightning resume pickles
+# TaskManager inside last.ckpt — allowlist it and default to full loads.
+try:
+    torch.serialization.add_safe_globals([TaskManager])
+except Exception:
+    pass
+_torch_load = torch.load
+
+
+def _torch_load_checkpoint(*args, **kwargs):
+    kwargs.setdefault("weights_only", False)
+    return _torch_load(*args, **kwargs)
+
+
+torch.load = _torch_load_checkpoint
+'''
+    train_py.write_text(text.replace(needle, insert, 1), encoding="utf-8")
+    return True
+
+
 def _patch_torch_load(path: Path) -> bool:
     """PyTorch 2.6 defaults torch.load to weights_only=True; YourMT3 ckpts pickle TaskManager."""
     text = path.read_text(encoding="utf-8")
@@ -332,6 +361,8 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
         patched.append(str(init_train) + " (step bar)")
     if train_py.is_file() and _patch_train_py(train_py):
         patched.append(str(train_py))
+    if train_py.is_file() and _patch_torch_load_compat(train_py):
+        patched.append(str(train_py) + " (torch.load compat)")
     for ckpt_py in (train_py, test_py):
         if ckpt_py.is_file() and _patch_torch_load(ckpt_py):
             patched.append(str(ckpt_py))
