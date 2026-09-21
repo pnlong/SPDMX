@@ -9,6 +9,8 @@ import yaml
 from shared.config import (
     DEV_DIR_NAME,
     EXPERIMENTS_DIR_NAME,
+    MEDLEYDB_ROOT as _MEDLEYDB_ROOT,
+    MOISESDB_ROOT as _MOISESDB_ROOT,
     MUSDB_ROOT as _MUSDB_ROOT,
     OUTPUT_DIR,
     SLAKH_ROOT as _SLAKH_ROOT,
@@ -29,6 +31,16 @@ SPDMX_ROOT = Path(
     )
 )
 MUSDB_ROOT = Path(_MUSDB_ROOT)
+MEDLEYDB_ROOT = Path(_MEDLEYDB_ROOT)
+MOISESDB_ROOT = Path(_MOISESDB_ROOT)
+# Official MedleyDB YAML metadata (instrument labels for STEM_NN files).
+# Prefer deepfreeze next to V1/V2; override with SPDMX_MEDLEYDB_METADATA.
+MEDLEYDB_METADATA_DIR = Path(
+    path_from_env(
+        "SPDMX_MEDLEYDB_METADATA",
+        str(Path(_MEDLEYDB_ROOT) / "Metadata"),
+    )
+)
 
 # Experiment outputs under {OUTPUT_DIR}/dev/experiments/separation/
 DEV_SEP_DIR = Path(OUTPUT_DIR) / DEV_DIR_NAME / EXPERIMENTS_DIR_NAME / "separation"

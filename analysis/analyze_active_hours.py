@@ -217,7 +217,7 @@ def main(args=None) -> None:
     try:
         from analysis.make_figures import make_gm_program_compare_figure
 
-        gm_fig = make_gm_program_compare_figure(top_n=10, rank_by="stems")
+        gm_fig = make_gm_program_compare_figure(top_n=None, rank_by="stems")
         print(f"Wrote {gm_fig}")
     except Exception as exc:  # pragma: no cover - best-effort paper refresh
         print(f"skip paper GM figure refresh: {exc}", flush=True)

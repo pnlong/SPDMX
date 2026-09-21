@@ -13,8 +13,16 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 
-from experiments.separation.audio_io import load_mono, mono_to_stereo
+from experiments.separation.audio_io import load_mono, mono_to_stereo, sum_stems
+from experiments.separation.medleydb_map import (
+    bdgp_stem_files,
+    iter_medleydb_track_dirs,
+    load_track_metadata,
+)
 from experiments.separation.paths import (
+    MEDLEYDB_METADATA_DIR,
+    MEDLEYDB_ROOT,
+    MOISESDB_ROOT,
     MUSDB_ROOT,
     TARGETS,
     TRAIN_ARMS,
@@ -25,8 +33,9 @@ from experiments.separation.sisdr import si_sdr
 from experiments.separation.train import build_model
 
 # Included in --write-paper CSV (figures may still subset).
-PAPER_TEST_SETS = ("slakh2100", "spdmx_val", "musdb18")
-EVAL_SET_CHOICES = ("slakh", "spdmx_val", "musdb")
+PAPER_TEST_SETS = ("slakh2100", "spdmx_val", "musdb18", "medleydb", "moisesdb")
+EVAL_SET_CHOICES = ("slakh", "spdmx_val", "musdb", "medleydb", "moisesdb")
+MOISES_BDGP = ("bass", "drums", "guitar", "piano")
 
 
 @torch.no_grad()
@@ -154,6 +163,158 @@ def eval_musdb_bass_drums(
     return pd.DataFrame(rows)
 
 
+def eval_medleydb_bdgp(
+    model: torch.nn.Module,
+    medleydb_root: Path,
+    *,
+    metadata_dir: Path,
+    sample_rate: int,
+    device: torch.device,
+) -> pd.DataFrame:
+    """Cross-domain SI-SDR on MedleyDB V1+V2 for present BDGP targets."""
+    if not medleydb_root.is_dir():
+        print(f"MedleyDB not found at {medleydb_root}; skipping")
+        return pd.DataFrame()
+    if not metadata_dir.is_dir():
+        print(f"MedleyDB metadata not found at {metadata_dir}; skipping")
+        return pd.DataFrame()
+
+    rows = []
+    tracks = list(iter_medleydb_track_dirs(medleydb_root))
+    for track_id, track_dir in tqdm(tracks, desc="eval:medleydb"):
+        meta = load_track_metadata(metadata_dir, track_id)
+        if not meta:
+            continue
+        if str(meta.get("has_bleed", "no")).strip().lower() in {"yes", "true", "1"}:
+            # Bleed makes stem refs impure; skip for SI-SDR transfer checks.
+            continue
+        mix_name = meta.get("mix_filename") or f"{track_id}_MIX.wav"
+        mix_path = track_dir / mix_name
+        if not mix_path.is_file():
+            continue
+        stem_dir_name = meta.get("stem_dir") or f"{track_id}_STEMS"
+        stem_dir = track_dir / stem_dir_name
+        if not stem_dir.is_dir():
+            continue
+        target_files = bdgp_stem_files(meta)
+        if not target_files:
+            continue
+        refs: dict[str, np.ndarray] = {}
+        for target, filenames in target_files.items():
+            parts = []
+            for fn in filenames:
+                p = stem_dir / fn
+                if not p.is_file():
+                    parts = []
+                    break
+                audio, _ = load_mono(p, sample_rate=sample_rate)
+                parts.append(audio)
+            if parts:
+                refs[target] = sum_stems(parts) if len(parts) > 1 else parts[0]
+        if not refs:
+            continue
+        mix, _ = load_mono(mix_path, sample_rate=sample_rate)
+        est = separate_track(model, mix, sample_rate=sample_rate, device=device)
+        for t, ref in refs.items():
+            n = min(est[t].shape[0], ref.shape[0], mix.shape[0])
+            rows.append(
+                {
+                    "test_set": "medleydb",
+                    "song_id": track_id,
+                    "target": t,
+                    "si_sdr": si_sdr(est[t][:n], ref[:n]),
+                    "mixture_si_sdr": si_sdr(mix[:n], ref[:n]),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _moises_to_mono(audio: np.ndarray) -> np.ndarray:
+    """Normalize MoisesDB arrays to mono float32 (T,)."""
+    x = np.asarray(audio, dtype=np.float32)
+    if x.ndim == 1:
+        return x
+    if x.ndim == 2:
+        # (C, T) or (T, C)
+        if x.shape[0] <= 8 and x.shape[0] < x.shape[1]:
+            return x.mean(axis=0)
+        return x.mean(axis=1)
+    raise ValueError(f"unexpected MoisesDB audio shape {x.shape}")
+
+
+def _resolve_moises_data_path(moises_root: Path) -> Path | None:
+    """Accept MoisesDB/ or MoisesDB/moisesdb_v0.1 as data_path."""
+    if not moises_root.is_dir():
+        return None
+    nested = moises_root / "moisesdb_v0.1"
+    if nested.is_dir() and any(nested.iterdir()):
+        return moises_root
+    # Already pointing at moisesdb_v0.1
+    if moises_root.name == "moisesdb_v0.1" and any(moises_root.iterdir()):
+        return moises_root.parent
+    # Empty placeholder root → soft-skip
+    if not any(moises_root.iterdir()):
+        return None
+    return moises_root
+
+
+def eval_moisesdb_bdgp(
+    model: torch.nn.Module,
+    moises_root: Path,
+    *,
+    sample_rate: int,
+    device: torch.device,
+) -> pd.DataFrame:
+    """Cross-domain SI-SDR on MoisesDB for present BDGP top-level stems."""
+    data_path = _resolve_moises_data_path(moises_root)
+    if data_path is None:
+        print(f"MoisesDB not found or empty at {moises_root}; skipping")
+        return pd.DataFrame()
+    try:
+        from moisesdb.dataset import MoisesDB
+    except ImportError:
+        print("moisesdb package not installed; skipping MoisesDB eval")
+        return pd.DataFrame()
+
+    try:
+        db = MoisesDB(data_path=str(data_path), sample_rate=sample_rate)
+    except Exception as exc:  # noqa: BLE001 — soft-skip until layout is confirmed
+        print(f"MoisesDB failed to open at {data_path}: {exc}; skipping")
+        return pd.DataFrame()
+
+    rows = []
+    n = len(db)
+    for i in tqdm(range(n), desc="eval:moisesdb"):
+        track = db[i]
+        try:
+            stems = track.stems or {}
+            mix = _moises_to_mono(track.audio)
+        except Exception as exc:  # noqa: BLE001
+            print(f"MoisesDB track {getattr(track, 'id', i)} load failed: {exc}")
+            continue
+        present = {
+            t: _moises_to_mono(stems[t])
+            for t in MOISES_BDGP
+            if t in stems and stems[t] is not None
+        }
+        if not present:
+            continue
+        est = separate_track(model, mix, sample_rate=sample_rate, device=device)
+        song_id = str(getattr(track, "id", None) or getattr(track, "name", i))
+        for t, ref in present.items():
+            n_samp = min(est[t].shape[0], ref.shape[0], mix.shape[0])
+            rows.append(
+                {
+                    "test_set": "moisesdb",
+                    "song_id": song_id,
+                    "target": t,
+                    "si_sdr": si_sdr(est[t][:n_samp], ref[:n_samp]),
+                    "mixture_si_sdr": si_sdr(mix[:n_samp], ref[:n_samp]),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def load_checkpoint(ckpt_path: Path, device: torch.device):
     blob = torch.load(ckpt_path, map_location=device, weights_only=False)
     sources = list(blob.get("sources") or TARGETS)
@@ -214,22 +375,26 @@ def main() -> None:
         "--eval-sets",
         nargs="+",
         choices=EVAL_SET_CHOICES,
-        default=["slakh", "spdmx_val", "musdb"],
+        default=["slakh", "spdmx_val", "musdb", "medleydb", "moisesdb"],
         help=(
             "Which test sets to score. slakh=Slakh2100 test; "
-            "spdmx_val=sPDMX val packs (early-stopping set; diagnostic); "
-            "musdb=MUSDB18 bass/drums. Default: slakh spdmx_val musdb."
+            "spdmx_val=sPDMX val packs; musdb=MUSDB18 bass/drums; "
+            "medleydb=MedleyDB V1+V2 BDGP; moisesdb=MoisesDB BDGP (soft-skip if missing). "
+            "Default: all five."
         ),
     )
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--musdb-root", type=Path, default=None)
+    parser.add_argument("--medleydb-root", type=Path, default=None)
+    parser.add_argument("--medleydb-metadata", type=Path, default=None)
+    parser.add_argument("--moisesdb-root", type=Path, default=None)
     parser.add_argument(
         "--write-paper",
         action="store_true",
         help=(
             "Also write separation_sisdr.csv under the eval dir on SPDMX_OUTPUT_DIR "
-            "(includes slakh2100, spdmx_val, musdb18)."
+            "(includes slakh2100, spdmx_val, musdb18, medleydb, moisesdb)."
         ),
     )
     parser.add_argument(
@@ -247,6 +412,11 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device(args.device)
     musdb_root = args.musdb_root or Path(cfg.get("musdb_root") or MUSDB_ROOT)
+    medleydb_root = args.medleydb_root or Path(cfg.get("medleydb_root") or MEDLEYDB_ROOT)
+    metadata_dir = args.medleydb_metadata or Path(
+        cfg.get("medleydb_metadata") or MEDLEYDB_METADATA_DIR
+    )
+    moises_root = args.moisesdb_root or Path(cfg.get("moisesdb_root") or MOISESDB_ROOT)
     eval_sets = set(args.eval_sets)
 
     if not args.merge_only:
@@ -310,14 +480,46 @@ def main() -> None:
                     mus["train_arm"] = arm
                     arm_rows.append(mus)
 
+            if "medleydb" in eval_sets:
+                med = eval_medleydb_bdgp(
+                    model,
+                    medleydb_root,
+                    metadata_dir=metadata_dir,
+                    sample_rate=sr,
+                    device=device,
+                )
+                if len(med):
+                    med["train_arm"] = arm
+                    arm_rows.append(med)
+
+            if "moisesdb" in eval_sets:
+                moi = eval_moisesdb_bdgp(
+                    model, moises_root, sample_rate=sr, device=device
+                )
+                if len(moi):
+                    moi["train_arm"] = arm
+                    arm_rows.append(moi)
+
             if not arm_rows:
                 print(f"{arm}: no eval rows; check --eval-sets and manifests")
                 continue
 
-            arm_full = pd.concat(arm_rows, ignore_index=True)
+            arm_new = pd.concat(arm_rows, ignore_index=True)
+            arm_path = out_dir / f"si_sdr_per_track_{arm}.csv"
+            # Preserve other test sets when re-running a subset (e.g. medleydb only).
+            if arm_path.is_file():
+                prev = pd.read_csv(arm_path)
+                new_sets = set(arm_new["test_set"].astype(str).unique())
+                keep = prev[~prev["test_set"].astype(str).isin(new_sets)]
+                arm_full = pd.concat([keep, arm_new], ignore_index=True)
+            else:
+                arm_full = arm_new
+            arm_full = arm_full.drop_duplicates(
+                subset=["train_arm", "test_set", "song_id", "target"], keep="last"
+            )
             arm_summary = _summarize(arm_full)
             # Per-arm files: parallel --arm runs do not overwrite each other.
-            _atomic_to_csv(arm_full, out_dir / f"si_sdr_per_track_{arm}.csv")
+            _atomic_to_csv(arm_full, arm_path)
             _atomic_to_csv(arm_summary, out_dir / f"si_sdr_summary_{arm}.csv")
             print(arm_summary.to_string(index=False))
 

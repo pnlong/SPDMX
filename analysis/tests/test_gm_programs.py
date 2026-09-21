@@ -225,6 +225,27 @@ def test_plot_gm_stems_vs_hours(tmp_path: Path):
     assert out.exists()
 
 
+def test_plot_category_stems_vs_hours_marks_ddsp(tmp_path: Path):
+    from analysis.plots import plot_gm_stems_vs_hours
+
+    summary = pd.DataFrame(
+        [
+            {"label": "Piano", "n_stems": 100, "wall_hours": 10.0, "active_hours": 8.0, "ddsp_eligible": False},
+            {"label": "Brass", "n_stems": 40, "wall_hours": 5.0, "active_hours": 3.0, "ddsp_eligible": True},
+            {"label": "Wind", "n_stems": 30, "wall_hours": 4.0, "active_hours": 2.5, "ddsp_eligible": True},
+        ]
+    )
+    out = tmp_path / "category_stems_vs_hours.pdf"
+    plot_gm_stems_vs_hours(
+        summary,
+        out,
+        top_n=None,
+        hours_col="active_hours",
+        ylabel="Listening category",
+    )
+    assert out.exists()
+
+
 def test_plot_stems_per_song(tmp_path: Path):
     from analysis.plots import plot_stems_per_song
 

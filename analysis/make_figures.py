@@ -11,6 +11,7 @@ import pandas as pd
 from analysis.gm_programs import DRUM_GM_ID, gm_program_paper_label
 from analysis.plots import (
     _savefig,
+    listening_category_label,
     plot_ablation_listening,
     plot_ablation_listening_panels,
     plot_chunk_layout,
@@ -24,6 +25,8 @@ from analysis.plots import (
 )
 from shared.config import OUTPUT_DIR, SPDMX_DEV_DIR_NAME, SPDMX_FILE_NAME
 from synthesis.chunking import CHUNKS_FILE_NAME
+from synthesis.patches import LISTENING_CATEGORY_GM_CLASSES, resolve_probe_category
+from synthesis.recipe import METHOD_MIDI_DDSP, load_recipe
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIGURES_DIR = REPO_ROOT / "submission" / "figs"
@@ -103,18 +106,95 @@ def _attach_active_hours(summary: pd.DataFrame) -> tuple[pd.DataFrame, bool]:
     return merged, True
 
 
+def _category_display_label(category: str) -> str:
+    return listening_category_label(category)
+
+
+def _ddsp_eligible_categories() -> set[str]:
+    recipe = load_recipe()
+    return {
+        category
+        for category, spec in recipe.specs.items()
+        if spec.method == METHOD_MIDI_DDSP
+    }
+
+
+def _spdmx_category_hours_summary(stems_csv: Path) -> pd.DataFrame:
+    """Aggregate stems and hours by the 10 listening categories."""
+    usecols = ["program", "is_drum", "song_length"]
+    header = pd.read_csv(stems_csv, nrows=0).columns.tolist()
+    if "name" in header:
+        usecols = ["program", "is_drum", "name", "song_length"]
+    stems = pd.read_csv(stems_csv, usecols=usecols)
+    names = (
+        stems["name"].tolist()
+        if "name" in stems.columns
+        else [None] * len(stems)
+    )
+    categories = [
+        resolve_probe_category(
+            program=int(program),
+            is_drum=bool(is_drum),
+            track_name=None if (not isinstance(name, str) or not name.strip()) else name,
+        )
+        for program, is_drum, name in zip(stems["program"], stems["is_drum"], names)
+    ]
+    gm_ids = [
+        DRUM_GM_ID if bool(is_drum) else int(program)
+        for program, is_drum in zip(stems["program"], stems["is_drum"])
+    ]
+    stems = stems.assign(category=categories, gm_id=gm_ids)
+    grouped = (
+        stems.groupby("category", sort=False)
+        .agg(n_stems=("song_length", "size"), wall_seconds=("song_length", "sum"))
+        .reset_index()
+    )
+    grouped["wall_hours"] = grouped["wall_seconds"] / 3600.0
+
+    # Attribute RMS-active hours from the per-program table onto categories.
+    active_path = ACTIVE_HOURS_CSV if ACTIVE_HOURS_CSV.is_file() else ACTIVE_HOURS_CSV_DATA
+    if active_path.is_file():
+        active = pd.read_csv(active_path, usecols=["gm_id", "active_hours", "n_stems"])
+        active = active[active["n_stems"] > 0].copy()
+        active["hours_per_stem"] = active["active_hours"] / active["n_stems"]
+        stems = stems.merge(active[["gm_id", "hours_per_stem"]], on="gm_id", how="left")
+        stems["hours_per_stem"] = stems["hours_per_stem"].fillna(0.0)
+        active_by_cat = (
+            stems.groupby("category", sort=False)["hours_per_stem"].sum().rename("active_hours")
+        )
+        grouped = grouped.merge(active_by_cat, on="category", how="left")
+        grouped["active_hours"] = grouped["active_hours"].fillna(0.0)
+        print(
+            f"using RMS-active hours from {active_path} "
+            f"({int(active['n_stems'].sum()):,} measured stems)",
+            flush=True,
+        )
+
+    order = list(LISTENING_CATEGORY_GM_CLASSES.keys())
+    grouped = (
+        pd.DataFrame({"category": order})
+        .merge(grouped, on="category", how="left")
+        .fillna({"n_stems": 0, "wall_seconds": 0.0, "wall_hours": 0.0})
+    )
+    if "active_hours" in grouped.columns:
+        grouped["active_hours"] = grouped["active_hours"].fillna(0.0)
+    ddsp = _ddsp_eligible_categories()
+    grouped["ddsp_eligible"] = grouped["category"].isin(ddsp)
+    grouped["label"] = grouped["category"].map(_category_display_label)
+    return grouped
+
+
 def make_gm_program_compare_figure(
     *,
-    top_n: int = 10,
+    top_n: int | None = None,
     rank_by: str = "stems",
 ) -> Path:
-    """Stem-count vs RMS-active (or wall-clock) hour shares for SPDMX."""
+    """Stem-count vs hours by listening category (DDSP-eligible marked with *)."""
     stems_csv = SPDMX_DEV_STEMS if SPDMX_DEV_STEMS.is_file() else SPDMX_DEV_STEMS_FALLBACK
     if not stems_csv.is_file():
         raise FileNotFoundError(f"missing SPDMX stems table: {stems_csv}")
-    summary = _spdmx_program_hours_summary(stems_csv)
-    summary, has_active = _attach_active_hours(summary)
-    hours_col = "active_hours" if has_active else "wall_hours"
+    summary = _spdmx_category_hours_summary(stems_csv)
+    hours_col = "active_hours" if "active_hours" in summary.columns else "wall_hours"
     out = FIGURES_DIR / "gm_program_counts_compare.pdf"
     plot_gm_stems_vs_hours(
         summary,
@@ -123,11 +203,19 @@ def make_gm_program_compare_figure(
         rank_by=rank_by,
         hours_col=hours_col,
         hours_title="Hours",
+        ylabel="Instrument category",
         figsize=(7.0, 3.4),
     )
-    summary_out = DATA_DIR / "program_stem_hours.csv"
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    summary.sort_values("n_stems", ascending=False).to_csv(summary_out, index=False)
+    summary.sort_values("n_stems", ascending=False).to_csv(
+        DATA_DIR / "category_stem_hours.csv", index=False
+    )
+    # Keep legacy program-level CSV for other tooling when still useful.
+    program_summary = _spdmx_program_hours_summary(stems_csv)
+    program_summary, has_active = _attach_active_hours(program_summary)
+    program_summary.sort_values("n_stems", ascending=False).to_csv(
+        DATA_DIR / "program_stem_hours.csv", index=False
+    )
     if has_active:
         ACTIVE_HOURS_CSV_DATA.parent.mkdir(parents=True, exist_ok=True)
         src = ACTIVE_HOURS_CSV if ACTIVE_HOURS_CSV.is_file() else ACTIVE_HOURS_CSV_DATA
@@ -281,12 +369,12 @@ def _placeholder_figure(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--top-n", type=int, default=10)
+    parser.add_argument("--top-n", type=int, default=None)
     parser.add_argument(
         "--rank-by",
         choices=("stems", "hours"),
         default="stems",
-        help="Rank the shared GM program list by stem count or wall-clock hours.",
+        help="Rank listening categories by stem count or hours.",
     )
     parser.add_argument(
         "--only",

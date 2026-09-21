@@ -2,7 +2,7 @@
 
 Hybrid Demucs: **Slakh** vs **SPDMX (BDGP-eligible)** vs **both** (union),
 matched step budget. Targets: Bass / Drums / Guitar / Piano. Metrics: SI-SDR
-on Slakh2100 test + MUSDB bass/drums.
+on Slakh2100 test + MUSDB bass/drums + MedleyDB (V1+V2) + MoisesDB (when present).
 
 SPDMX is packed only for songs that contain all four targets (same stem makeup
 as the Slakh protocol). Prefer a release-tree ``songs.csv`` with
@@ -15,11 +15,27 @@ Slakh and SPDMX train/val to test complementarity under the same step budget.
 
 ```bash
 uv pip install demucs
+# optional MoisesDB Python API (eval soft-skips if missing):
+# uv pip install "git+https://github.com/moises-ai/moises-db.git"
 # Slakh path (also in .env as SPDMX_SLAKH_ROOT):
 #   /deepfreeze/share/pnlong/slakh2100_flac_redux
-# optional MUSDB HQ for cross-domain eval
+# optional real-data eval roots:
 # export SPDMX_MUSDB_ROOT=/path/to/musdb18hq
+# export SPDMX_MEDLEYDB_ROOT=/deepfreeze/share/pnlong/MedleyDB   # V1/ + V2/
+# export SPDMX_MOISESDB_ROOT=/deepfreeze/share/pnlong/MoisesDB   # moisesdb_v0.1/<uuid>/
 ```
+
+### Real-data layouts
+
+- **MUSDB18-HQ:** `test/<track>/{bass,drums,mixture}.wav` (bass+drums only).
+- **MedleyDB:** `{SPDMX_MEDLEYDB_ROOT}/{V1,V2}/<Artist_Track>/` with `*_MIX.wav` and
+  `*_STEMS/*_STEM_NN.wav`. Instrument labels come from YAML under
+  `{SPDMX_MEDLEYDB_ROOT}/Metadata/` (or `SPDMX_MEDLEYDB_METADATA`), typically
+  `/deepfreeze/share/pnlong/MedleyDB/Metadata`.
+  Tracks with `has_bleed: yes` are skipped. Present BDGP targets only are scored.
+- **MoisesDB:** unpack so `{SPDMX_MOISESDB_ROOT}/moisesdb_v0.1/<uuid>/` exists.
+  Eval uses `moisesdb.dataset.MoisesDB` and scores present `bass`/`drums`/`guitar`/`piano`
+  stems. Soft-skips if the root is missing/empty or the package is not installed.
 
 Default SPDMX root: the **chunked release** `{SPDMX_OUTPUT_DIR}/SPDMX/`
 (same layout as Zenodo). Override with `SPDMX_DATASET_ROOT` or `spdmx_root` in
@@ -39,9 +55,12 @@ uv run python -m experiments.separation.train --arm all
 # or train only the joint arm: --arm both
 
 # 4) Eval → CSV for paper figures (safe to run arms in parallel)
-# Default eval sets: slakh + spdmx_val + musdb; --write-paper →
-# `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/eval/separation_sisdr.csv`
+# Default eval sets: slakh + spdmx_val + musdb + medleydb + moisesdb;
+# --write-paper → `{SPDMX_OUTPUT_DIR}/dev/experiments/separation/eval/separation_sisdr.csv`
 uv run python -m experiments.separation.eval --arm all --write-paper
+# real-data only (re-run just new sets):
+# uv run python -m experiments.separation.eval --arm all \
+#   --eval-sets musdb medleydb moisesdb --write-paper
 # merge prior per-arm CSVs after parallel runs:
 # uv run python -m experiments.separation.eval --merge-only --write-paper
 ```

@@ -29,6 +29,18 @@ MUSDB_ROOT = path_from_env(
     "/deepfreeze/share/pnlong/musdb18hq",
 )
 
+# MedleyDB (V1/ + V2/ Artist_Track folders with MIX + STEMS).
+MEDLEYDB_ROOT = path_from_env(
+    "SPDMX_MEDLEYDB_ROOT",
+    "/deepfreeze/share/pnlong/MedleyDB",
+)
+
+# MoisesDB (expect moisesdb_v0.1/<uuid>/ under this root). Soft-skip if missing.
+MOISESDB_ROOT = path_from_env(
+    "SPDMX_MOISESDB_ROOT",
+    "/deepfreeze/share/pnlong/MoisesDB",
+)
+
 # Local soundfont library (symlinked at repo root via shared.setup_symlinks).
 SOUNDFONT_DIR = path_from_env(
     "SPDMX_SOUNDFONT_DIR",

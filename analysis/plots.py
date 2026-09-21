@@ -437,16 +437,19 @@ def plot_gm_stems_vs_hours(
     summary: pd.DataFrame,
     output_path: str | Path,
     *,
-    top_n: int = 10,
+    top_n: int | None = 10,
     rank_by: str = "stems",
     hours_col: str = "wall_hours",
     hours_title: str = "Hours",
+    ylabel: str = "General MIDI Program",
     figsize: tuple[float, float] = (7.0, 3.4),
 ):
     """Two-panel SPDMX inventory: stem counts vs hours with %-share bar labels.
 
-    ``summary`` needs ``gm_id``, ``label``, ``n_stems``, and ``hours_col``
+    ``summary`` needs ``label``, ``n_stems``, and ``hours_col``
     (default ``wall_hours``; use ``active_hours`` for RMS-gated duration).
+    Optional boolean ``ddsp_eligible`` marks those labels with ``*``.
+    Pass ``top_n=None`` to plot every row (e.g. all listening categories).
     X-axes are absolute Count / Hours; bar end-labels show corpus share (%).
     """
     import seaborn as sns
@@ -471,14 +474,23 @@ def plot_gm_stems_vs_hours(
     if hours_col not in df.columns:
         raise KeyError(f"summary is missing hours column {hours_col!r}")
     if "label" not in df.columns:
+        if "gm_id" not in df.columns:
+            raise KeyError("summary needs label or gm_id")
         df["label"] = df["gm_id"].map(lambda g: gm_program_paper_label(int(g)))
     n_total = float(df["n_stems"].sum())
     h_total = float(df[hours_col].sum())
     df["stem_share"] = 100.0 * df["n_stems"] / n_total if n_total else 0.0
     df["hour_share"] = 100.0 * df[hours_col] / h_total if h_total else 0.0
     sort_col = "n_stems" if rank_by == "stems" else hours_col
-    head = df.sort_values(sort_col, ascending=False).head(int(top_n))
-    labels = [str(x) for x in head["label"].tolist()]
+    ranked = df.sort_values(sort_col, ascending=False)
+    head = ranked if top_n is None else ranked.head(int(top_n))
+    if "ddsp_eligible" in head.columns:
+        labels = [
+            f"{lab}*" if bool(elig) else str(lab)
+            for lab, elig in zip(head["label"], head["ddsp_eligible"])
+        ]
+    else:
+        labels = [str(x) for x in head["label"].tolist()]
 
     sns.set_theme(style="ticks", context="paper")
     try:
@@ -526,7 +538,7 @@ def plot_gm_stems_vs_hours(
                 pct_labels = [f"{share:.0f}%" for share in plot_df["share"]]
                 ax.bar_label(ax.containers[0], labels=pct_labels, padding=2, fontsize=6)
             ax.set_xlabel(xlabel)
-            ax.set_ylabel("General MIDI Program" if ax is axes[0] else "")
+            ax.set_ylabel(ylabel if ax is axes[0] else "")
             ax.set_title(title, fontsize=11, pad=4)
             _style_gm_count_axis(ax)
             sns.despine(ax=ax)
@@ -1038,6 +1050,16 @@ _LISTENING_CATEGORY_ORDER = (
 _LISTENING_CATEGORY_LABELS = {
     "polyphonic": "Miscellaneous",
 }
+
+
+def listening_category_label(category: str) -> str:
+    """Paper-facing label for a listening category id."""
+    key = str(category)
+    if key in _LISTENING_CATEGORY_LABELS:
+        return _LISTENING_CATEGORY_LABELS[key]
+    return key.replace("_", " ").title()
+
+
 # Frozen SPDMX render recipe (condition code per listening category).
 _LISTENING_RECIPE = {
     "piano": "B1",
@@ -1062,8 +1084,7 @@ _CONDITION_DISPLAY = {
 
 
 def _listening_category_label(category: str) -> str:
-    key = str(category).lower()
-    return _LISTENING_CATEGORY_LABELS.get(key, str(category).capitalize())
+    return listening_category_label(category)
 
 
 def _listening_conditions_for_category(category: str) -> tuple[str, ...]:
