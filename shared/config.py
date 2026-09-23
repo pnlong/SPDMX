@@ -35,10 +35,10 @@ MEDLEYDB_ROOT = path_from_env(
     "/deepfreeze/share/pnlong/MedleyDB",
 )
 
-# MoisesDB (expect moisesdb_v0.1/<uuid>/ under this root). Soft-skip if missing.
+# MoisesDB (moisesdb_v0.1/<uuid>/ under this root; also accepts …/moisesdb/moisesdb_v0.1/).
 MOISESDB_ROOT = path_from_env(
     "SPDMX_MOISESDB_ROOT",
-    "/deepfreeze/share/pnlong/MoisesDB",
+    "/deepfreeze/share/pnlong/moisesdb",
 )
 
 # Local soundfont library (symlinked at repo root via shared.setup_symlinks).

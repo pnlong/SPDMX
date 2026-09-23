@@ -15,14 +15,12 @@ Slakh and SPDMX train/val to test complementarity under the same step budget.
 
 ```bash
 uv pip install demucs
-# optional MoisesDB Python API (eval soft-skips if missing):
-# uv pip install "git+https://github.com/moises-ai/moises-db.git"
 # Slakh path (also in .env as SPDMX_SLAKH_ROOT):
 #   /deepfreeze/share/pnlong/slakh2100_flac_redux
 # optional real-data eval roots:
 # export SPDMX_MUSDB_ROOT=/path/to/musdb18hq
 # export SPDMX_MEDLEYDB_ROOT=/deepfreeze/share/pnlong/MedleyDB   # V1/ + V2/
-# export SPDMX_MOISESDB_ROOT=/deepfreeze/share/pnlong/MoisesDB   # moisesdb_v0.1/<uuid>/
+# export SPDMX_MOISESDB_ROOT=/deepfreeze/share/pnlong/moisesdb
 ```
 
 ### Real-data layouts
@@ -33,9 +31,10 @@ uv pip install demucs
   `{SPDMX_MEDLEYDB_ROOT}/Metadata/` (or `SPDMX_MEDLEYDB_METADATA`), typically
   `/deepfreeze/share/pnlong/MedleyDB/Metadata`.
   Tracks with `has_bleed: yes` are skipped. Present BDGP targets only are scored.
-- **MoisesDB:** unpack so `{SPDMX_MOISESDB_ROOT}/moisesdb_v0.1/<uuid>/` exists.
-  Eval uses `moisesdb.dataset.MoisesDB` and scores present `bass`/`drums`/`guitar`/`piano`
-  stems. Soft-skips if the root is missing/empty or the package is not installed.
+- **MoisesDB:** `{SPDMX_MOISESDB_ROOT}/moisesdb_v0.1/<uuid>/{bass,drums,…}/*.wav`
+  plus `data.json` (also accepts an extra `moisesdb/` nesting from the zip).
+  Native loader scores present `bass`/`drums`/`guitar`/`piano` and rebuilds the mix
+  as the sum of all stem WAVs. Soft-skips if missing/empty.
 
 Default SPDMX root: the **chunked release** `{SPDMX_OUTPUT_DIR}/SPDMX/`
 (same layout as Zenodo). Override with `SPDMX_DATASET_ROOT` or `spdmx_root` in

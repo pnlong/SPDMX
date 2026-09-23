@@ -34,7 +34,7 @@ spdmx_require_all_targets: true
 spdmx_root: /deepfreeze/share/SPDMX/SPDMX
 # musdb_root: /deepfreeze/share/pnlong/musdb18hq
 # medleydb_root: /deepfreeze/share/pnlong/MedleyDB   # expects V1/ and V2/
-# moisesdb_root: /deepfreeze/share/pnlong/MoisesDB   # expects moisesdb_v0.1/<uuid>/
+# moisesdb_root: /deepfreeze/share/pnlong/moisesdb  # → moisesdb_v0.1/<uuid>/
 # medleydb_metadata: /deepfreeze/share/pnlong/MedleyDB/Metadata
 
 # Held-out fraction of BDGP-eligible sPDMX songs for validation.

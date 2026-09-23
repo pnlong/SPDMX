@@ -19,6 +19,14 @@ from experiments.separation.medleydb_map import (
     iter_medleydb_track_dirs,
     load_track_metadata,
 )
+from experiments.separation.moisesdb_map import (
+    MOISES_BDGP,
+    bdgp_stem_wavs,
+    iter_moises_track_dirs,
+    load_track_data_json,
+    mixture_stem_wavs,
+    resolve_moises_version_root,
+)
 from experiments.separation.paths import (
     MEDLEYDB_METADATA_DIR,
     MEDLEYDB_ROOT,
@@ -35,7 +43,6 @@ from experiments.separation.train import build_model
 # Included in --write-paper CSV (figures may still subset).
 PAPER_TEST_SETS = ("slakh2100", "spdmx_val", "musdb18", "medleydb", "moisesdb")
 EVAL_SET_CHOICES = ("slakh", "spdmx_val", "musdb", "medleydb", "moisesdb")
-MOISES_BDGP = ("bass", "drums", "guitar", "piano")
 
 
 @torch.no_grad()
@@ -251,35 +258,6 @@ def eval_medleydb_bdgp(
     return pd.DataFrame(rows)
 
 
-def _moises_to_mono(audio: np.ndarray) -> np.ndarray:
-    """Normalize MoisesDB arrays to mono float32 (T,)."""
-    x = np.asarray(audio, dtype=np.float32)
-    if x.ndim == 1:
-        return x
-    if x.ndim == 2:
-        # (C, T) or (T, C)
-        if x.shape[0] <= 8 and x.shape[0] < x.shape[1]:
-            return x.mean(axis=0)
-        return x.mean(axis=1)
-    raise ValueError(f"unexpected MoisesDB audio shape {x.shape}")
-
-
-def _resolve_moises_data_path(moises_root: Path) -> Path | None:
-    """Accept MoisesDB/ or MoisesDB/moisesdb_v0.1 as data_path."""
-    if not moises_root.is_dir():
-        return None
-    nested = moises_root / "moisesdb_v0.1"
-    if nested.is_dir() and any(nested.iterdir()):
-        return moises_root
-    # Already pointing at moisesdb_v0.1
-    if moises_root.name == "moisesdb_v0.1" and any(moises_root.iterdir()):
-        return moises_root.parent
-    # Empty placeholder root → soft-skip
-    if not any(moises_root.iterdir()):
-        return None
-    return moises_root
-
-
 def eval_moisesdb_bdgp(
     model: torch.nn.Module,
     moises_root: Path,
@@ -288,47 +266,42 @@ def eval_moisesdb_bdgp(
     device: torch.device,
 ) -> pd.DataFrame:
     """Cross-domain SI-SDR on MoisesDB for present BDGP top-level stems."""
-    data_path = _resolve_moises_data_path(moises_root)
-    if data_path is None:
+    version_root = resolve_moises_version_root(moises_root)
+    if version_root is None:
         print(f"MoisesDB not found or empty at {moises_root}; skipping")
-        return pd.DataFrame()
-    try:
-        from moisesdb.dataset import MoisesDB
-    except ImportError:
-        print("moisesdb package not installed; skipping MoisesDB eval")
-        return pd.DataFrame()
-
-    try:
-        db = MoisesDB(data_path=str(data_path), sample_rate=sample_rate)
-    except Exception as exc:  # noqa: BLE001 — soft-skip until layout is confirmed
-        print(f"MoisesDB failed to open at {data_path}: {exc}; skipping")
         return pd.DataFrame()
 
     rows = []
-    n = len(db)
-    for i in tqdm(range(n), desc="eval:moisesdb"):
-        track = db[i]
-        try:
-            stems = track.stems or {}
-            mix = _moises_to_mono(track.audio)
-        except Exception as exc:  # noqa: BLE001
-            print(f"MoisesDB track {getattr(track, 'id', i)} load failed: {exc}")
+    tracks = list(iter_moises_track_dirs(version_root))
+    for track_id, track_dir in tqdm(tracks, desc="eval:moisesdb"):
+        meta = load_track_data_json(track_dir)
+        if not meta:
             continue
-        present = {
-            t: _moises_to_mono(stems[t])
-            for t in MOISES_BDGP
-            if t in stems and stems[t] is not None
-        }
-        if not present:
+        target_files = bdgp_stem_wavs(track_dir, meta)
+        if not target_files:
+            continue
+        mix_files = mixture_stem_wavs(track_dir, meta)
+        if not mix_files:
+            continue
+        refs: dict[str, np.ndarray] = {}
+        try:
+            for target, paths in target_files.items():
+                parts = [load_mono(p, sample_rate=sample_rate)[0] for p in paths]
+                refs[target] = sum_stems(parts) if len(parts) > 1 else parts[0]
+            mix_parts = [load_mono(p, sample_rate=sample_rate)[0] for p in mix_files]
+            mix = sum_stems(mix_parts) if len(mix_parts) > 1 else mix_parts[0]
+        except Exception as exc:  # noqa: BLE001 — skip incomplete / corrupt tracks
+            print(f"MoisesDB track {track_id} load failed: {exc}")
+            continue
+        if not refs:
             continue
         est = separate_track(model, mix, sample_rate=sample_rate, device=device)
-        song_id = str(getattr(track, "id", None) or getattr(track, "name", i))
-        for t, ref in present.items():
+        for t, ref in refs.items():
             n_samp = min(est[t].shape[0], ref.shape[0], mix.shape[0])
             rows.append(
                 {
                     "test_set": "moisesdb",
-                    "song_id": song_id,
+                    "song_id": track_id,
                     "target": t,
                     "si_sdr": si_sdr(est[t][:n_samp], ref[:n_samp]),
                     "mixture_si_sdr": si_sdr(mix[:n_samp], ref[:n_samp]),
@@ -401,7 +374,7 @@ def main() -> None:
         help=(
             "Which test sets to score. slakh=Slakh2100 test; "
             "spdmx_val=sPDMX val packs; musdb=MUSDB18 bass/drums; "
-            "medleydb=MedleyDB V1+V2 BDGP; moisesdb=MoisesDB BDGP (soft-skip if missing). "
+            "medleydb=MedleyDB V1+V2 BDGP; moisesdb=MoisesDB BDGP on-disk (soft-skip if missing). "
             "Default: all five."
         ),
     )
