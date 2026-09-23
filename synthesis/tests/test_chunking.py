@@ -194,6 +194,7 @@ def test_rewrite_songs_table_for_chunks_keeps_song_length():
                 "path": "./audio/0/1/QmA",
                 "mid": "./mid/0/1/QmA.mid",
                 "mix": "./mix/0/1/QmA.flac",
+                "n_tracks": 2,
                 "song_length": 12.5,
                 "subset:all": True,
                 "subset:bdgp": False,
@@ -205,6 +206,44 @@ def test_rewrite_songs_table_for_chunks_keeps_song_length():
     assert packaged.iloc[0]["path"] == "./chunk_3/0/1/QmA"
     assert packaged.iloc[0]["mix"] == "./chunk_3/0/1/QmA/mix.flac"
     assert float(packaged.iloc[0]["song_length"]) == 12.5
+    assert bool(packaged.iloc[0]["subset:multitrack"])
+
+
+def test_rewrite_songs_table_derives_multitrack_subset():
+    songs = pd.DataFrame(
+        [
+            {"song_id": "a", "n_tracks": 1, "path": "./audio/a", "mix": "./mix/a.flac"},
+            {"song_id": "b", "n_tracks": 3, "path": "./audio/b", "mix": "./mix/b.flac"},
+        ]
+    )
+    packaged = rewrite_songs_table_for_chunks(songs, {"a": "0", "b": "1"})
+    assert not bool(packaged.loc[packaged["song_id"] == "a", "subset:multitrack"].iloc[0])
+    assert bool(packaged.loc[packaged["song_id"] == "b", "subset:multitrack"].iloc[0])
+
+
+def test_song_media_bytes_can_omit_mix(tmp_path: Path):
+    from synthesis.chunking import song_media_bytes
+
+    song_id = "0/1/QmA"
+    audio = tmp_path / "audio" / song_id
+    audio.mkdir(parents=True)
+    (audio / "0.flac").write_bytes(b"a" * 100)
+    mid = tmp_path / "mid" / f"{song_id}.mid"
+    mid.parent.mkdir(parents=True)
+    mid.write_bytes(b"m" * 20)
+    mix = tmp_path / "mix" / f"{song_id}.flac"
+    mix.parent.mkdir(parents=True)
+    mix.write_bytes(b"x" * 50)
+    with_mix = song_media_bytes(
+        song_id, audio_root=tmp_path / "audio", mid_root=tmp_path / "mid",
+        mix_root=tmp_path / "mix", include_mix=True,
+    )
+    without = song_media_bytes(
+        song_id, audio_root=tmp_path / "audio", mid_root=tmp_path / "mid",
+        mix_root=tmp_path / "mix", include_mix=False,
+    )
+    assert with_mix == without + 50
+    assert without == 120
 
 
 def test_publish_dir_leaves_source_if_verify_would_fail(tmp_path: Path, monkeypatch):
@@ -253,10 +292,14 @@ def test_chunk_dataset_builds_separate_release_tree(tmp_path: Path):
     songs = pd.read_csv(dest / "songs.csv")
     assert set(songs["song_id"]) == {"0/1/QmA", "0/2/QmB"}
     assert "subset:all" in songs.columns and "subset:bdgp" in songs.columns
+    assert "subset:multitrack" in songs.columns
     assert "song_length" in songs.columns
     assert bool(songs["subset:all"].all())
     assert songs["song_length"].notna().all()
     assert (songs["song_length"] > 0).all()
+    by_id = songs.set_index("song_id")
+    assert bool(by_id.loc["0/1/QmA", "subset:multitrack"])
+    assert not bool(by_id.loc["0/2/QmB", "subset:multitrack"])
 
     # Flat production tree untouched.
     assert (source / SPDMX_AUDIO_DIR_NAME / "0/1/QmA" / "0.flac").is_file()
@@ -271,14 +314,35 @@ def test_chunk_dataset_builds_separate_release_tree(tmp_path: Path):
         song_dir = dest / chunk_dir_name(chunk_id) / song_id
         assert (song_dir / "0.flac").is_file()
         assert (song_dir / "mix.mid").is_file()
-        assert (song_dir / "mix.flac").is_file()
+        n_tracks = 2 if song_id.endswith("QmA") else 1
+        if n_tracks >= 2:
+            assert (song_dir / "mix.flac").is_file()
+        else:
+            assert not (song_dir / "mix.flac").exists()
         assert not (dest / chunk_dir_name(chunk_id) / SPDMX_AUDIO_DIR_NAME).exists()
         assert not (dest / chunk_dir_name(chunk_id) / SPDMX_MID_DIR_NAME).exists()
+    assert (dest / "link_single_track_mixes.sh").is_file()
     assert int(chunks["n_songs"].sum()) == 2
     assert packaged.iloc[0]["path"].startswith("./chunk_")
     assert packaged.iloc[0]["path"].endswith("QmA") or packaged.iloc[0]["path"].endswith("QmB")
     assert packaged.iloc[0]["mid"].endswith("/mix.mid")
     assert packaged.iloc[0]["mix"].endswith("/mix.flac")
+
+
+def test_chunk_dataset_removes_stale_single_track_mix(tmp_path: Path):
+    source = tmp_path / "SPDMX_dev"
+    dest = tmp_path / "SPDMX"
+    source.mkdir()
+    _write_flat_fixture(source)
+    _, _, assignment = chunk_dataset(
+        dataset_dir=source, package_dir=dest, num_chunks=2, seed=0,
+    )
+    single_dir = dest / chunk_dir_name(assignment["0/2/QmB"]) / "0/2/QmB"
+    (single_dir / "mix.flac").write_bytes(b"stale")
+    chunk_dataset(dataset_dir=source, package_dir=dest, num_chunks=2, seed=0)
+    assert not (single_dir / "mix.flac").exists()
+    multi_dir = dest / chunk_dir_name(assignment["0/1/QmA"]) / "0/1/QmA"
+    assert (multi_dir / "mix.flac").is_file()
 
 
 def test_chunk_dataset_repack_rereads_flat_source(tmp_path: Path):
@@ -297,7 +361,11 @@ def test_chunk_dataset_repack_rereads_flat_source(tmp_path: Path):
     assert (source / SPDMX_AUDIO_DIR_NAME / "0/1/QmA" / "0.flac").is_file()
     for song_id, chunk_id in assignment.items():
         assert (dest / chunk_dir_name(chunk_id) / song_id / "0.flac").is_file()
-        assert (dest / chunk_dir_name(chunk_id) / song_id / "mix.flac").is_file()
+        mix_path = dest / chunk_dir_name(chunk_id) / song_id / "mix.flac"
+        if song_id.endswith("QmA"):
+            assert mix_path.is_file()
+        else:
+            assert not mix_path.exists()
     assert "chunk" in packaged.columns
 
 
@@ -318,6 +386,8 @@ def test_stage_zenodo_files(tmp_path: Path):
     assert (stage / CHUNKS_FILE_NAME).is_file()
     assert (stage / "LICENSE").is_file()
     assert (stage / "README.md").is_file()
+    assert (stage / "link_single_track_mixes.sh").is_file()
+    assert (stage / "songs.csv").is_file()
     assert (stage / SHA256SUMS_FILE_NAME).is_file()
 
     zips = sorted(stage.glob("chunk_*.zip"))
@@ -325,16 +395,21 @@ def test_stage_zenodo_files(tmp_path: Path):
     assert (manifest["archive"].astype(str) != "").all()
     assert (manifest["sha256"].astype(str) != "").all()
 
-    with zipfile.ZipFile(zips[0]) as zf:
-        names = zf.namelist()
-    assert any(n.startswith("chunk_") and "/mix.flac" in n for n in names)
-    assert any(n.startswith("chunk_") and "/mix.mid" in n for n in names)
-    assert any(n.startswith("chunk_") and n.endswith("/0.flac") for n in names)
-    assert not any("/audio/" in n for n in names)
+    all_names: list[str] = []
+    for zpath in zips:
+        with zipfile.ZipFile(zpath) as zf:
+            all_names.extend(zf.namelist())
+    assert any(n.startswith("chunk_") and "/mix.mid" in n for n in all_names)
+    assert any(n.startswith("chunk_") and n.endswith("/0.flac") for n in all_names)
+    # Multitrack QmA ships mix.flac; single-track QmB does not.
+    assert any(n.endswith("QmA/mix.flac") for n in all_names)
+    assert not any(n.endswith("QmB/mix.flac") for n in all_names)
+    assert not any("/audio/" in n for n in all_names)
 
     sums = (stage / SHA256SUMS_FILE_NAME).read_text(encoding="utf-8")
     for path in zips:
         assert path.name in sums
+    assert "link_single_track_mixes.sh" in sums
 
 
 def test_stage_zenodo_subset_chunks(tmp_path: Path):
@@ -390,6 +465,32 @@ def test_build_spdmx_cli_dry_run(tmp_path: Path, capsys):
     assert not (out / "SPDMX" / CHUNKS_FILE_NAME).exists()
 
 
+def test_link_single_track_mixes_script(tmp_path: Path):
+    source = tmp_path / "SPDMX_dev"
+    release = tmp_path / "SPDMX"
+    source.mkdir()
+    _write_flat_fixture(source)
+    _, _, assignment = chunk_dataset(
+        dataset_dir=source, package_dir=release, num_chunks=2, seed=0,
+    )
+    script = release / "link_single_track_mixes.sh"
+    assert script.is_file()
+    import subprocess
+
+    result = subprocess.run(
+        ["bash", str(script), str(release)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "1 single-track" in result.stdout
+    single = release / chunk_dir_name(assignment["0/2/QmB"]) / "0/2/QmB" / "mix.flac"
+    assert single.is_symlink()
+    assert single.readlink().name == "0.flac"
+    multi = release / chunk_dir_name(assignment["0/1/QmA"]) / "0/1/QmA" / "mix.flac"
+    assert multi.is_file() and not multi.is_symlink()
+
+
 def test_distribute_cli(tmp_path: Path):
     from synthesis.distribute_spdmx import main as dist_main
 
@@ -409,3 +510,5 @@ def test_distribute_cli(tmp_path: Path):
     )
     assert code == 0
     assert (stage / SHA256SUMS_FILE_NAME).is_file()
+    assert (stage / "link_single_track_mixes.sh").is_file()
+    assert (stage / "songs.csv").is_file()

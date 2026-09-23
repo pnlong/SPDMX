@@ -5,7 +5,8 @@ Input: packaged layout from ``python -m synthesis.build_spdmx``
 
 Output staging directory (separate downloadable files):
 
-* ``LICENSE``, ``README.md``, ``stems.csv``, ``chunks.csv``
+* ``LICENSE``, ``README.md``, ``link_single_track_mixes.sh``,
+  ``stems.csv``, ``songs.csv``, ``chunks.csv``
 * ``chunk_NNN.zip`` for each chunk (~25 GiB media)
 * ``SHA256SUMS``
 
@@ -23,7 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from shared.config import OUTPUT_DIR, SPDMX_FILE_NAME
+from shared.config import OUTPUT_DIR, SPDMX_FILE_NAME, SPDMX_SONGS_FILE_NAME
 from synthesis.chunking import (
     CHUNKS_CSV_COLUMNS,
     CHUNKS_FILE_NAME,
@@ -156,6 +157,10 @@ def stage_zenodo_files(
 
     shutil.copy2(spdmx_csv, dest / spdmx_csv.name)
 
+    songs_csv = source / SPDMX_SONGS_FILE_NAME
+    if songs_csv.is_file():
+        shutil.copy2(songs_csv, dest / songs_csv.name)
+
     chunks = pd.read_csv(chunks_csv)
     for col in CHUNKS_CSV_COLUMNS:
         if col not in chunks.columns:
@@ -182,6 +187,8 @@ def stage_zenodo_files(
     staged_files: list[Path] = [
         dest / name for name in RELEASE_DOC_NAMES
     ] + [dest / spdmx_csv.name]
+    if songs_csv.is_file():
+        staged_files.append(dest / songs_csv.name)
 
     archive_by_chunk: dict[str, tuple[str, str, int]] = {}
     for chunk_id in selected:

@@ -9,6 +9,7 @@
   already filled by mix/verify; otherwise ``soundfile.info`` on the mix)
 - ``subset:all`` — every song with ≥1 on-disk stem
 - ``subset:bdgp`` — bass, drums, guitar, and piano all present (GM mapping)
+- ``subset:multitrack`` — ``n_tracks >= 2`` (False for single-stem songs)
 
 Mirrors PDMX's ``subset:*`` columns on the songs table.
 
@@ -36,6 +37,7 @@ from shared.config import (
     SPDMX_BDGP_SUBSET_COLUMN,
     SPDMX_DATASET_DIR_NAME,
     SPDMX_FILE_NAME,
+    SPDMX_MULTITRACK_SUBSET_COLUMN,
     SPDMX_SONGS_FILE_NAME,
 )
 from synthesis.patches import patch_group_key
@@ -43,6 +45,7 @@ from synthesis.patches import patch_group_key
 # PDMX-style subset column names.
 SUBSET_ALL = "subset:all"
 SUBSET_BDGP = SPDMX_BDGP_SUBSET_COLUMN
+SUBSET_MULTITRACK = SPDMX_MULTITRACK_SUBSET_COLUMN
 # Prefer | over comma so naive string filters don't fight CSV quoting.
 PROGRAMS_SEP = "|"
 # Wall-clock seconds from the shipped mix FLAC header.
@@ -137,6 +140,7 @@ def _index_one_song(
         "bdgp_targets": PROGRAMS_SEP.join(sorted(present)),
         SUBSET_ALL: True,
         SUBSET_BDGP: set(TARGETS).issubset(present),
+        SUBSET_MULTITRACK: int(len(group_rows)) >= 2,
     }
 
 
@@ -221,6 +225,7 @@ def _build_songs_table_trust_csv(
             {t for t in str(s).split(PROGRAMS_SEP) if t}
         )
     )
+    songs[SUBSET_MULTITRACK] = songs["n_tracks"].astype(int) >= 2
 
     # Parallel mix header reads only for songs missing song_length on stems.csv.
     lengths: dict[str, float | None] = {}
@@ -354,6 +359,9 @@ def write_songs_table(
         "n_with_song_length": n_len,
         "n_subset_all": int(songs[SUBSET_ALL].sum()) if len(songs) else 0,
         "n_subset_bdgp": int(songs[SUBSET_BDGP].sum()) if len(songs) else 0,
+        "n_subset_multitrack": (
+            int(songs[SUBSET_MULTITRACK].sum()) if len(songs) else 0
+        ),
     }
     with open(dest.with_suffix(".summary.json"), "w") as f:
         json.dump(summary, f, indent=2)

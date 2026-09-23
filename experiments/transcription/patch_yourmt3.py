@@ -356,6 +356,108 @@ def _patch_auto_resume(train_py: Path, init_train: Path) -> bool:
     return changed
 
 
+def _patch_test_subbsz_and_per_track(ymt3_py: Path) -> bool:
+    """Faster test inference sub-batch + per-track JSONL for bootstrap CIs."""
+    text = ymt3_py.read_text(encoding="utf-8")
+    changed = False
+
+    old_bsz = '''        if self.task_manager.num_decoding_channels == 1:
+            bsz = self.shared_cfg["BSZ"]["validation"]
+        else:
+            bsz = self.shared_cfg["BSZ"]["validation"] // self.task_manager.num_decoding_channels * 3'''
+    new_bsz = '''        # Prefer test BSZ (larger) for GPU throughput; override via SPDMX_TEST_SUBBSZ.
+        import os as _os
+        _env_bsz = _os.environ.get("SPDMX_TEST_SUBBSZ")
+        _base_bsz = int(_env_bsz) if _env_bsz else int(
+            self.shared_cfg["BSZ"].get("test", self.shared_cfg["BSZ"]["validation"]))
+        if self.task_manager.num_decoding_channels == 1:
+            bsz = _base_bsz
+        else:
+            bsz = max(1, _base_bsz // self.task_manager.num_decoding_channels * 3)'''
+    if "SPDMX_TEST_SUBBSZ" not in text and old_bsz in text:
+        text = text.replace(old_bsz, new_bsz, 1)
+        changed = True
+
+    dump_marker = "# SPDMX_PER_TRACK_DUMP"
+    if dump_marker not in text:
+        anchor = '''            self.test_metrics[dataloader_idx].bulk_update(drum_metric)
+            self.test_metrics[dataloader_idx].bulk_update(non_drum_metric)
+            self.test_metrics[dataloader_idx].bulk_update(instr_metric)'''
+        dump = '''            self.test_metrics[dataloader_idx].bulk_update(drum_metric)
+            self.test_metrics[dataloader_idx].bulk_update(non_drum_metric)
+            self.test_metrics[dataloader_idx].bulk_update(instr_metric)
+            # SPDMX_PER_TRACK_DUMP
+            try:
+                import json as _json
+                import math as _math
+                import os as _os
+                _ids = [notes_dict[k] for k in notes_dict.keys() if k.endswith("_id")]
+                _track = str(_ids[0]) if _ids else f"batch_{batch_idx}"
+                def _f(x):
+                    try:
+                        v = float(x)
+                    except Exception:
+                        return None
+                    return None if _math.isnan(v) else v
+                _row = {
+                    "track_id": _track,
+                    "onset_f": _f(non_drum_metric.get("onset_f")),
+                    "offset_f": _f(non_drum_metric.get("offset_f")),
+                    "multi_f": _f(instr_metric.get("multi_f")),
+                    "rank": int(getattr(self, "global_rank", 0)),
+                }
+                _dir = _os.environ.get("SPDMX_PER_TRACK_DIR")
+                if _dir:
+                    _os.makedirs(_dir, exist_ok=True)
+                    _path = _os.path.join(_dir, f"per_track_rank{getattr(self, 'global_rank', 0)}.jsonl")
+                    with open(_path, "a") as _fh:
+                        _fh.write(_json.dumps(_row) + "\\n")
+            except Exception as _exc:
+                print(f"[SPDMX] per-track dump failed: {_exc}")'''
+        if anchor not in text:
+            raise SystemExit(f"could not find test_step bulk_update anchor in {ymt3_py}")
+        text = text.replace(anchor, dump, 1)
+        changed = True
+
+    if changed:
+        ymt3_py.write_text(text, encoding="utf-8")
+    return changed
+
+
+def _patch_config_dataloader(config_py: Path) -> bool:
+    text = config_py.read_text(encoding="utf-8")
+    marker = "# SPDMX_DATAIO_ENV"
+    if marker in text:
+        return False
+    old = '''    "DATAIO": { # do not set `shuffle` here. 
+        "num_workers": 4, # num_worker is per GPU in DDP mode
+        "prefetch_factor": 2, #2,
+        "pin_memory": True,
+        "persistent_workers": False,
+    },'''
+    new = '''    "DATAIO": { # do not set `shuffle` here.  # SPDMX_DATAIO_ENV
+        "num_workers": int(__import__("os").environ.get("SPDMX_TEST_NUM_WORKERS", "4")),
+        "prefetch_factor": int(__import__("os").environ.get("SPDMX_TEST_PREFETCH", "2")),
+        "pin_memory": True,
+        "persistent_workers": __import__("os").environ.get("SPDMX_TEST_PERSISTENT_WORKERS", "0") == "1",
+    },'''
+    if old not in text:
+        # Try compact form
+        old2 = '''    "DATAIO": { # do not set `shuffle` here.
+        "num_workers": 4, # num_worker is per GPU in DDP mode
+        "prefetch_factor": 2, #2,
+        "pin_memory": True,
+        "persistent_workers": False,
+    },'''
+        if old2 not in text:
+            return False
+        text = text.replace(old2, new, 1)
+    else:
+        text = text.replace(old, new, 1)
+    config_py.write_text(text, encoding="utf-8")
+    return True
+
+
 def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     """Apply local YourMT3 fixes. Returns list of patched file paths."""
     src = Path(yourmt3_src) if yourmt3_src is not None else YOURMT3_SRC
@@ -365,6 +467,8 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     init_train = src / "model" / "init_train.py"
     train_py = src / "train.py"
     test_py = src / "test.py"
+    ymt3_py = src / "model" / "ymt3.py"
+    config_py = src / "config" / "config.py"
     if init_train.is_file() and _patch_init_train(init_train):
         patched.append(str(init_train))
     if init_train.is_file() and _patch_step_progress(init_train):
@@ -380,4 +484,8 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
         patched.append(str(train_py) + " (limit-val-batches)")
     if train_py.is_file() and init_train.is_file() and _patch_auto_resume(train_py, init_train):
         patched.append(str(train_py) + " (auto-resume)")
+    if ymt3_py.is_file() and _patch_test_subbsz_and_per_track(ymt3_py):
+        patched.append(str(ymt3_py) + " (per-track + test subbsz)")
+    if config_py.is_file() and _patch_config_dataloader(config_py):
+        patched.append(str(config_py) + " (dataloader env)")
     return patched

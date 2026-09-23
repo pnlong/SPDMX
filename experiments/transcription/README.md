@@ -79,3 +79,47 @@ experiment id (checkpoints / W&B); the wrapper defaults it to the arm name.
 Pass extras after `--`, e.g. `-- --precision 32`.
 
 Presets added by the converter: `slakh_redux`, `spdmx`, `spdmx_hm`, `slakh_spdmx`, multi `slakh_vs_spdmx`.
+
+## Eval with per-track bootstrap CIs
+
+Checkpoints are expected under
+`{SPDMX_OUTPUT_DIR}/dev/experiments/transcription/checkpoints/{slakh,spdmx}/`.
+Eval dumps one row per song, then percentile-bootstrap 95% CIs (mean ± half-width
+for the paper CSV).
+
+**Overnight (recommended, 4 GPUs):** SPDMX→SPDMX on GPUs 0–1; the two Slakh-test
+jobs on GPUs 2 and 3 in parallel.
+
+```bash
+# from repo root; leave running overnight
+uv run python -m experiments.transcription.eval \
+  --all --gpu 0,1,2,3 --parallel --write-paper \
+  --subbsz 128 --num-workers 8
+```
+
+Logs / JSONL / `summary.json` land under
+`{SPDMX_OUTPUT_DIR}/dev/experiments/transcription/eval/<train>__<preset>/`
+(e.g. `spdmx__spdmx/eval.log`). Paper CSV:
+`analysis/paper_data/transcription_note_f1.csv`.
+
+**Single job** (e.g. only the large SPDMX test set):
+
+```bash
+uv run python -m experiments.transcription.eval \
+  --train-arm spdmx --test-preset spdmx --gpu 0,1 --write-paper
+```
+
+**Recompute CIs / paper CSV after a run** (CPU only):
+
+```bash
+uv run python -m experiments.transcription.eval --merge-only --write-paper
+```
+
+Throughput knobs (also set automatically by the wrapper):
+
+| Env / flag | Default | Role |
+|---|---|---|
+| `--subbsz` / `SPDMX_TEST_SUBBSZ` | 128 | Chunk size inside each file’s `inference_file` |
+| `--num-workers` / `SPDMX_TEST_NUM_WORKERS` | 8 | DataLoader workers **per GPU** |
+| `--gpu` + DDP | — | Multi-GPU file sharding |
+| `--precision` | `bf16-mixed` | Amp |

@@ -7,8 +7,11 @@ After ``synthesis.final`` has written ``audio/``, ``mid/``, ``mix/``,
 
 1. Assigns songs to a fixed number of roughly equal-sized download chunks
    (default 64, LPT bin packing).
-2. Hardlinks (or copies) stems + mix audio + dense MIDI into
-   ``chunk_N/<song_id>/{k.flac,mix.flac,mix.mid}``.
+2. Hardlinks (or copies) stems + dense MIDI into
+   ``chunk_N/<song_id>/{k.flac,mix.mid}``, plus ``mix.flac`` only for
+   multitrack songs (``n_tracks >= 2``). Single-track mixes are omitted
+   (identical to the lone stem; optional post-download linker restores
+   ``mix.flac`` as a symlink).
 3. Writes packaged ``stems.csv`` (with ``chunk``) + ``chunks.csv`` + LICENSE/README.
 4. Packages ``songs.csv`` by remapping ``SPDMX_dev/songs.csv`` into chunk paths
    (preferred; keeps ``song_length``). Falls back to aggregating from packaged
@@ -163,13 +166,18 @@ def _measure_sizes_parallel(
     mid_root: Path,
     mix_root: Path,
     jobs: int,
+    include_mix_by_song: dict[str, bool] | None = None,
 ) -> dict[str, int]:
     def _one(song_id: str) -> tuple[str, int]:
+        include_mix = True
+        if include_mix_by_song is not None:
+            include_mix = bool(include_mix_by_song.get(song_id, True))
         return song_id, song_media_bytes(
             song_id,
             audio_root=audio_root,
             mid_root=mid_root,
             mix_root=mix_root,
+            include_mix=include_mix,
         )
 
     pairs = _parallel_map(_one, song_ids, jobs=jobs, desc="Measure song sizes")
@@ -307,8 +315,9 @@ def _place_song_media(
     source_mix: Path,
     package_dir: Path,
     copy: bool,
+    include_mix: bool = True,
 ) -> None:
-    """Publish stems + mix.flac + mix.mid into ``chunk_N/<song_id>/``."""
+    """Publish stems + mix.mid (+ mix.flac when *include_mix*) into ``chunk_N/<song_id>/``."""
     song_dst = package_dir / chunk_dir_name(chunk_id) / song_id
     audio_src = source_audio / song_id
     mid_src = source_mid / f"{song_id}.mid"
@@ -322,12 +331,12 @@ def _place_song_media(
             song_dst / SPDMX_RELEASE_MIX_MIDI_NAME,
             copy=copy,
         )
-    if mix_src.is_file():
-        _publish_file(
-            mix_src,
-            song_dst / SPDMX_RELEASE_MIX_AUDIO_NAME,
-            copy=copy,
-        )
+    mix_dst = song_dst / SPDMX_RELEASE_MIX_AUDIO_NAME
+    if include_mix and mix_src.is_file():
+        _publish_file(mix_src, mix_dst, copy=copy)
+    elif mix_dst.exists() or mix_dst.is_symlink():
+        # Single-track songs omit mix.flac; drop a stale file from a prior pack.
+        mix_dst.unlink()
 
 
 def _is_song_media_dir(path: Path) -> bool:
@@ -511,6 +520,12 @@ def chunk_dataset(
 
     table = _load_flat_track_map(source)
     song_ids = sorted(table["song_id"].astype(str).unique())
+    n_tracks_by_song = (
+        table.groupby(table["song_id"].astype(str)).size().astype(int).to_dict()
+    )
+    include_mix_by_song = {
+        song_id: int(n_tracks_by_song.get(song_id, 0)) >= 2 for song_id in song_ids
+    }
     audio_root = source / SPDMX_AUDIO_DIR_NAME
     mid_root = source / SPDMX_MID_DIR_NAME
     mix_root = source / SPDMX_MIX_DIR_NAME
@@ -525,6 +540,7 @@ def chunk_dataset(
         mid_root=mid_root,
         mix_root=mix_root,
         jobs=jobs,
+        include_mix_by_song=include_mix_by_song,
     )
 
     def _audio_missing(song_id: str) -> str | None:
@@ -561,6 +577,7 @@ def chunk_dataset(
             source_mix=mix_root,
             package_dir=dest,
             copy=copy,
+            include_mix=include_mix_by_song.get(song_id, True),
         )
 
     _parallel_map(_place, items, jobs=jobs, desc="Publish into chunks")

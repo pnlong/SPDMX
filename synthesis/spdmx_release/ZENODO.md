@@ -36,7 +36,7 @@ Per [Zenodo file limits](https://support.zenodo.org/help/en-gb/1-upload-deposit/
 Best aligned with `chunks.csv` and partial download.
 
 1. **Record 0 — Metadata (small, cite this DOI in the paper)**
-   - Files: `README.md`, `LICENSE`, `stems.csv`, `songs.csv`, `chunks.csv`, `SHA256SUMS`
+   - Files: `README.md`, `LICENSE`, `link_single_track_mixes.sh`, `stems.csv`, `songs.csv`, `chunks.csv`, `SHA256SUMS`
    - Description: full dataset documentation (below)
    - `Related identifiers`: link to Records 1–64 (`HasPart` / `IsMetadataFor`)
 
@@ -165,12 +165,13 @@ Demo and code: https://pnlong.github.io/SPDMX/
 ```
 Files in this metadata record
 -----------------------------
-README.md       — layout, CSV schemas, download instructions
-LICENSE         — CC BY 4.0 (+ notes on PDMX public-domain scores)
-stems.csv       — one row per stem (song_id, track, program, chunk, paths, …)
-songs.csv       — one row per song (subsets, programs, song_length, …)
-chunks.csv      — per-chunk song/stem counts, bytes, archive name, sha256
-SHA256SUMS      — checksums for all release files including chunk zips
+README.md                    — layout, CSV schemas, download instructions
+LICENSE                      — CC BY 4.0 (+ notes on PDMX public-domain scores)
+link_single_track_mixes.sh   — optional: symlink mix.flac → 0.flac for singles
+stems.csv                    — one row per stem (song_id, track, program, chunk, paths, …)
+songs.csv                    — one row per song (subsets, programs, song_length, …)
+chunks.csv                   — per-chunk song/stem counts, bytes, archive name, sha256
+SHA256SUMS                   — checksums for all release files including chunk zips
 
 Media archives (separate downloads / related records)
 ---------------------------------------------------
@@ -178,8 +179,11 @@ chunk_N.zip     — unpack beside the CSVs; paths are ./chunk_N/<song_id>/…
 
 Per song directory:
   {track}.flac   — mono stem
-  mix.flac       — linear sum of stems (mono)
+  mix.flac       — linear sum of stems (mono); omitted for single-track songs
   mix.mid        — dense corrected MIDI
+
+Single-track songs omit mix.flac (identical to 0.flac). Optionally run
+./link_single_track_mixes.sh after unzip to create mix.flac → 0.flac.
 
 Join to PDMX
 ------------
@@ -189,16 +193,18 @@ Example (Python):
   songs = pd.read_csv("songs.csv")
   stems = pd.read_csv("stems.csv")
   bdgp = stems[stems["song_id"].isin(songs.loc[songs["subset:bdgp"], "song_id"])]
+  multi = stems[stems["song_id"].isin(songs.loc[songs["subset:multitrack"], "song_id"])]
 ```
 
 ### Notes (download / verify)
 
 ```
-1. Download this metadata record (CSVs, README, LICENSE, SHA256SUMS).
+1. Download this metadata record (CSVs, README, LICENSE, linker script, SHA256SUMS).
 2. Choose chunks from chunks.csv (or filter stems.csv by chunk).
 3. Download the corresponding chunk_N.zip files from the related chunk records.
 4. Unzip each archive next to the CSVs so paths like ./chunk_0/<song_id>/… resolve.
-5. Verify: sha256sum -c SHA256SUMS
+5. Optionally: ./link_single_track_mixes.sh  # mix.flac → 0.flac for singles
+6. Verify: sha256sum -c SHA256SUMS
 
 Partial download example:
   stems[stems["chunk"] == 0]   # only songs whose media is in chunk_0

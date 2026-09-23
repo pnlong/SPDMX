@@ -2,7 +2,8 @@
 
 Hybrid Demucs: **Slakh** vs **SPDMX (BDGP-eligible)** vs **both** (union),
 matched step budget. Targets: Bass / Drums / Guitar / Piano. Metrics: SI-SDR
-on Slakh2100 test + MUSDB bass/drums + MedleyDB (V1+V2) + MoisesDB (when present).
+on Slakh2100 test + MUSDB bass/drums + MedleyDB (union of MedleyDB and
+MedleyDB 2.0) + MoisesDB (when present).
 
 SPDMX is packed only for songs that contain all four targets (same stem makeup
 as the Slakh protocol). Prefer a release-tree ``songs.csv`` with
@@ -19,15 +20,18 @@ uv pip install demucs
 #   /deepfreeze/share/pnlong/slakh2100_flac_redux
 # optional real-data eval roots:
 # export SPDMX_MUSDB_ROOT=/path/to/musdb18hq
-# export SPDMX_MEDLEYDB_ROOT=/deepfreeze/share/pnlong/MedleyDB   # V1/ + V2/
+# export SPDMX_MEDLEYDB_ROOT=/deepfreeze/share/pnlong/MedleyDB   # MedleyDB + MedleyDB 2.0
 # export SPDMX_MOISESDB_ROOT=/deepfreeze/share/pnlong/moisesdb
 ```
 
 ### Real-data layouts
 
 - **MUSDB18-HQ:** `test/<track>/{bass,drums,mixture}.wav` (bass+drums only).
-- **MedleyDB:** `{SPDMX_MEDLEYDB_ROOT}/{V1,V2}/<Artist_Track>/` with `*_MIX.wav` and
-  `*_STEMS/*_STEM_NN.wav`. Instrument labels come from YAML under
+- **MedleyDB:** throughout this repo, “MedleyDB” means the union of MedleyDB
+  and MedleyDB 2.0. Layout:
+  `{SPDMX_MEDLEYDB_ROOT}/{V1,V2}/<Artist_Track>/` with `*_MIX.wav` and
+  `*_STEMS/*_STEM_NN.wav` (`V1`/`V2` are on-disk folder names for the two
+  releases). Instrument labels come from YAML under
   `{SPDMX_MEDLEYDB_ROOT}/Metadata/` (or `SPDMX_MEDLEYDB_METADATA`), typically
   `/deepfreeze/share/pnlong/MedleyDB/Metadata`.
   Tracks with `has_bleed: yes` are skipped. Present BDGP targets only are scored.

@@ -34,7 +34,7 @@ MUSDB_ROOT = Path(_MUSDB_ROOT)
 MEDLEYDB_ROOT = Path(_MEDLEYDB_ROOT)
 MOISESDB_ROOT = Path(_MOISESDB_ROOT)
 # Official MedleyDB YAML metadata (instrument labels for STEM_NN files).
-# Prefer deepfreeze next to V1/V2; override with SPDMX_MEDLEYDB_METADATA.
+# Prefer deepfreeze next to MedleyDB + MedleyDB 2.0 audio; override with SPDMX_MEDLEYDB_METADATA.
 MEDLEYDB_METADATA_DIR = Path(
     path_from_env(
         "SPDMX_MEDLEYDB_METADATA",

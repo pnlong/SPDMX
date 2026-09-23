@@ -178,7 +178,7 @@ def eval_medleydb_bdgp(
     sample_rate: int,
     device: torch.device,
 ) -> pd.DataFrame:
-    """Cross-domain SI-SDR on MedleyDB V1+V2 for present BDGP targets."""
+    """Cross-domain SI-SDR on MedleyDB ∪ MedleyDB 2.0 for present BDGP targets."""
     if not medleydb_root.is_dir():
         print(f"MedleyDB not found at {medleydb_root}; skipping")
         return pd.DataFrame()
@@ -374,7 +374,7 @@ def main() -> None:
         help=(
             "Which test sets to score. slakh=Slakh2100 test; "
             "spdmx_val=sPDMX val packs; musdb=MUSDB18 bass/drums; "
-            "medleydb=MedleyDB V1+V2 BDGP; moisesdb=MoisesDB BDGP on-disk (soft-skip if missing). "
+            "medleydb=MedleyDB∪MedleyDB 2.0 BDGP; moisesdb=MoisesDB BDGP on-disk (soft-skip if missing). "
             "Default: all five."
         ),
     )

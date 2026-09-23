@@ -94,7 +94,11 @@ def bdgp_stem_files(meta: dict) -> dict[str, list[str]]:
 
 
 def iter_medleydb_track_dirs(root: Path) -> Iterable[tuple[str, Path]]:
-    """Yield (track_id, track_dir) from V1/ and V2/ (or a flat root of track folders)."""
+    """Yield (track_id, track_dir) for MedleyDB ∪ MedleyDB 2.0.
+
+    Looks under on-disk ``V1/`` and ``V2/`` folders when present, else a flat
+    root of track folders.
+    """
     subdirs = [root / "V1", root / "V2"]
     roots = [d for d in subdirs if d.is_dir()]
     if not roots and root.is_dir():

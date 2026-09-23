@@ -1,5 +1,4 @@
-arm,test_set,note_f1_onset,note_f1_onset_offset,status
-slakh,slakh,,,pending
-spdmx,slakh,,,pending
-both,slakh,,,pending
-spdmx,spdmx,,,pending
+arm,test_set,note_f1_onset,note_f1_onset_offset,multi_f1,frame_f1,status
+slakh,slakh,0.072518,0.019643,0.083403,0.211021,ok
+spdmx,slakh,0.075138,0.019825,0.066152,0.206090,ok
+spdmx,spdmx,0.264714,0.192812,0.191626,0.334041,ok

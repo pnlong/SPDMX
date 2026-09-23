@@ -15,6 +15,7 @@ import pandas as pd
 
 from shared.config import (
     SPDMX_MIX_DIR_NAME,
+    SPDMX_MULTITRACK_SUBSET_COLUMN,
     SPDMX_RELEASE_MIX_AUDIO_NAME,
     SPDMX_RELEASE_MIX_MIDI_NAME,
 )
@@ -117,11 +118,12 @@ def song_media_bytes(
     audio_root: str | Path,
     mid_root: str | Path,
     mix_root: str | Path | None = None,
+    include_mix: bool = True,
 ) -> int:
     audio_dir = Path(audio_root) / song_id
     mid_path = Path(mid_root) / f"{song_id}.mid"
     total = directory_size_bytes(audio_dir) + directory_size_bytes(mid_path)
-    if mix_root is not None:
+    if include_mix and mix_root is not None:
         total += directory_size_bytes(Path(mix_root) / f"{song_id}.flac")
     return total
 
@@ -132,6 +134,7 @@ def measure_song_sizes(
     audio_root: str | Path,
     mid_root: str | Path,
     mix_root: str | Path | None = None,
+    include_mix_by_song: Mapping[str, bool] | None = None,
 ) -> dict[str, int]:
     return {
         str(song_id): song_media_bytes(
@@ -139,6 +142,11 @@ def measure_song_sizes(
             audio_root=audio_root,
             mid_root=mid_root,
             mix_root=mix_root,
+            include_mix=(
+                True
+                if include_mix_by_song is None
+                else bool(include_mix_by_song.get(str(song_id), True))
+            ),
         )
         for song_id in song_ids
     }
@@ -260,6 +268,11 @@ def rewrite_songs_table_for_chunks(
             packaged_mix_rel(chunk, song)
             for song, chunk in zip(song_ids, chunks, strict=True)
         ]
+    # Derive subset:multitrack when remapping an older songs.csv that lacks it.
+    if SPDMX_MULTITRACK_SUBSET_COLUMN not in out.columns and "n_tracks" in out.columns:
+        out[SPDMX_MULTITRACK_SUBSET_COLUMN] = (
+            pd.to_numeric(out["n_tracks"], errors="coerce").fillna(0).astype(int) >= 2
+        )
     return out
 
 

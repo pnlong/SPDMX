@@ -14,6 +14,7 @@ Released / Zenodo layout (after packaging):
 .
 ├── LICENSE
 ├── README.md
+├── link_single_track_mixes.sh   # optional: symlink mix.flac → 0.flac for singles
 ├── stems.csv          # stem-level (one row per rendered track)
 ├── songs.csv          # song-level (one row per song_id; subsets)
 ├── chunks.csv         # per-chunk size / archive metadata
@@ -22,7 +23,7 @@ Released / Zenodo layout (after packaging):
 │       ├── 0.flac
 │       ├── 1.flac
 │       ├── …
-│       ├── mix.flac   # full-song mix (ffmpeg sum of stems; mono)
+│       ├── mix.flac   # multitrack only (ffmpeg sum); singles omit — see linker
 │       └── mix.mid    # dense MIDI
 ├── chunk_1/
 │   └── <song_id>/…
@@ -47,6 +48,11 @@ written as **mono** FLAC to match the stem channel layout. Stereo models (e.g.
 Stable Audio Open fine-tunes) should duplicate mono→L/R at load time rather than
 storing stereo mixes in the release.
 
+**Single-track songs** (~65% of the corpus) do **not** ship `mix.flac` (it would
+be identical to `0.flac`). The `mix` CSV column still points at
+`{path}/mix.flac`. Optionally run `./link_single_track_mixes.sh` after unzip to
+create `mix.flac → 0.flac` symlinks for those songs.
+
 ## Tables and joins
 
 ```
@@ -55,7 +61,7 @@ songs.csv  1 ──<  stems.csv     join key: song_id
    │                  └── path → ./chunk_N/{song_id}/   (+ {track}.flac)
    │                  └── mid  → ./chunk_N/{song_id}/mix.mid
    │                  └── mix  → ./chunk_N/{song_id}/mix.flac
-   └── subset:bdgp / subset:all  (PDMX-style boolean filters)
+   └── subset:multitrack / subset:bdgp / subset:all  (PDMX-style boolean filters)
 ```
 
 | Table | Granularity | Primary key | Typical use |
@@ -117,10 +123,14 @@ Built from `stems.csv` by `synthesis.build_songs_table` (also run at the end of
 | `bdgp_targets` | str | Pipe-delimited BDGP targets present (`bass\|drums\|…`) |
 | `subset:all` | bool | ≥1 stem on disk at build time |
 | `subset:bdgp` | bool | **B**ass, **D**rums, **G**uitar, and **P**iano all present |
+| `subset:multitrack` | bool | `n_tracks >= 2` (False for single-stem songs) |
 
 **`subset:bdgp`** uses the same GM→target map as the separation PoC
 (bass / drums / guitar / piano). Source separation packs and the SAO
 **matched** arm use this subset; SAO **full** uses `subset:all`.
+
+**`subset:multitrack`** marks true multi-stem songs. Single-track release dirs
+omit `mix.flac`; optionally restore paths with `./link_single_track_mixes.sh`.
 
 Example program filter (piano program 0 and any guitar 24–31):
 
@@ -163,12 +173,15 @@ multi-record layout, and copy-paste deposit text.
 
 On Zenodo, metadata files and chunk archives are **separate downloads**:
 
-1. Download `stems.csv`, `songs.csv`, `chunks.csv`, `LICENSE`, and `README.md`.
+1. Download `stems.csv`, `songs.csv`, `chunks.csv`, `LICENSE`, `README.md`,
+   and (optional) `link_single_track_mixes.sh`.
 2. Use `songs.csv` subsets and/or `chunks.csv` (or filter `stems.csv` by `chunk`) to choose media.
 3. Download only the `chunk_N.zip` files you need (default **64** roughly
    equal-sized chunks).
 4. Unzip each archive next to the CSVs so paths like `./chunk_0/<song_id>/…` resolve.
-5. Restrict work to local media with
+5. Optionally run `./link_single_track_mixes.sh` so single-track songs get
+   `mix.flac → 0.flac` (multitrack songs already ship `mix.flac`).
+6. Restrict work to local media with
    `stems.csv[stems.csv["chunk"] == 0]` (or a set of chunk ids).
 
 ## Rebuild (lab)

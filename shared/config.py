@@ -105,6 +105,8 @@ SPDMX_RELEASE_MIX_MIDI_NAME = "mix.mid"
 ABLATION_SUBSET_COLUMN = "subset:rated_deduplicated"
 # sPDMX song-level subset (PDMX-style boolean on songs.csv): all four BDGP classes.
 SPDMX_BDGP_SUBSET_COLUMN = "subset:bdgp"
+# True when the song has ≥2 stems (False for single-track songs).
+SPDMX_MULTITRACK_SUBSET_COLUMN = "subset:multitrack"
 SPDMX_SONGS_FILE_NAME = "songs.csv"
 # Safety cap for category-stratified ablation fill (not a fixed random N).
 ABLATION_SAMPLE_SIZE = 400

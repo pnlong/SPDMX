@@ -3,6 +3,10 @@ both,medleydb,bass,-2.7524237293383
 both,medleydb,drums,-2.345791738361438
 both,medleydb,guitar,-11.924762355223798
 both,medleydb,piano,-10.447728418617912
+both,moisesdb,bass,1.5985148532311984
+both,moisesdb,drums,3.1235028382170467
+both,moisesdb,guitar,-9.644414521880707
+both,moisesdb,piano,-10.04098623858499
 both,musdb18,bass,-3.3048239606725645
 both,musdb18,drums,1.911836961075727
 both,slakh2100,bass,7.6523754945559554
@@ -17,6 +21,10 @@ slakh,medleydb,bass,-4.040363299763536
 slakh,medleydb,drums,-2.9418128560127514
 slakh,medleydb,guitar,-11.513072754190933
 slakh,medleydb,piano,-10.47066488669242
+slakh,moisesdb,bass,-0.05702798963279218
+slakh,moisesdb,drums,2.5113623794363753
+slakh,moisesdb,guitar,-9.660257065565427
+slakh,moisesdb,piano,-9.902523766983487
 slakh,musdb18,bass,-4.596344249554967
 slakh,musdb18,drums,1.214138880835016
 slakh,slakh2100,bass,7.950568824164687
@@ -31,6 +39,10 @@ spdmx,medleydb,bass,-3.8029728673131964
 spdmx,medleydb,drums,-4.100931532259138
 spdmx,medleydb,guitar,-11.798723543794953
 spdmx,medleydb,piano,-12.028422227865372
+spdmx,moisesdb,bass,0.7675590956949964
+spdmx,moisesdb,drums,1.6960820802227443
+spdmx,moisesdb,guitar,-8.969863842280967
+spdmx,moisesdb,piano,-11.330150941591956
 spdmx,musdb18,bass,-2.0318353898794124
 spdmx,musdb18,drums,1.0812357004618132
 spdmx,slakh2100,bass,-2.1826888460653646
