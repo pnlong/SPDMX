@@ -10,6 +10,7 @@ import pandas as pd
 
 from analysis.gm_programs import DRUM_GM_ID, gm_program_paper_label
 from analysis.plots import (
+    INSTRUMENT_CATEGORY_YLABEL,
     _savefig,
     listening_category_label,
     plot_ablation_listening,
@@ -203,7 +204,7 @@ def make_gm_program_compare_figure(
         rank_by=rank_by,
         hours_col=hours_col,
         hours_title="Hours",
-        ylabel="Instrument category",
+        ylabel=INSTRUMENT_CATEGORY_YLABEL,
         figsize=(7.0, 3.4),
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)

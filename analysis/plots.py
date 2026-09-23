@@ -728,7 +728,7 @@ def plot_song_hours_by_stems(
                 tick_labels.append("")
         ax.set_xticklabels(tick_labels, fontsize=6)
         ax.set_xlabel("Stems per song")
-        ax.set_ylabel("Song hours")
+        ax.set_ylabel("Song-hours")
         if log_y:
             from matplotlib.ticker import FuncFormatter, LogLocator
 
@@ -1050,6 +1050,8 @@ _LISTENING_CATEGORY_ORDER = (
 _LISTENING_CATEGORY_LABELS = {
     "polyphonic": "Miscellaneous",
 }
+
+INSTRUMENT_CATEGORY_YLABEL = "Instrument Category"
 
 
 def listening_category_label(category: str) -> str:
