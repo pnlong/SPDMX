@@ -93,6 +93,7 @@ def _run_yourmt3_test(
     strategy: str,
     per_track_dir: Path,
     subbsz: int,
+    pack_target_segs: int,
     num_workers: int,
     dry_run: bool,
 ) -> int:
@@ -133,6 +134,10 @@ def _run_yourmt3_test(
         env["CUDA_VISIBLE_DEVICES"] = gpu
     env["SPDMX_PER_TRACK_DIR"] = str(per_track_dir.resolve())
     env["SPDMX_TEST_SUBBSZ"] = str(subbsz)
+    if pack_target_segs > 0:
+        env["SPDMX_PACK_TARGET_SEGS"] = str(pack_target_segs)
+    else:
+        env.pop("SPDMX_PACK_TARGET_SEGS", None)
     env["SPDMX_TEST_NUM_WORKERS"] = str(num_workers)
     env["SPDMX_TEST_PREFETCH"] = env.get("SPDMX_TEST_PREFETCH", "4")
     env["SPDMX_TEST_PERSISTENT_WORKERS"] = "1"
@@ -143,6 +148,8 @@ def _run_yourmt3_test(
     print("cmd:", " ".join(cmd))
     print("CUDA_VISIBLE_DEVICES=", env.get("CUDA_VISIBLE_DEVICES"))
     print("SPDMX_PER_TRACK_DIR=", env["SPDMX_PER_TRACK_DIR"])
+    print("SPDMX_TEST_SUBBSZ=", env["SPDMX_TEST_SUBBSZ"])
+    print("SPDMX_PACK_TARGET_SEGS=", env.get("SPDMX_PACK_TARGET_SEGS", "(off)"))
     if dry_run:
         return 0
 
@@ -260,7 +267,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--num-gpus", type=str, default="auto", help="Lightning -g (default: # visible)")
     parser.add_argument("--precision", type=str, default="bf16-mixed")
     parser.add_argument("--strategy", type=str, default="auto")
-    parser.add_argument("--subbsz", type=int, default=128, help="Per-GPU inference chunk (SPDMX_TEST_SUBBSZ)")
+    parser.add_argument("--subbsz", type=int, default=256, help="Per-GPU inference chunk (SPDMX_TEST_SUBBSZ)")
+    parser.add_argument(
+        "--pack-target-segs",
+        type=int,
+        default=256,
+        help="Pack songs until ~N segments/step (SPDMX_PACK_TARGET_SEGS); 0 disables",
+    )
     parser.add_argument("--num-workers", type=int, default=8, help="DataLoader workers per GPU")
     parser.add_argument("--n-boot", type=int, default=10_000)
     parser.add_argument("--seed", type=int, default=43)
@@ -325,6 +338,8 @@ def main(argv: list[str] | None = None) -> None:
                     args.precision,
                     "--subbsz",
                     str(args.subbsz),
+                    "--pack-target-segs",
+                    str(args.pack_target_segs),
                     "--num-workers",
                     str(args.num_workers),
                     "--n-boot",
@@ -382,6 +397,7 @@ def main(argv: list[str] | None = None) -> None:
             strategy=args.strategy,
             per_track_dir=job_dir,
             subbsz=args.subbsz,
+            pack_target_segs=args.pack_target_segs,
             num_workers=args.num_workers,
             dry_run=args.dry_run,
         )

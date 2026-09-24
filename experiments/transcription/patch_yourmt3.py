@@ -493,6 +493,15 @@ def _patch_config_dataloader(config_py: Path) -> bool:
     return True
 
 
+def _patch_packed_eval_dataset(datasets_eval: Path) -> bool:
+    text = datasets_eval.read_text(encoding="utf-8")
+    if "class PackedAudioFileDataset" in text and "SPDMX_PACK_TARGET_SEGS" in text:
+        return False
+    # File is maintained in the local YourMT3 clone; if missing packing, refuse silently
+    # (apply_yourmt3_patches expects the working copy to already include packing from our edit).
+    return False
+
+
 def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     """Apply local YourMT3 fixes. Returns list of patched file paths."""
     src = Path(yourmt3_src) if yourmt3_src is not None else YOURMT3_SRC
@@ -504,6 +513,7 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     test_py = src / "test.py"
     ymt3_py = src / "model" / "ymt3.py"
     config_py = src / "config" / "config.py"
+    datasets_eval = src / "utils" / "datasets_eval.py"
     if init_train.is_file() and _patch_init_train(init_train):
         patched.append(str(init_train))
     if init_train.is_file() and _patch_step_progress(init_train):
@@ -523,4 +533,8 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
         patched.append(str(ymt3_py) + " (per-track + test subbsz)")
     if config_py.is_file() and _patch_config_dataloader(config_py):
         patched.append(str(config_py) + " (dataloader env)")
+    if datasets_eval.is_file() and "PackedAudioFileDataset" not in datasets_eval.read_text(encoding="utf-8"):
+        raise SystemExit(
+            f"{datasets_eval} is missing PackedAudioFileDataset; re-apply packing edit or restore from git."
+        )
     return patched

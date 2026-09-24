@@ -119,7 +119,10 @@ Throughput knobs (also set automatically by the wrapper):
 
 | Env / flag | Default | Role |
 |---|---|---|
-| `--subbsz` / `SPDMX_TEST_SUBBSZ` | 128 | Chunk size inside each file’s `inference_file` |
+| `--subbsz` / `SPDMX_TEST_SUBBSZ` | 256 | Chunk size inside each packed `inference_file` call |
+| `--pack-target-segs` / `SPDMX_PACK_TARGET_SEGS` | 256 | Pack multiple songs until ~N segments/GPU step (SPDMX songs are short; subbsz alone cannot fill the GPU) |
 | `--num-workers` / `SPDMX_TEST_NUM_WORKERS` | 8 | DataLoader workers **per GPU** |
 | `--gpu` + DDP | — | Multi-GPU file sharding |
 | `--precision` | `bf16-mixed` | Amp |
+
+**Why util stayed low with only `SPDMX_TEST_SUBBSZ`:** eval is still one song per step; a typical SPDMX song has ~30 segments, so raising subbsz past that does nothing. Packing (~4 songs → ~225 segments/step) is required.
