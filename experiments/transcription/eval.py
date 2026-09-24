@@ -138,6 +138,8 @@ def _run_yourmt3_test(
         env["SPDMX_PACK_TARGET_SEGS"] = str(pack_target_segs)
     else:
         env.pop("SPDMX_PACK_TARGET_SEGS", None)
+    # test_step never uses GT tokens; skipping tokenize keeps the GPU fed
+    env.setdefault("SPDMX_EVAL_SKIP_TOKENS", "1")
     env["SPDMX_TEST_NUM_WORKERS"] = str(num_workers)
     env["SPDMX_TEST_PREFETCH"] = env.get("SPDMX_TEST_PREFETCH", "4")
     env["SPDMX_TEST_PERSISTENT_WORKERS"] = "1"

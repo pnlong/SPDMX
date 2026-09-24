@@ -121,8 +121,17 @@ Throughput knobs (also set automatically by the wrapper):
 |---|---|---|
 | `--subbsz` / `SPDMX_TEST_SUBBSZ` | 256 | Chunk size inside each packed `inference_file` call |
 | `--pack-target-segs` / `SPDMX_PACK_TARGET_SEGS` | 256 | Pack multiple songs until ~N segments/GPU step (SPDMX songs are short; subbsz alone cannot fill the GPU) |
+| `SPDMX_EVAL_SKIP_TOKENS` | `1` | Skip GT tokenization at test (unused by `inference_file`; otherwise CPU-starves the GPU) |
 | `--num-workers` / `SPDMX_TEST_NUM_WORKERS` | 8 | DataLoader workers **per GPU** |
 | `--gpu` + DDP | — | Multi-GPU file sharding |
 | `--precision` | `bf16-mixed` | Amp |
 
 **Why util stayed low with only `SPDMX_TEST_SUBBSZ`:** eval is still one song per step; a typical SPDMX song has ~30 segments, so raising subbsz past that does nothing. Packing (~4 songs → ~225 segments/step) is required.
+
+**Other machine:** `YourMT3/` is gitignored. After pull, install overlays (packing + skip-tokenize + pack consumer) with:
+
+```bash
+uv run python -c "from experiments.transcription.patch_yourmt3 import apply_yourmt3_patches; print(apply_yourmt3_patches())"
+```
+
+Startup must print `[SPDMX] PackedAudioFileDataset ...` and `[SPDMX] test_step batch=0 n_files=... n_segs=... packed=True`. If `packed=False` / `n_segs≈30`, packing is not live.
