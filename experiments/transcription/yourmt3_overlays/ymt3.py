@@ -752,7 +752,15 @@ class YourMT3(pl.LightningModule):
         if len(pred_token_array_file) == 0:
             return
 
-        _all_preds = np.concatenate(pred_token_array_file, axis=0)
+        # Sub-batches can emit different AR lengths; pad with PAD(0) before concat.
+        _max_l = max(int(a.shape[-1]) for a in pred_token_array_file)
+        _padded = []
+        for _a in pred_token_array_file:
+            if int(_a.shape[-1]) < _max_l:
+                _pad = [(0, 0)] * (_a.ndim - 1) + [(0, _max_l - int(_a.shape[-1]))]
+                _a = np.pad(_a, _pad, mode="constant", constant_values=0)
+            _padded.append(_a)
+        _all_preds = np.concatenate(_padded, axis=0)
         _off = 0
         for notes_dict, _n_segs in zip(_pack_items, _pack_n_segs):
             pred_token_array_file = [_all_preds[_off:_off + _n_segs]]
