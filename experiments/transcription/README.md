@@ -120,7 +120,8 @@ Throughput knobs (also set automatically by the wrapper):
 | Env / flag | Default | Role |
 |---|---|---|
 | `--subbsz` / `SPDMX_TEST_SUBBSZ` | 256 | Chunk size inside each packed `inference_file` call |
-| `--pack-target-segs` / `SPDMX_PACK_TARGET_SEGS` | 256 | Pack multiple songs until ~N segments/GPU step (SPDMX songs are short; subbsz alone cannot fill the GPU) |
+| `--pack-target-segs` / `SPDMX_PACK_TARGET_SEGS` | 256 | Soft target; used with max for denser best-fit packing |
+| `SPDMX_PACK_MAX_SEGS` | `max(512, 2×target)` | Hard bin capacity (best-fit decreasing); raises Slakh fill from ~1 song/step to ~512 segs/step |
 | `SPDMX_EVAL_SKIP_TOKENS` | `1` | Skip GT tokenization at test (unused by `inference_file`; otherwise CPU-starves the GPU) |
 | `--num-workers` / `SPDMX_TEST_NUM_WORKERS` | 8 | DataLoader workers **per GPU** |
 | `--gpu` + DDP | — | Multi-GPU file sharding |

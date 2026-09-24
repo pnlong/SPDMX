@@ -174,32 +174,67 @@ class AudioFileDataset(Dataset):
 
 
 class PackedAudioFileDataset(Dataset):
-    """Pack multiple songs so GPU inference batches fill ``target_segs`` segments.
+    """Pack multiple songs so GPU inference batches fill toward ``max_segs``.
 
-    YourMT3 eval is file-wise; SPDMX songs often have only ~30 segments (~1 min),
-    so a large sub-batch never fills. This dataset concatenates songs until the
-    packed segment count reaches ``target_segs`` (env ``SPDMX_PACK_TARGET_SEGS``).
+    YourMT3 eval is file-wise. Short SPDMX songs (~30 segs) underfill a large
+    sub-batch; long Slakh songs (~120–200 segs) also underfill if we refuse to
+    combine anything past a soft target of 256. We first-fit-decreasing pack
+    into bins of capacity ``max_segs`` (env ``SPDMX_PACK_MAX_SEGS``, default
+    ``max(512, 2 * target)``).
     """
 
-    def __init__(self, base: AudioFileDataset, target_segs: int = 256) -> None:
+    def __init__(
+        self,
+        base: AudioFileDataset,
+        target_segs: int = 256,
+        max_segs: Optional[int] = None,
+    ) -> None:
         self.base = base
         self.target_segs = max(1, int(target_segs))
-        self.packs: list[list[int]] = []
-        cur: list[int] = []
-        cur_segs = 0
+        if max_segs is None:
+            max_segs = int(os.environ.get("SPDMX_PACK_MAX_SEGS", "0") or "0")
+            if max_segs <= 0:
+                max_segs = max(512, 2 * self.target_segs)
+        self.max_segs = max(self.target_segs, int(max_segs))
+
+        sized: list[tuple[int, int]] = []
         for idx, meta in self.base.file_list.items():
             n = int(np.ceil(float(meta["n_frames"]) / float(self.base.seg_len_frame)))
-            n = max(1, n)
-            if cur and cur_segs + n > self.target_segs:
-                self.packs.append(cur)
-                cur, cur_segs = [], 0
-            cur.append(int(idx))
-            cur_segs += n
-            if cur_segs >= self.target_segs:
-                self.packs.append(cur)
-                cur, cur_segs = [], 0
-        if cur:
-            self.packs.append(cur)
+            sized.append((int(idx), max(1, n)))
+        # First-fit decreasing into bins of capacity max_segs.
+        sized.sort(key=lambda t: (-t[1], t[0]))
+        bins: list[list[int]] = []
+        bin_segs: list[int] = []
+        for idx, n in sized:
+            placed = False
+            # Prefer the fullest bin that still fits (best-fit) for denser packs.
+            best_j = -1
+            best_remain = None
+            for j, segs in enumerate(bin_segs):
+                remain = self.max_segs - segs
+                if n <= remain and (best_remain is None or remain < best_remain):
+                    best_j = j
+                    best_remain = remain
+            if best_j >= 0:
+                bins[best_j].append(idx)
+                bin_segs[best_j] += n
+                placed = True
+            if not placed:
+                bins.append([idx])
+                bin_segs.append(n)
+        self.packs = bins
+        self._pack_segs = bin_segs
+        if bin_segs:
+            arr = np.asarray(bin_segs, dtype=np.float64)
+            n_under = int(np.sum(arr < 0.75 * self.target_segs))
+            print(
+                f"[SPDMX] pack stats: n_packs={len(bins)} "
+                f"segs/pack med={float(np.median(arr)):.0f} "
+                f"mean={float(arr.mean()):.0f} "
+                f"min={int(arr.min())} max={int(arr.max())} "
+                f"under_0.75*target={n_under} "
+                f"target={self.target_segs} max={self.max_segs}"
+            )
 
     def __len__(self) -> int:
         return len(self.packs)
@@ -252,7 +287,12 @@ def get_eval_dataloader(
     # SPDMX_PACK_TARGET_SEGS: pack multiple songs per step for GPU fill
     _pack = os.environ.get("SPDMX_PACK_TARGET_SEGS")
     if _pack:
-        ds = PackedAudioFileDataset(ds, target_segs=int(_pack))
-        print(f"[SPDMX] PackedAudioFileDataset target_segs={_pack} n_packs={len(ds)}")
+        _max = os.environ.get("SPDMX_PACK_MAX_SEGS")
+        ds = PackedAudioFileDataset(
+            ds,
+            target_segs=int(_pack),
+            max_segs=int(_max) if _max else None,
+        )
+        print(f"[SPDMX] PackedAudioFileDataset target_segs={_pack} max_segs={ds.max_segs} n_packs={len(ds)}")
     dl = DataLoader(ds, batch_size=None, collate_fn=lambda k: k, **dataloader_config)
     return dl
