@@ -361,11 +361,16 @@ def _patch_test_subbsz_and_per_track(ymt3_py: Path) -> bool:
     text = ymt3_py.read_text(encoding="utf-8")
     changed = False
 
-    old_bsz = '''        if self.task_manager.num_decoding_channels == 1:
+    # Only patch test_step (validation_step has a near-identical prefix).
+    test_old = '''    def test_step(self, batch, batch_idx, dataloader_idx=0) -> Dict:
+        # File-wise evaluation
+        if self.task_manager.num_decoding_channels == 1:
             bsz = self.shared_cfg["BSZ"]["validation"]
         else:
             bsz = self.shared_cfg["BSZ"]["validation"] // self.task_manager.num_decoding_channels * 3'''
-    new_bsz = '''        # Prefer test BSZ (larger) for GPU throughput; override via SPDMX_TEST_SUBBSZ.
+    test_new = '''    def test_step(self, batch, batch_idx, dataloader_idx=0) -> Dict:
+        # File-wise evaluation
+        # Prefer test BSZ (larger) for GPU throughput; override via SPDMX_TEST_SUBBSZ.
         import os as _os
         _env_bsz = _os.environ.get("SPDMX_TEST_SUBBSZ")
         _base_bsz = int(_env_bsz) if _env_bsz else int(
@@ -374,9 +379,39 @@ def _patch_test_subbsz_and_per_track(ymt3_py: Path) -> bool:
             bsz = _base_bsz
         else:
             bsz = max(1, _base_bsz // self.task_manager.num_decoding_channels * 3)'''
-    if "SPDMX_TEST_SUBBSZ" not in text and old_bsz in text:
-        text = text.replace(old_bsz, new_bsz, 1)
-        changed = True
+    if "def test_step" in text and "SPDMX_TEST_SUBBSZ" not in text.split("def test_step")[1].split("def on_test_epoch_end")[0]:
+        if test_old in text:
+            text = text.replace(test_old, test_new, 1)
+            changed = True
+        elif "Prefer test BSZ (larger) for GPU throughput; override via SPDMX_TEST_SUBBSZ." in text.split("def test_step")[1].split("def on_test_epoch_end")[0]:
+            pass  # already patched in test_step
+        else:
+            # test_step still on validation BSZ; force-replace that block only under test_step
+            marker = "    def test_step(self, batch, batch_idx, dataloader_idx=0) -> Dict:\n"
+            idx = text.find(marker)
+            if idx < 0:
+                raise SystemExit(f"could not find test_step in {ymt3_py}")
+            end = text.find("\n    def ", idx + len(marker))
+            block = text[idx:end]
+            old_inner = '''        # File-wise evaluation
+        if self.task_manager.num_decoding_channels == 1:
+            bsz = self.shared_cfg["BSZ"]["validation"]
+        else:
+            bsz = self.shared_cfg["BSZ"]["validation"] // self.task_manager.num_decoding_channels * 3'''
+            new_inner = '''        # File-wise evaluation
+        # Prefer test BSZ (larger) for GPU throughput; override via SPDMX_TEST_SUBBSZ.
+        import os as _os
+        _env_bsz = _os.environ.get("SPDMX_TEST_SUBBSZ")
+        _base_bsz = int(_env_bsz) if _env_bsz else int(
+            self.shared_cfg["BSZ"].get("test", self.shared_cfg["BSZ"]["validation"]))
+        if self.task_manager.num_decoding_channels == 1:
+            bsz = _base_bsz
+        else:
+            bsz = max(1, _base_bsz // self.task_manager.num_decoding_channels * 3)'''
+            if old_inner not in block:
+                raise SystemExit(f"could not patch test_step subbsz in {ymt3_py}")
+            text = text[:idx] + block.replace(old_inner, new_inner, 1) + text[end:]
+            changed = True
 
     dump_marker = "# SPDMX_PER_TRACK_DUMP"
     if dump_marker not in text:
