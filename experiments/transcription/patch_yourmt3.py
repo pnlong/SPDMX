@@ -535,29 +535,39 @@ def _install_overlays(yourmt3_src: Path) -> list[str]:
 def _patch_test_auto_overlay(test_py: Path) -> bool:
     """Ensure test.py applies overlays before importing data modules."""
     text = test_py.read_text(encoding="utf-8")
-    if "SPDMX_AUTO_OVERLAY" in text:
-        return False
-    old = '''""" test.py """
-import os
-import pprint
-import argparse
-import torch
-
-from utils.data_modules import AMTDataModule'''
-    new = '''""" test.py """
+    new_marker = "yourmt3_overlays"
+    bootstrap = '''""" test.py """
 # SPDMX_AUTO_OVERLAY: copy tracked packing/eval overlays before importing YourMT3 modules.
+# (YourMT3/ is gitignored; `git pull` alone does not update these files.)
 def _spdmx_auto_overlay() -> None:
     try:
-        import sys
         from pathlib import Path
-        src_dir = Path(__file__).resolve().parent
-        repo_root = src_dir.parents[5]
-        if str(repo_root) not in sys.path:
-            sys.path.insert(0, str(repo_root))
-        from experiments.transcription.patch_yourmt3 import apply_yourmt3_patches
-        for p in apply_yourmt3_patches(src_dir):
-            print(f"[SPDMX] {p}")
-    except Exception as exc:
+
+        src_dir = Path(__file__).resolve().parent  # .../YourMT3/amt/src
+        # .../experiments/transcription
+        trans_dir = src_dir.parents[3]
+        overlay_dir = trans_dir / "yourmt3_overlays"
+        if not overlay_dir.is_dir():
+            print(f"[SPDMX] auto-overlay: missing {overlay_dir}")
+            return
+        mapping = {
+            "datasets_eval.py": src_dir / "utils" / "datasets_eval.py",
+            "ymt3.py": src_dir / "model" / "ymt3.py",
+            # Do not rewrite this running test.py from here.
+        }
+        for name, dest in mapping.items():
+            src = overlay_dir / name
+            if not src.is_file():
+                print(f"[SPDMX] auto-overlay: missing {src}")
+                continue
+            new = src.read_bytes()
+            old = dest.read_bytes() if dest.is_file() else None
+            if old == new:
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(new)
+            print(f"[SPDMX] auto-overlay: installed {name} → {dest}")
+    except Exception as exc:  # noqa: BLE001 — never block stock YourMT3 test
         print(f"[SPDMX] auto-overlay skipped: {exc}")
 
 
@@ -569,9 +579,18 @@ import argparse
 import torch
 
 from utils.data_modules import AMTDataModule'''
-    if old not in text:
+    if "SPDMX_AUTO_OVERLAY" in text and new_marker in text and "experiments.transcription.patch_yourmt3" not in text:
         return False
-    test_py.write_text(text.replace(old, new, 1), encoding="utf-8")
+    # Replace from docstring through first data_modules import.
+    start = text.find('""" test.py """')
+    if start < 0:
+        return False
+    end = text.find("from utils.data_modules import AMTDataModule", start)
+    if end < 0:
+        return False
+    text = text[:start] + bootstrap + text[end + len("from utils.data_modules import AMTDataModule"):]
+    # bootstrap already ends with that import line
+    test_py.write_text(text, encoding="utf-8")
     return True
 
 

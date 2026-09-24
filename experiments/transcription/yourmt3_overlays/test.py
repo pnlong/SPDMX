@@ -12,17 +12,32 @@
 # (YourMT3/ is gitignored; `git pull` alone does not update these files.)
 def _spdmx_auto_overlay() -> None:
     try:
-        import sys
         from pathlib import Path
 
         src_dir = Path(__file__).resolve().parent  # .../YourMT3/amt/src
-        repo_root = src_dir.parents[5]  # .../spdmx
-        if str(repo_root) not in sys.path:
-            sys.path.insert(0, str(repo_root))
-        from experiments.transcription.patch_yourmt3 import apply_yourmt3_patches
-
-        for p in apply_yourmt3_patches(src_dir):
-            print(f"[SPDMX] {p}")
+        # .../experiments/transcription
+        trans_dir = src_dir.parents[3]
+        overlay_dir = trans_dir / "yourmt3_overlays"
+        if not overlay_dir.is_dir():
+            print(f"[SPDMX] auto-overlay: missing {overlay_dir}")
+            return
+        mapping = {
+            "datasets_eval.py": src_dir / "utils" / "datasets_eval.py",
+            "ymt3.py": src_dir / "model" / "ymt3.py",
+            # Do not rewrite this running test.py from here.
+        }
+        for name, dest in mapping.items():
+            src = overlay_dir / name
+            if not src.is_file():
+                print(f"[SPDMX] auto-overlay: missing {src}")
+                continue
+            new = src.read_bytes()
+            old = dest.read_bytes() if dest.is_file() else None
+            if old == new:
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(new)
+            print(f"[SPDMX] auto-overlay: installed {name} → {dest}")
     except Exception as exc:  # noqa: BLE001 — never block stock YourMT3 test
         print(f"[SPDMX] auto-overlay skipped: {exc}")
 
