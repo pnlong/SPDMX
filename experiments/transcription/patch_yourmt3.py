@@ -501,6 +501,7 @@ def _install_overlays(yourmt3_src: Path) -> list[str]:
     mapping = {
         "datasets_eval.py": yourmt3_src / "utils" / "datasets_eval.py",
         "ymt3.py": yourmt3_src / "model" / "ymt3.py",
+        "test.py": yourmt3_src / "test.py",
     }
     installed: list[str] = []
     for name, dest in mapping.items():
@@ -512,10 +513,63 @@ def _install_overlays(yourmt3_src: Path) -> list[str]:
         new = src.read_bytes()
         old = dest.read_bytes() if dest.is_file() else None
         if old == new:
+            # Still report packing status for the critical file
+            if name == "datasets_eval.py":
+                text = new.decode("utf-8", errors="replace")
+                kind = "best-fit" if "best-fit" in text or "First-fit decreasing" in text else "OLD-greedy"
+                print(f"[SPDMX] overlay {name}: already current ({kind})")
             continue
         dest.write_bytes(new)
-        installed.append(str(dest) + f" (overlay {name})")
+        text = new.decode("utf-8", errors="replace")
+        kind = ""
+        if name == "datasets_eval.py":
+            kind = " best-fit" if ("best-fit" in text or "First-fit decreasing" in text) else " OLD-greedy?"
+        installed.append(str(dest) + f" (overlay {name}{kind})")
+        print(f"[SPDMX] overlay {name}: installed{kind} → {dest}")
     return installed
+
+
+def _patch_test_auto_overlay(test_py: Path) -> bool:
+    """Ensure test.py applies overlays before importing data modules."""
+    text = test_py.read_text(encoding="utf-8")
+    if "SPDMX_AUTO_OVERLAY" in text:
+        return False
+    old = '''""" test.py """
+import os
+import pprint
+import argparse
+import torch
+
+from utils.data_modules import AMTDataModule'''
+    new = '''""" test.py """
+# SPDMX_AUTO_OVERLAY: copy tracked packing/eval overlays before importing YourMT3 modules.
+def _spdmx_auto_overlay() -> None:
+    try:
+        import sys
+        from pathlib import Path
+        src_dir = Path(__file__).resolve().parent
+        repo_root = src_dir.parents[5]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from experiments.transcription.patch_yourmt3 import apply_yourmt3_patches
+        for p in apply_yourmt3_patches(src_dir):
+            print(f"[SPDMX] {p}")
+    except Exception as exc:
+        print(f"[SPDMX] auto-overlay skipped: {exc}")
+
+
+_spdmx_auto_overlay()
+
+import os
+import pprint
+import argparse
+import torch
+
+from utils.data_modules import AMTDataModule'''
+    if old not in text:
+        return False
+    test_py.write_text(text.replace(old, new, 1), encoding="utf-8")
+    return True
 
 
 def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
@@ -531,6 +585,8 @@ def apply_yourmt3_patches(yourmt3_src: Path | None = None) -> list[str]:
     config_py = src / "config" / "config.py"
     # Install packing / skip-tokenize / per-track overlays first (authoritative).
     patched.extend(_install_overlays(src))
+    if test_py.is_file() and _patch_test_auto_overlay(test_py):
+        patched.append(str(test_py) + " (auto-overlay)")
     if init_train.is_file() and _patch_init_train(init_train):
         patched.append(str(init_train))
     if init_train.is_file() and _patch_step_progress(init_train):

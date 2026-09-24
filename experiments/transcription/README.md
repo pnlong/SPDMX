@@ -129,10 +129,16 @@ Throughput knobs (also set automatically by the wrapper):
 
 **Why util stayed low with only `SPDMX_TEST_SUBBSZ`:** eval is still one song per step; a typical SPDMX song has ~30 segments, so raising subbsz past that does nothing. Packing (~4 songs → ~225 segments/step) is required.
 
-**Other machine:** `YourMT3/` is gitignored. After pull, install overlays (packing + skip-tokenize + pack consumer) with:
+**Other machine:** `YourMT3/` is gitignored. `git pull` updates
+`experiments/transcription/yourmt3_overlays/` only. You must copy those into the
+clone (or run `test.py` after this repo’s auto-overlay bootstrap is installed):
 
 ```bash
 uv run python -c "from experiments.transcription.patch_yourmt3 import apply_yourmt3_patches; print(apply_yourmt3_patches())"
+# expect: overlay datasets_eval.py: ... (best-fit)
+rg -n "First-fit decreasing" experiments/transcription/YourMT3/amt/src/utils/datasets_eval.py
 ```
 
-Startup must print `[SPDMX] PackedAudioFileDataset ...` and `[SPDMX] test_step batch=0 n_files=... n_segs=... packed=True`. If `packed=False` / `n_segs≈30`, packing is not live.
+Startup must print `[SPDMX] PackedAudioFileDataset ...` / `pack stats: ... med≈511`
+and `[SPDMX] test_step ... packed=True`. If progress is `0/102` with singleton
+`n_segs≈140`, the live clone still has the old greedy packer.
