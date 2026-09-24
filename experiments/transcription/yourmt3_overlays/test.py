@@ -15,11 +15,19 @@ def _spdmx_auto_overlay() -> None:
         from pathlib import Path
 
         src_dir = Path(__file__).resolve().parent  # .../YourMT3/amt/src
-        # .../experiments/transcription
-        trans_dir = src_dir.parents[3]
-        overlay_dir = trans_dir / "yourmt3_overlays"
-        if not overlay_dir.is_dir():
-            print(f"[SPDMX] auto-overlay: missing {overlay_dir}")
+        overlay_dir = None
+        for parent in [src_dir, *src_dir.parents]:
+            cand = parent / "yourmt3_overlays"
+            if cand.is_dir():
+                overlay_dir = cand
+                break
+            # Also accept overlays next to a transcription package dir
+            cand2 = parent / "transcription" / "yourmt3_overlays"
+            if cand2.is_dir():
+                overlay_dir = cand2
+                break
+        if overlay_dir is None:
+            print(f"[SPDMX] auto-overlay: could not find yourmt3_overlays above {src_dir}")
             return
         mapping = {
             "datasets_eval.py": src_dir / "utils" / "datasets_eval.py",

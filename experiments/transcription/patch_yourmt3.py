@@ -535,7 +535,7 @@ def _install_overlays(yourmt3_src: Path) -> list[str]:
 def _patch_test_auto_overlay(test_py: Path) -> bool:
     """Ensure test.py applies overlays before importing data modules."""
     text = test_py.read_text(encoding="utf-8")
-    new_marker = "yourmt3_overlays"
+    new_marker = "could not find yourmt3_overlays above"
     bootstrap = '''""" test.py """
 # SPDMX_AUTO_OVERLAY: copy tracked packing/eval overlays before importing YourMT3 modules.
 # (YourMT3/ is gitignored; `git pull` alone does not update these files.)
@@ -544,11 +544,18 @@ def _spdmx_auto_overlay() -> None:
         from pathlib import Path
 
         src_dir = Path(__file__).resolve().parent  # .../YourMT3/amt/src
-        # .../experiments/transcription
-        trans_dir = src_dir.parents[3]
-        overlay_dir = trans_dir / "yourmt3_overlays"
-        if not overlay_dir.is_dir():
-            print(f"[SPDMX] auto-overlay: missing {overlay_dir}")
+        overlay_dir = None
+        for parent in [src_dir, *src_dir.parents]:
+            cand = parent / "yourmt3_overlays"
+            if cand.is_dir():
+                overlay_dir = cand
+                break
+            cand2 = parent / "transcription" / "yourmt3_overlays"
+            if cand2.is_dir():
+                overlay_dir = cand2
+                break
+        if overlay_dir is None:
+            print(f"[SPDMX] auto-overlay: could not find yourmt3_overlays above {src_dir}")
             return
         mapping = {
             "datasets_eval.py": src_dir / "utils" / "datasets_eval.py",
@@ -579,9 +586,8 @@ import argparse
 import torch
 
 from utils.data_modules import AMTDataModule'''
-    if "SPDMX_AUTO_OVERLAY" in text and new_marker in text and "experiments.transcription.patch_yourmt3" not in text:
+    if "SPDMX_AUTO_OVERLAY" in text and new_marker in text:
         return False
-    # Replace from docstring through first data_modules import.
     start = text.find('""" test.py """')
     if start < 0:
         return False
@@ -589,7 +595,6 @@ from utils.data_modules import AMTDataModule'''
     if end < 0:
         return False
     text = text[:start] + bootstrap + text[end + len("from utils.data_modules import AMTDataModule"):]
-    # bootstrap already ends with that import line
     test_py.write_text(text, encoding="utf-8")
     return True
 
