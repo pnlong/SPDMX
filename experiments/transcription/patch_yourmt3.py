@@ -507,6 +507,9 @@ def _install_overlays(yourmt3_src: Path) -> list[str]:
     for name, dest in mapping.items():
         src = OVERLAY_DIR / name
         if not src.is_file():
+            if name == "test.py":
+                print(f"[SPDMX] overlay {name}: not in repo yet (optional; skipping)")
+                continue
             raise SystemExit(f"missing overlay {src}")
         if not dest.parent.is_dir():
             raise SystemExit(f"YourMT3 path missing: {dest.parent}")
