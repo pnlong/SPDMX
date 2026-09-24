@@ -9,8 +9,7 @@ import pandas as pd
 
 from analysis.pdmx_subset import filter_pdmx_subset
 from shared.csv_tables import sanitize_track_name
-from synthesis.patches import _gm_class
-from synthesis.realify.preset_config import load_presets, resolve_category
+from synthesis.patches import _gm_class, resolve_probe_category
 
 UNNAMED_TRACK = "(unnamed)"
 
@@ -57,7 +56,6 @@ def extract_named_stems_from_mid(mid_path: str | Path) -> list[dict] | None:
     except Exception:
         return None
 
-    presets = load_presets()
     rows: list[dict] = []
     for track in midi.tracks:
         program = 0
@@ -81,18 +79,17 @@ def extract_named_stems_from_mid(mid_path: str | Path) -> list[dict] | None:
             continue
 
         normalized = normalize_track_name(track_name)
-        meta_row = pd.Series({
-            "program": program,
-            "is_drum": is_drum,
-            "name": track_name if track_name and len(track_name) > 0 else None,
-        })
         rows.append({
             "track_name": normalized,
             "display_name": track_name or UNNAMED_TRACK,
             "program": int(program),
             "is_drum": bool(is_drum),
             "gm_class": _gm_class(program, is_drum),
-            "category": resolve_category(meta_row, presets),
+            "category": resolve_probe_category(
+                program=int(program),
+                is_drum=bool(is_drum),
+                track_name=track_name if track_name and len(track_name) > 0 else None,
+            ),
         })
 
     return rows

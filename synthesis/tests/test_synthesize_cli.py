@@ -53,7 +53,7 @@ def test_synthesis_is_complete_false_when_stems_missing(tmp_path: Path):
 def test_require_raw_synthesis_raises_with_command(tmp_path: Path):
     ablation_dir = tmp_path / "basic"
     ablation_dir.mkdir()
-    with pytest.raises(RuntimeError, match="Run the corresponding non-realify ablation first"):
+    with pytest.raises(RuntimeError, match="Run the corresponding ablation first"):
         require_raw_synthesis(
             str(ablation_dir),
             run_command="uv run python -m synthesis.synthesize --render-mode basic",

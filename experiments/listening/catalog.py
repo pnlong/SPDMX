@@ -1,4 +1,7 @@
-"""Build JSON-serializable catalogs for patch and preset sweep outputs."""
+"""Build JSON-serializable catalogs for patch sweep outputs.
+
+Preset / SA3 catalog support was removed with ``experiments.preset_sweep``.
+"""
 
 from __future__ import annotations
 
@@ -10,18 +13,16 @@ import yaml
 from experiments.paths import (
     DEFAULT_PROBE_STEMS,
     patch_sweep_output_root,
-    preset_sweep_output_root,
 )
 from experiments.patch_sweep.sweep import MANIFEST_FILENAME as PATCH_MANIFEST
 from experiments.patch_sweep.sweep import VARIANTS_DIR_NAME as PATCH_VARIANTS_DIR
-from experiments.preset_sweep.clips_dir import resolve_sweep_clips_dir
-from experiments.preset_sweep.sweep import MANIFEST_FILENAME as PRESET_MANIFEST
-from experiments.preset_sweep.sweep import VARIANTS_DIR_NAME as PRESET_VARIANTS_DIR
-from shared.config import DATA_DIR_NAME, DEFAULT_AUDIO_FORMAT, FLAC_AUDIO_FORMAT, OUTPUT_DIR, STEMS_FILE_NAME
-from shared.repo_symlinks import (
-    REPO_PATCH_SWEEP_OUTPUT_SYMLINK,
-    REPO_PRESET_SWEEP_OUTPUT_SYMLINK,
+from experiments.listening_shared.clips import (
+    PRESET_SWEEP_REMOVED,
+    load_diverse_stems_manifest,
+    resolve_sweep_clips_dir,
 )
+from shared.config import DATA_DIR_NAME, DEFAULT_AUDIO_FORMAT, FLAC_AUDIO_FORMAT, OUTPUT_DIR, STEMS_FILE_NAME
+from shared.repo_symlinks import REPO_PATCH_SWEEP_OUTPUT_SYMLINK
 from synthesis.audio import stem_filename
 from synthesis.listening.catalog import default_ablations_dir, song_id_from_path
 from synthesis.paths import ablation_raw_dir
@@ -52,9 +53,7 @@ def default_source_dir(output_root: str = OUTPUT_DIR) -> Path:
 
 def default_sweep_dir(sweep_type: str, output_root: str = OUTPUT_DIR) -> Path:
     if sweep_type == "preset":
-        if REPO_PRESET_SWEEP_OUTPUT_SYMLINK.is_dir():
-            return REPO_PRESET_SWEEP_OUTPUT_SYMLINK.resolve()
-        return Path(preset_sweep_output_root(output_root))
+        raise RuntimeError(PRESET_SWEEP_REMOVED)
     if sweep_type == "patch":
         if REPO_PATCH_SWEEP_OUTPUT_SYMLINK.is_dir():
             return REPO_PATCH_SWEEP_OUTPUT_SYMLINK.resolve()
@@ -70,9 +69,9 @@ def resolve_sweep_catalog_dir(
 ) -> Path:
     """Pick a phased sweep output directory that actually has a manifest."""
     sweep_dir = sweep_dir.resolve()
-    manifest_name = (
-        PRESET_MANIFEST if sweep_type == "preset" else PATCH_MANIFEST
-    )
+    if sweep_type == "preset":
+        raise RuntimeError(PRESET_SWEEP_REMOVED)
+    manifest_name = PATCH_MANIFEST
 
     if prefer_verification_phase:
         try:
@@ -110,7 +109,9 @@ class SweepCatalog:
         source_dir: Path | None = None,
         probe_stems_path: Path = DEFAULT_PROBE_STEMS,
     ):
-        if sweep_type not in ("preset", "patch"):
+        if sweep_type == "preset":
+            raise RuntimeError(PRESET_SWEEP_REMOVED)
+        if sweep_type != "patch":
             raise ValueError(f"Unknown sweep type: {sweep_type}")
         self.sweep_type = sweep_type
         self.sweep_dir = sweep_dir.resolve()
@@ -150,11 +151,11 @@ class SweepCatalog:
 
     @property
     def _variants_dir_name(self) -> str:
-        return PRESET_VARIANTS_DIR if self.sweep_type == "preset" else PATCH_VARIANTS_DIR
+        return PATCH_VARIANTS_DIR
 
     @property
     def _manifest_filename(self) -> str:
-        return PRESET_MANIFEST if self.sweep_type == "preset" else PATCH_MANIFEST
+        return PATCH_MANIFEST
 
     def manifest_id(self) -> str:
         path = self.sweep_dir / self._manifest_filename
@@ -263,8 +264,6 @@ class SweepCatalog:
     def _load_probe_index(self) -> dict[str, dict]:
         diverse_path = self.sweep_dir / "diverse_stems.yaml"
         if diverse_path.is_file():
-            from experiments.preset_sweep.diverse_stems import load_diverse_stems_manifest
-
             return {entry["id"]: entry for entry in load_diverse_stems_manifest(diverse_path)}
         with open(self.probe_stems_path) as f:
             cfg = yaml.safe_load(f)
@@ -285,24 +284,15 @@ class SweepCatalog:
     def variants(self) -> list[dict]:
         if self._manifest.empty:
             return []
-        if self.sweep_type == "preset":
-            rows = (
-                self._manifest[
-                    ["variant_id", "init_noise_level", "prompt_variant"]
-                ]
-                .drop_duplicates(subset=["variant_id"])
-                .sort_values("variant_id")
-            )
-        else:
-            cols = ["variant_id"]
-            for c in ("pool_id", "soundfont_id", "fx_profile", "phase"):
-                if c in self._manifest.columns:
-                    cols.append(c)
-            rows = (
-                self._manifest[cols]
-                .drop_duplicates(subset=["variant_id"])
-                .sort_values("variant_id")
-            )
+        cols = ["variant_id"]
+        for c in ("pool_id", "soundfont_id", "fx_profile", "phase"):
+            if c in self._manifest.columns:
+                cols.append(c)
+        rows = (
+            self._manifest[cols]
+            .drop_duplicates(subset=["variant_id"])
+            .sort_values("variant_id")
+        )
         return rows.to_dict(orient="records")
 
     def list_stems(self) -> list[dict]:

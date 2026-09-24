@@ -12,7 +12,7 @@ import yaml
 from tqdm import tqdm
 
 from experiments.patch_sweep.clip_windows import find_content_rich_clips
-from experiments.preset_sweep.diverse_stems import DEFAULT_CLIP_SECONDS, clip_stem_waveform
+from experiments.listening_shared.clips import DEFAULT_CLIP_SECONDS, clip_stem_waveform
 from shared.config import (
     DATA_DIR_NAME,
     DEFAULT_AUDIO_FORMAT,

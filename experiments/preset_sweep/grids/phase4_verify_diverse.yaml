@@ -1,9 +1,0 @@
-# Phase 4: render locked presets on phase-1b diverse clips for final verification.
-# Reuses phase1b clips/ + diverse_stems.yaml; one realified variant per stem.
-phase: phase4_verify_diverse
-replace_silent_clips: true
-min_rms: 0.01
-
-variants:
-  - id: locked
-    note: Composed preset from winners.yaml (phases 1–3)

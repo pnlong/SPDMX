@@ -1,4 +1,4 @@
-"""Synthesize PDMX MIDI stems; optionally realify with SA3."""
+"""Synthesize PDMX MIDI stems."""
 
 from __future__ import annotations
 
@@ -23,9 +23,6 @@ from shared.config import (
     DEFAULT_AUDIO_FORMAT,
     MAX_N_NOTES_IN_STEM,
     NA_STRING,
-    REALIFY_BATCH_SIZE,
-    REALIFY_CONTENT_FIDELITY_ENFORCE,
-    REALIFY_SILENCE_ENFORCE,
     SONGS_TABLE_COLUMNS,
     SOUNDFONT_DIR,
     SPDMX_FILE_NAME,
@@ -54,9 +51,7 @@ from synthesis.paths import (
     MIDI_INDEX_FILE_NAME,
     PASS_TRACK_COLUMNS,
     ablation_raw_dir,
-    ablation_realify_dir,
     full_stems_dir,
-    full_stems_realify_dir,
 )
 from shared.repo_symlinks import link_ablations_in_repo
 from synthesis.ddsp.config import DDSP_ROUTING_COLUMNS, DDSP_ROUTING_FILE_NAME
@@ -212,7 +207,7 @@ def _hybrid_pass_result(
 def parse_args(args=None, namespace=None):
     parser = argparse.ArgumentParser(
         prog="Synthesize",
-        description="Synthesize PDMX stems; pass --full for all valid songs, --realify for SA3.",
+        description="Synthesize PDMX stems; pass --full for all valid songs.",
     )
     add_synthesis_args(parser)
     return parser.parse_args(args=args, namespace=namespace)
@@ -2399,7 +2394,7 @@ def run_synthesis(args, output_dir: str, *, media_dir: str | None = None):
 
     if uses_ddsp(getattr(args, "render_mode", "") or "") and not args.full:
         if _hybrid_recipe(args) is None:
-            require_donor_ablation(args, realify=False)
+            require_donor_ablation(args)
 
     dataset = prepare_render_dataset(args, media_dir, register_df=register_df)
     hybrid = _hybrid_recipe(args) is not None
@@ -3211,39 +3206,32 @@ def require_raw_synthesis(
     raise RuntimeError(
         "Raw stems are missing or incomplete at "
         f"{source_dir}.{detail}\n"
-        "Run the corresponding non-realify ablation first:\n"
+        "Run the corresponding ablation first:\n"
         f"  {run_command}"
     )
 
 
-def require_donor_ablation(args, *, realify: bool) -> None:
+def require_donor_ablation(args) -> None:
     """Ensure the soundfont-fallback donor ablation exists for DDSP modes."""
     donor_mode = fallback_donor_mode(args.render_mode)
     if donor_mode is None:
         return
     audio_format = synthesis_audio_format(args.flac)
-    if realify:
-        donor_dir = ablation_realify_dir(args.output_dir, donor_mode)
-        cmd = (
-            f"uv run python -m synthesis.synthesize --render-mode {donor_mode} --realify"
-        )
-    else:
-        donor_dir = ablation_raw_dir(args.output_dir, donor_mode)
-        cmd = f"uv run python -m synthesis.synthesize --render-mode {donor_mode}"
+    donor_dir = ablation_raw_dir(args.output_dir, donor_mode)
+    cmd = f"uv run python -m synthesis.synthesize --render-mode {donor_mode}"
     if args.flac:
         cmd += " --flac"
     if synthesis_is_complete(donor_dir, audio_format, require_mixture=False):
         return
-    if getattr(args, "allow_fallback_render", False) and not realify:
+    if getattr(args, "allow_fallback_render", False):
         print(
             f"Warning: donor ablation incomplete at {donor_dir}; "
             "--allow-fallback-render will Fluidsynth-render missing stems."
         )
         return
-    kind = "realify" if realify else "raw"
     raise RuntimeError(
-        f"Cannot run {args.render_mode}{' --realify' if realify else ''}: "
-        f"donor {kind} ablation incomplete at {donor_dir}\n"
+        f"Cannot run {args.render_mode}: "
+        f"donor raw ablation incomplete at {donor_dir}\n"
         f"Run first:\n  {cmd}"
     )
 
@@ -3257,72 +3245,19 @@ def raw_synthesis_command(args) -> str:
     return cmd
 
 
-def run_realify_pass(args, source_dir: str, dest_dir: str, *, allowed_song_ids: set[str] | None = None):
-    from synthesis.realify.realify import run_realify
-
-    audio_format = synthesis_audio_format(args.flac)
-    content_fidelity_enforce = REALIFY_CONTENT_FIDELITY_ENFORCE
-    if getattr(args, "content_fidelity_enforce", False):
-        content_fidelity_enforce = True
-    if getattr(args, "no_content_fidelity_enforce", False):
-        content_fidelity_enforce = False
-
-    in_place = Path(source_dir).resolve() == Path(dest_dir).resolve()
-    run_realify(
-        source_dir=source_dir,
-        output_dir=dest_dir,
-        model=args.model,
-        limit=args.realify_limit,
-        jobs=args.jobs,
-        batch_size=(
-            REALIFY_BATCH_SIZE
-            if args.realify_batch_size is None
-            else args.realify_batch_size
-        ),
-        audio_format=audio_format,
-        sample_seed=args.sample_seed,
-        reset=bool(args.reset) and not in_place,
-        silence_enforce=REALIFY_SILENCE_ENFORCE and not args.no_silence_enforce,
-        content_fidelity_enforce=content_fidelity_enforce,
-        output_root=args.output_dir,
-        render_mode=args.render_mode,
-        category_allowlist=(
-            set(_hybrid_recipe(args).realify_categories())
-            if _hybrid_recipe(args) is not None
-            else None
-        ),
-        recipe=_hybrid_recipe(args),
-        allowed_song_ids=allowed_song_ids,
-    )
-
-
 def main():
     from synthesis.mix import print_mix_hint
 
     args = parse_args()
     if args.full:
         source_dir = full_stems_dir(args.output_dir)
-        dest_dir = full_stems_realify_dir(args.output_dir)
     else:
         source_dir = ablation_raw_dir(args.output_dir, args.render_mode)
-        dest_dir = ablation_realify_dir(args.output_dir, args.render_mode)
 
-    stems_dir = dest_dir if args.realify else source_dir
-    if args.realify:
-        audio_format = synthesis_audio_format(args.flac)
-        require_raw_synthesis(
-            source_dir,
-            run_command=raw_synthesis_command(args),
-            audio_format=audio_format,
-        )
-        if uses_ddsp(args.render_mode) and not args.full:
-            require_donor_ablation(args, realify=True)
-        run_realify_pass(args, source_dir, dest_dir)
-    else:
-        run_synthesis(args, source_dir)
+    run_synthesis(args, source_dir)
 
     link_ablations_in_repo(args.output_dir)
-    print_mix_hint(stems_dir, jobs=args.jobs, flac=bool(args.flac))
+    print_mix_hint(source_dir, jobs=args.jobs, flac=bool(args.flac))
 
 
 if __name__ == "__main__":

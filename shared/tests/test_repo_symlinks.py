@@ -6,16 +6,14 @@ from shared.repo_symlinks import (
     REPO_ABLATIONS_SYMLINK,
     REPO_ANALYSIS_SYMLINK,
     REPO_PATCH_SWEEP_OUTPUT_SYMLINK,
-    REPO_PRESET_SWEEP_OUTPUT_SYMLINK,
     REPO_SOUNDFONTS_SYMLINK,
     link_ablations_in_repo,
     link_analysis_in_repo,
     link_patch_sweep_output_in_repo,
-    link_preset_sweep_output_in_repo,
     link_soundfonts_in_repo,
     setup_dev_symlinks,
 )
-from experiments.paths import patch_sweep_output_root, preset_sweep_output_root
+from experiments.paths import patch_sweep_output_root
 from synthesis.paths import ablations_root, analysis_root
 
 
@@ -57,27 +55,20 @@ def test_setup_dev_symlinks(tmp_path: Path, monkeypatch):
     spdmx_root = str(tmp_path / "SPDMX")
     Path(analysis_root(spdmx_root)).mkdir(parents=True)
     Path(ablations_root(spdmx_root)).mkdir(parents=True)
-    Path(preset_sweep_output_root(spdmx_root)).mkdir(parents=True)
     Path(patch_sweep_output_root(spdmx_root)).mkdir(parents=True)
 
     analysis_link = tmp_path / "repo" / "analysis" / "output"
     ablations_link = tmp_path / "repo" / "synthesis" / "ablations_output"
-    preset_sweep_link = tmp_path / "repo" / "experiments" / "preset_sweep" / "output"
     patch_sweep_link = tmp_path / "repo" / "experiments" / "patch_sweep" / "output"
     soundfonts_link = tmp_path / "repo" / "soundfonts"
     analysis_link.parent.mkdir(parents=True)
     ablations_link.parent.mkdir(parents=True)
-    preset_sweep_link.parent.mkdir(parents=True)
     patch_sweep_link.parent.mkdir(parents=True)
     soundfont_dir = tmp_path / "soundfonts_data"
     soundfont_dir.mkdir()
     (soundfont_dir / "SGM-V2.01.sf2").write_bytes(b"sf2")
     monkeypatch.setattr("shared.repo_symlinks.REPO_ANALYSIS_SYMLINK", analysis_link)
     monkeypatch.setattr("shared.repo_symlinks.REPO_ABLATIONS_SYMLINK", ablations_link)
-    monkeypatch.setattr(
-        "shared.repo_symlinks.REPO_PRESET_SWEEP_OUTPUT_SYMLINK",
-        preset_sweep_link,
-    )
     monkeypatch.setattr(
         "shared.repo_symlinks.REPO_PATCH_SWEEP_OUTPUT_SYMLINK",
         patch_sweep_link,
@@ -89,10 +80,9 @@ def test_setup_dev_symlinks(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("shared.repo_symlinks.LEGACY_ANALYSIS_SYMLINKS", ())
 
     links = setup_dev_symlinks(spdmx_root, soundfont_dir=str(soundfont_dir))
-    assert len(links) == 5
+    assert len(links) == 4
     assert analysis_link.is_symlink()
     assert ablations_link.is_symlink()
-    assert preset_sweep_link.is_symlink()
     assert patch_sweep_link.is_symlink()
     assert soundfonts_link.is_symlink()
 
@@ -114,25 +104,6 @@ def test_link_soundfonts_in_repo(tmp_path: Path, monkeypatch):
     assert symlink.is_symlink()
     assert symlink.resolve() == soundfont_dir.resolve()
     assert (symlink / "SGM-V2.01.sf2").is_file()
-
-
-def test_link_preset_sweep_output_in_repo(tmp_path: Path, monkeypatch):
-    spdmx_root = str(tmp_path / "SPDMX")
-    output_dir = Path(preset_sweep_output_root(spdmx_root))
-    output_dir.mkdir(parents=True)
-    (output_dir / "manifest.csv").write_text("variant_id\n")
-
-    symlink = tmp_path / "repo" / "experiments" / "preset_sweep" / "output"
-    symlink.parent.mkdir(parents=True)
-    monkeypatch.setattr(
-        "shared.repo_symlinks.REPO_PRESET_SWEEP_OUTPUT_SYMLINK",
-        symlink,
-    )
-
-    link, target = link_preset_sweep_output_in_repo(spdmx_root)
-    assert link == symlink
-    assert symlink.is_symlink()
-    assert symlink.resolve() == output_dir.resolve()
 
 
 def test_link_patch_sweep_output_in_repo(tmp_path: Path, monkeypatch):

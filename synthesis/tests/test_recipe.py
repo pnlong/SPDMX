@@ -76,13 +76,13 @@ def test_parse_ablation_ids():
     basic = parse_ablation_id("basic")
     assert basic.method == METHOD_BASIC and not basic.realify and basic.fallback == "basic"
     a2 = parse_ablation_id("basic_realify")
-    assert a2.method == METHOD_BASIC and a2.realify
+    assert a2.method == METHOD_BASIC and not a2.realify
     slakh = parse_ablation_id("slakh")
     assert slakh.method == METHOD_SLAKH and slakh.fallback == "slakh"
     ca1 = parse_ablation_id("ddsp_basic")
     assert ca1.method == METHOD_MIDI_DDSP and ca1.fallback == "basic" and not ca1.realify
     cb2 = parse_ablation_id("ddsp_slakh_realify")
-    assert cb2.method == METHOD_MIDI_DDSP and cb2.fallback == "slakh" and cb2.realify
+    assert cb2.method == METHOD_MIDI_DDSP and cb2.fallback == "slakh" and not cb2.realify
 
 
 def test_parse_ablation_id_unknown():
@@ -96,7 +96,7 @@ def test_parse_expanded_mapping():
         category="wind",
     )
     assert spec.method == METHOD_MIDI_DDSP
-    assert spec.realify
+    assert not spec.realify
     assert spec.fallback == "slakh"
 
 
@@ -107,7 +107,7 @@ def test_load_recipe_from_mapping_and_categories_wrapper():
         "piano", "drums", "guitar", "polyphonic", "voice", "mallet", "organ",
     }
     assert set(grouped["ddsp"]) == {"brass", "strings", "wind"}
-    assert set(grouped["realify"]) == {"organ", "wind"}
+    assert set(grouped["realify"]) == set()
     nested = load_recipe({"categories": _all_basic()})
     assert not nested.uses_ddsp()
     assert not nested.uses_realify()
@@ -143,7 +143,7 @@ def test_load_expanded_yaml(tmp_path: Path):
     path.write_text(yaml.safe_dump(doc))
     recipe = load_recipe(path)
     spec = recipe.specs["wind"]
-    assert spec.method == METHOD_MIDI_DDSP and spec.realify and spec.fallback == "slakh"
+    assert spec.method == METHOD_MIDI_DDSP and not spec.realify and spec.fallback == "slakh"
 
 
 def test_plan_drums_never_ddsp():
@@ -202,13 +202,13 @@ def test_plan_polyphonic_violin_fluidsynth_fallback():
     assert plan.fallback == "basic"
 
 
-def test_plan_wind_uses_slakh_and_realify():
+def test_plan_wind_uses_slakh_not_realify():
     recipe = load_recipe(_leaderboard())
     plan = recipe.plan_for_track(program=73, is_drum=False, track_name="Flute")
     assert plan.category == "wind"
     assert plan.neural_ok
     assert plan.use_slakh
-    assert plan.realify
+    assert not plan.realify
     assert plan.fallback == "slakh"
 
 

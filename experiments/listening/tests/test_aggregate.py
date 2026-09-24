@@ -114,17 +114,15 @@ def test_aggregate_filters_low_content(tmp_path: Path, capsys):
     }))
 
     output_path = tmp_path / "results.md"
-    run_aggregate(
-        sweep_type="preset",
-        responses_path=responses_path,
-        output_path=output_path,
-        sweep_dir=sweep_dir,
-        content_threshold=3.0,
-        content_mean_threshold=3.5,
-    )
-    text = output_path.read_text()
-    assert "noise0.45_minimal" in text
-    assert "noise0.55_minimal" not in text.split("Winner")[1]
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        run_aggregate(
+            sweep_type="preset",
+            responses_path=responses_path,
+            output_path=output_path,
+            sweep_dir=sweep_dir,
+            content_threshold=3.0,
+            content_mean_threshold=3.5,
+        )
 
 
 def test_noise_level_winners_requires_content_then_picks_realism():

@@ -24,7 +24,7 @@ from experiments.patch_sweep.sweep import (
 )
 from experiments.paths import DEFAULT_PROBE_STEMS
 from experiments.probe_stems import active_probe_stems, load_probe_stems
-from experiments.preset_sweep.diverse_stems import DEFAULT_CLIP_SECONDS, clip_stem_waveform
+from experiments.listening_shared.clips import DEFAULT_CLIP_SECONDS, clip_stem_waveform
 from shared.config import CHUNK_SIZE, DATA_DIR_NAME, DEFAULT_AUDIO_FORMAT
 from synthesis.audio import stem_filename, stem_is_valid, stem_path, write_audio
 

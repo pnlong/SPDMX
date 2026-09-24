@@ -1,4 +1,4 @@
-"""Analyze PDMX song lengths from metadata and recommend an SA3 model."""
+"""Analyze PDMX song lengths from metadata."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from analysis.pdmx_lengths import load_pdmx_song_lengths, percentile_table, sa3_limit_percentiles
+from analysis.pdmx_lengths import load_pdmx_song_lengths, percentile_table
 from analysis.plots import plot_histogram, plot_percentiles
-from analysis.report import recommend_model
+from analysis.report import duration_summary
 from shared.config import OUTPUT_DIR, PDMX_FILEPATH
 from shared.repo_symlinks import link_analysis_in_repo
 from synthesis.paths import song_lengths_dir
@@ -18,7 +18,7 @@ from synthesis.paths import song_lengths_dir
 
 def parse_args(args=None, namespace=None):
     parser = argparse.ArgumentParser(
-        description="Analyze PDMX song_length.seconds and recommend an SA3 model.",
+        description="Analyze PDMX song_length.seconds.",
     )
     parser.add_argument("-df", "--dataset_filepath", default=PDMX_FILEPATH, type=str)
     parser.add_argument("-o", "--output_dir", default=song_lengths_dir(OUTPUT_DIR), type=str)
@@ -34,9 +34,8 @@ def parse_args(args=None, namespace=None):
 def build_report(durations: pd.Series) -> dict:
     return {
         "n_songs": int(len(durations)),
-        "summary": recommend_model(durations),
+        "summary": duration_summary(durations),
         "percentiles": percentile_table(durations),
-        "sa3_limits": sa3_limit_percentiles(durations),
     }
 
 

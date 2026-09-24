@@ -9,7 +9,7 @@ import pandas as pd
 matplotlib.use("Agg")
 
 from analysis.analyze_song_lengths import build_report
-from analysis.pdmx_lengths import load_pdmx_song_lengths, percentile_table, sa3_limit_percentiles
+from analysis.pdmx_lengths import load_pdmx_song_lengths, percentile_table
 from analysis.plots import plot_histogram, plot_percentiles
 
 
@@ -35,25 +35,14 @@ def test_percentile_table():
     assert table["p50"] == 100.0
 
 
-def test_sa3_limit_percentiles():
-    durations = pd.Series([10, 50, 100, 130, 400])
-    limits = sa3_limit_percentiles(durations)
-    assert limits["pct_at_120s_limit"] == 60.0
-    assert limits["pct_at_380s_limit"] == 80.0
-    assert limits["n_songs_over_380s"] == 1
-
-
-def test_build_report_includes_sa3_limits():
+def test_build_report_has_summary_and_percentiles():
     durations = pd.Series([10, 50, 100, 130, 400])
     report = build_report(durations)
-    assert "sa3_limits" in report
-    assert report["sa3_limits"]["pct_at_120s_limit"] == 60.0
-
-
-def test_build_report_recommends_medium():
-    durations = pd.Series([30, 60, 200, 250, 300])
-    report = build_report(durations)
-    assert report["summary"]["recommended_model"] == "medium"
+    assert "summary" in report
+    assert "percentiles" in report
+    assert report["n_songs"] == 5
+    assert "sa3_limits" not in report
+    assert "recommended_model" not in report["summary"]
 
 
 def test_link_analysis_in_repo(tmp_path: Path, monkeypatch):

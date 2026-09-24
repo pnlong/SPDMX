@@ -7,8 +7,6 @@ import pandas as pd
 from shared.config import (
     MAX_STEM_DURATION,
     PDMX_FILEPATH,
-    SA3_MEDIUM_MAX_DURATION,
-    SA3_SMALL_MUSIC_MAX_DURATION,
 )
 
 SONG_LENGTH_COLUMN = "song_length.seconds"
@@ -39,13 +37,4 @@ def percentile_table(durations: pd.Series) -> dict[str, float]:
     return {
         _percentile_key(level): round(float(durations.quantile(level)), 2)
         for level in PERCENTILE_LEVELS
-    }
-
-
-def sa3_limit_percentiles(durations: pd.Series) -> dict[str, float | int]:
-    """Percentile rank of the SA3 duration limits (fraction of songs at or below each)."""
-    return {
-        "pct_at_120s_limit": round(100 * (durations <= SA3_SMALL_MUSIC_MAX_DURATION).mean(), 2),
-        "pct_at_380s_limit": round(100 * (durations <= SA3_MEDIUM_MAX_DURATION).mean(), 2),
-        "n_songs_over_380s": int((durations > SA3_MEDIUM_MAX_DURATION).sum()),
     }

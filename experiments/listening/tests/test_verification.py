@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 import pandas as pd
 
 from experiments.listening.verification import (
@@ -145,9 +147,8 @@ def test_bypass_routing_rules_from_verification_partial_category():
         }],
     }
     assert bypass_realify_from_verification(doc) == {}
-    rules = bypass_routing_rules_from_verification(doc)
-    assert len(rules) == 1
-    assert rules[0]["name_keywords"] == ["soprano"]
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        bypass_routing_rules_from_verification(doc)
 
 
 def test_bypass_realify_from_verification_all_stems():
@@ -239,19 +240,8 @@ def test_build_verification_meta_marks_filter_pass(tmp_path: Path):
         ],
     }))
 
-    catalog = SweepCatalog("preset", sweep_dir, tmp_path / "basic", probe_stems_path=probe_path)
-    meta = build_verification_meta(
-        catalog,
-        _responses(),
-        source_responses="responses_test.json",
-    )
-    piano = next(entry for entry in meta["categories"] if entry["category"] == "piano")
-    passed = {v["variant_id"]: v["passed_filter"] for v in piano["variants"]}
-    assert passed["good"] is True
-    assert passed["bad"] is False
-    assert piano["auto_winner_variant_id"] == "good"
-
-
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        SweepCatalog("preset", tmp_path / "sweep", tmp_path / "basic")
 def test_verification_from_patch_swipe_votes():
     from experiments.listening.verification import verification_from_patch_swipe_votes
 
@@ -532,53 +522,4 @@ def test_build_patch_verify_swipe_cards_prefers_organ_2(tmp_path: Path):
 
 
 def test_build_preset_realify_verification_meta(tmp_path: Path):
-    from experiments.listening.catalog import SweepCatalog
-    import yaml
-
-    sweep_dir = tmp_path / "sweep"
-    song_dir = tmp_path / "basic" / "data" / "0/13/QmTest"
-    song_dir.mkdir(parents=True)
-    (song_dir / "stem_0.flac").write_bytes(b"x")
-
-    variant_dir = sweep_dir / "variants" / "steps8_cfg1.0" / "data" / "0/13/QmTest"
-    variant_dir.mkdir(parents=True)
-    (variant_dir / "stem_0.flac").write_bytes(b"x")
-
-    pd.DataFrame([{
-        "variant_id": "steps8_cfg1.0",
-        "init_noise_level": 0.45,
-        "prompt_variant": "minimal",
-        "steps": 8,
-        "cfg_scale": 1.0,
-        "stem_id": "piano_a",
-        "category": "piano",
-        "path": str(song_dir),
-        "track": 0,
-        "out_path": str(variant_dir / "stem_0.flac"),
-    }]).to_csv(sweep_dir / "manifest.csv", index=False)
-
-    probe_path = tmp_path / "probe_stems.yaml"
-    probe_path.write_text(yaml.dump({
-        "stems": [
-            {"id": "piano_a", "category": "piano", "song_id": "0/13/QmTest", "track": 0},
-        ],
-    }))
-
-    catalog = SweepCatalog("preset", sweep_dir, tmp_path / "basic", probe_stems_path=probe_path)
-    meta = build_preset_realify_verification_meta(
-        catalog,
-        category_winners={"piano": "steps8_cfg1.0"},
-        composed_config_fn=lambda category, variant_id: {
-            "variant_id": variant_id,
-            "init_noise_level": 0.45,
-            "prompt_variant": "minimal",
-            "steps": 8,
-            "cfg_scale": 1.0,
-        },
-        verification_phase="phase3_diffusion",
-    )
-    assert meta["verification_mode"] == "preset_realify"
-    assert meta["source_responses"] == PRESET_VERIFY_SOURCE
-    piano = meta["categories"][0]
-    assert piano["auto_winner_variant_id"] == "steps8_cfg1.0"
-    assert len(piano["variants"]) == 1
+    pytest.skip("preset_sweep removed")

@@ -6,13 +6,14 @@ from pathlib import Path
 
 import numpy as np
 
-from experiments.preset_sweep.diverse_stems import (
+from experiments.listening_shared.clips import (
     DEFAULT_CLIP_SECONDS,
     DEFAULT_MIN_RMS,
     clip_stem_waveform,
+    detect_onset_times,
+    waveform_to_mono_numpy,
 )
 from synthesis.audio import stem_duration_seconds, stem_is_valid, stem_n_samples
-from synthesis.realify.content_fidelity import detect_onset_times, waveform_to_mono_numpy
 from shared.config import SAMPLE_RATE
 
 DEFAULT_EDGE_FRACTION = 0.15

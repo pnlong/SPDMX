@@ -1,261 +1,50 @@
-"""Tests for end-of-pipeline verification."""
+"""Tests for end-of-pipeline verification (patch only; preset_sweep removed)."""
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from experiments.listening.final_verify import (
     composed_config,
-    final_phase_winners,
-    patch_phase1_sweep_dir,
-    readiness_errors,
     verification_phase,
 )
-from experiments.preset_sweep.config import LOCKED_VERIFY_VARIANT, PHASE4, phase_output_dir
+from experiments.listening_shared.clips import PRESET_SWEEP_REMOVED
 
 
-def _write_preset_winners(path: Path, *, phase3_complete: bool = False, phase1b_complete: bool = True):
+def test_preset_sweep_removed():
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        verification_phase("preset")
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        composed_config("preset", "piano", "noise0.45")
+    assert "preset_sweep" in PRESET_SWEEP_REMOVED
+
+
+def _write_patch_winners(path: Path):
     doc = {
         "phases": {
-            "phase1_noise": {
+            "phase1_soundfonts": {
                 "completed": True,
-                "winners": {"piano": "noise0.45"},
+                "winners": {"piano": "sgm"},
             },
-            "phase1b_noise_audit": {
-                "completed": phase1b_complete,
-                "winners": {"piano": "noise0.45"},
-            },
-            "phase2_prompts": {
+            "phase2_fx": {
                 "completed": True,
-                "winners": {"piano": "minimal"},
-            },
-            "phase3_diffusion": {
-                "completed": phase3_complete,
-                "winners": {"piano": "steps8_cfg1.0"} if phase3_complete else {},
+                "winners": {"piano": "dry"},
             },
         },
     }
     path.write_text(yaml.dump(doc))
 
 
-def test_verification_phase_uses_phase4_when_manifest_exists(tmp_path: Path, monkeypatch):
-    winners_path = tmp_path / "winners.yaml"
-    _write_preset_winners(winners_path, phase3_complete=True)
-    sweep_root = tmp_path / "sweep"
-    phase4_dir = phase_output_dir(sweep_root, PHASE4)
-    phase4_dir.mkdir(parents=True)
-    (phase4_dir / "manifest.csv").write_text("phase,variant_id\n")
-
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.preset_default_output_dir",
-        lambda output_root=None: sweep_root,
-    )
-    assert verification_phase("preset", winners_path) == PHASE4
+def test_verification_phase_patch(tmp_path: Path):
+    winners = tmp_path / "winners.yaml"
+    _write_patch_winners(winners)
+    assert verification_phase("patch", winners) == "phase1_soundfonts"
 
 
-def test_final_phase_winners_use_locked_variant_for_phase4(tmp_path: Path, monkeypatch):
-    winners_path = tmp_path / "winners.yaml"
-    _write_preset_winners(winners_path, phase3_complete=True)
-    sweep_root = tmp_path / "sweep"
-    phase4_dir = phase_output_dir(sweep_root, PHASE4)
-    phase4_dir.mkdir(parents=True)
-    (phase4_dir / "manifest.csv").write_text("phase,variant_id\n")
-
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.preset_default_output_dir",
-        lambda output_root=None: sweep_root,
-    )
-    assert final_phase_winners("preset", winners_path) == {
-        "piano": LOCKED_VERIFY_VARIANT,
-    }
-
-
-def test_composed_config_phase4_uses_locked_winners(tmp_path: Path, monkeypatch):
-    winners_path = tmp_path / "winners.yaml"
-    _write_preset_winners(winners_path, phase3_complete=True)
-    sweep_root = tmp_path / "sweep"
-    phase4_dir = phase_output_dir(sweep_root, PHASE4)
-    phase4_dir.mkdir(parents=True)
-    (phase4_dir / "manifest.csv").write_text("phase,variant_id\n")
-
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.preset_default_output_dir",
-        lambda output_root=None: sweep_root,
-    )
-    config = composed_config("preset", "piano", LOCKED_VERIFY_VARIANT, winners_path)
-    assert config["variant_id"] == LOCKED_VERIFY_VARIANT
-    assert config["init_noise_level"] == 0.45
-    assert config["prompt_variant"] == "minimal"
-    assert config["steps"] == 8
-
-
-def test_verification_phase_uses_phase2_when_phase3_incomplete(tmp_path: Path, monkeypatch):
-    winners_path = tmp_path / "winners.yaml"
-    _write_preset_winners(winners_path, phase3_complete=False)
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.PRESET_EXPERIMENT_DIR",
-        tmp_path,
-    )
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    assert verification_phase("preset", winners_path) == "phase2_prompts"
-
-
-def test_verification_phase_uses_phase3_when_complete(tmp_path: Path, monkeypatch):
-    winners_path = tmp_path / "winners.yaml"
-    _write_preset_winners(winners_path, phase3_complete=True)
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    assert verification_phase("preset", winners_path) == "phase3_diffusion"
-
-
-def test_readiness_errors_when_phase1_incomplete(tmp_path: Path, monkeypatch):
-    winners_path = tmp_path / "winners.yaml"
-    winners_path.write_text(yaml.dump({
-        "phases": {
-            "phase1_noise": {"completed": False, "winners": {}},
-            "phase2_prompts": {"completed": False, "winners": {}},
-            "phase3_diffusion": {"completed": False, "winners": {}},
-        },
-    }))
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    errors = readiness_errors("preset", winners_path)
-    assert any("phase1_noise" in err for err in errors)
-
-
-def test_verification_phase_patch_uses_phase1(tmp_path: Path, monkeypatch):
-    winners_path = tmp_path / "winners.yaml"
-    winners_path.write_text(yaml.dump({
-        "phases": {
-            "phase1_soundfonts": {"completed": True, "winners": {"piano": ["sgm_v2"]}},
-            "phase2_fx": {"completed": True, "winners": {"piano": "fx_light"}},
-        },
-    }))
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    assert verification_phase("patch", winners_path) == "phase1_soundfonts"
-
-
-def test_final_phase_winners(tmp_path: Path, monkeypatch):
-    winners_path = tmp_path / "winners.yaml"
-    _write_preset_winners(winners_path, phase3_complete=True)
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    winners = __import__(
-        "experiments.listening.final_verify",
-        fromlist=["final_phase_winners"],
-    ).final_phase_winners("preset", winners_path)
-    assert winners == {"piano": "steps8_cfg1.0"}
-
-
-def test_composed_config_patch_soundfont(tmp_path: Path, monkeypatch):
-    winners_path = tmp_path / "winners.yaml"
-    winners_path.write_text(yaml.dump({
-        "phases": {
-            "phase1_soundfonts": {
-                "completed": True,
-                "winners": {"piano": ["sgm_v2"]},
-            },
-            "phase2_fx": {
-                "completed": True,
-                "winners": {"piano": "fx_light"},
-            },
-        },
-    }))
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    config = composed_config("patch", "piano", "sgm_v2", winners_path)
-    assert config == {
-        "variant_id": "sgm_v2",
-        "soundfont_id": "sgm_v2",
+def test_composed_config_patch():
+    assert composed_config("patch", "piano", "sgm") == {
+        "variant_id": "sgm",
+        "soundfont_id": "sgm",
         "fx_profile": "dry",
     }
-
-
-def test_patch_phase1_sweep_dir_prefers_archive_when_winners_are_archive_ids(
-    tmp_path: Path,
-    monkeypatch,
-):
-    import pandas as pd
-
-    winners_path = tmp_path / "winners.yaml"
-    winners_path.write_text(yaml.dump({
-        "phases": {
-            "phase1_soundfonts": {
-                "completed": True,
-                "winners": {"piano": ["airfont_380_final", "sgm_v2"]},
-            },
-            "phase2_fx": {
-                "completed": True,
-                "winners": {"piano": "fx_dry"},
-            },
-        },
-    }))
-    sweep_root = tmp_path / "output"
-    legacy_dir = sweep_root / "phase1_soundfonts"
-    archive_dir = sweep_root / "phase1_archive_soundfonts"
-    legacy_dir.mkdir(parents=True)
-    archive_dir.mkdir(parents=True)
-
-    pd.DataFrame([{
-        "variant_id": "sgm_v2",
-        "stem_id": "piano_a",
-        "category": "piano",
-        "path": "/song",
-        "track": 0,
-        "out_path": "/out",
-    }]).to_csv(legacy_dir / "manifest.csv", index=False)
-    pd.DataFrame([
-        {
-            "variant_id": "airfont_380_final",
-            "stem_id": "piano_a",
-            "category": "piano",
-            "path": "/song",
-            "track": 0,
-            "out_path": "/out",
-        },
-        {
-            "variant_id": "sgm_v2",
-            "stem_id": "piano_a",
-            "category": "piano",
-            "path": "/song",
-            "track": 0,
-            "out_path": "/out2",
-        },
-    ]).to_csv(archive_dir / "manifest.csv", index=False)
-
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.winners_path_for",
-        lambda sweep_type, path=None: winners_path,
-    )
-    monkeypatch.setattr(
-        "experiments.listening.final_verify.patch_default_output_dir",
-        lambda output_root=None: sweep_root,
-    )
-
-    assert patch_phase1_sweep_dir(winners_path) == archive_dir

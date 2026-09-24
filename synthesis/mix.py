@@ -1,6 +1,6 @@
 """Peak-normalize stems so they remain linearly summable.
 
-Synthesis / realify write raw stems. Run this afterward to:
+Synthesis writes raw stems. Run this afterward to:
 
 1. Loudness-normalize stems (−23 LUFS)
 2. Apply MIDI velocity dynamics (track_max / song_max)
@@ -45,9 +45,7 @@ from synthesis.cli_common import add_audio_format_arg
 from synthesis.dense_midi import default_corrected_midi_dir
 from synthesis.paths import (
     ablation_raw_dir,
-    ablation_realify_dir,
     full_stems_dir,
-    full_stems_realify_dir,
     resolve_output_song_dir,
 )
 from synthesis.velocity import (
@@ -632,21 +630,14 @@ def resolve_stems_dir(
     stems_dir: str | None = None,
     output_dir: str = OUTPUT_DIR,
     render_mode: str = RENDER_MODE_BASIC,
-    realify: bool = False,
     full: bool = False,
 ) -> Path:
     """Resolve the stem tree to normalize, mirroring synthesize output layout."""
     if stems_dir is not None:
         return Path(stems_dir)
     if full:
-        return Path(
-            full_stems_realify_dir(output_dir) if realify else full_stems_dir(output_dir)
-        )
-    return Path(
-        ablation_realify_dir(output_dir, render_mode)
-        if realify
-        else ablation_raw_dir(output_dir, render_mode)
-    )
+        return Path(full_stems_dir(output_dir))
+    return Path(ablation_raw_dir(output_dir, render_mode))
 
 
 def mix_command(
@@ -655,7 +646,7 @@ def mix_command(
     jobs: int | None = None,
     flac: bool = False,
 ) -> str:
-    """CLI string to print after a stems-only synthesis/realify run."""
+    """CLI string to print after a stems-only synthesis run."""
     n_jobs = jobs if jobs is not None else max(1, int(multiprocessing.cpu_count() / 4))
     cmd = f"uv run python -m synthesis.mix --stems-dir {stems_dir} -j {n_jobs}"
     if flac:
@@ -694,7 +685,7 @@ def parse_args(args=None):
         "--stems-dir",
         default=None,
         type=str,
-        help="Stem tree to normalize (overrides --render-mode / --realify / --full).",
+        help="Stem tree to normalize (overrides --render-mode / --full).",
     )
     parser.add_argument("-o", "--output_dir", default=OUTPUT_DIR, type=str)
     parser.add_argument(
@@ -712,7 +703,6 @@ def parse_args(args=None):
         choices=list(RENDER_MODES),
         help="Ablation/full stem tree to resolve when --stems-dir is omitted.",
     )
-    parser.add_argument("--realify", action="store_true")
     parser.add_argument(
         "--full",
         action="store_true",
@@ -774,7 +764,6 @@ def main(args=None) -> None:
         stems_dir=opts.stems_dir,
         output_dir=opts.output_dir,
         render_mode=opts.render_mode,
-        realify=opts.realify,
         full=opts.full,
     )
     if not stems_dir.is_dir():

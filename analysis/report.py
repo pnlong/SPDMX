@@ -1,4 +1,4 @@
-"""Report duration statistics and recommend SA3 model."""
+"""Report stem duration statistics."""
 
 from __future__ import annotations
 
@@ -11,14 +11,12 @@ import pandas as pd
 from shared.config import (
     OUTPUT_DIR,
     RENDER_MODE_BASIC,
-    SA3_MEDIUM_MAX_DURATION,
-    SA3_SMALL_MUSIC_MAX_DURATION,
 )
 from synthesis.paths import ablation_raw_dir
 
 
 def parse_args(args=None, namespace=None):
-    parser = argparse.ArgumentParser(description="Report stem duration stats and SA3 model recommendation.")
+    parser = argparse.ArgumentParser(description="Report stem duration stats.")
     parser.add_argument("-i", "--input_filepath", default=None, type=str)
     parser.add_argument("-o", "--output_filepath", default=None, type=str)
     return parser.parse_args(args=args, namespace=namespace)
@@ -28,27 +26,14 @@ def song_max_durations(df: pd.DataFrame) -> pd.Series:
     return df.groupby("path")["duration_seconds"].max()
 
 
-def recommend_model(song_durations: pd.Series, threshold: float = 0.95) -> dict:
-    under_small = (song_durations <= SA3_SMALL_MUSIC_MAX_DURATION).mean()
-    under_medium = (song_durations <= SA3_MEDIUM_MAX_DURATION).mean()
-    over_medium = (song_durations > SA3_MEDIUM_MAX_DURATION).sum()
-
-    if under_small >= threshold:
-        model = "small-music"
-        reason = f"{100 * under_small:.1f}% of songs fit within {SA3_SMALL_MUSIC_MAX_DURATION}s"
-    else:
-        model = "medium"
-        reason = f"only {100 * under_small:.1f}% of songs fit within {SA3_SMALL_MUSIC_MAX_DURATION}s; use medium (up to {SA3_MEDIUM_MAX_DURATION}s)"
-
+def duration_summary(song_durations: pd.Series) -> dict:
     return {
-        "recommended_model": model,
-        "reason": reason,
-        "pct_songs_under_120s": round(100 * under_small, 2),
-        "pct_songs_under_380s": round(100 * under_medium, 2),
-        "n_songs_over_380s": int(over_medium),
+        "n_songs": int(len(song_durations)),
         "median_song_duration_seconds": round(float(song_durations.median()), 2),
         "p95_song_duration_seconds": round(float(song_durations.quantile(0.95)), 2),
         "p99_song_duration_seconds": round(float(song_durations.quantile(0.99)), 2),
+        "max_song_duration_seconds": round(float(song_durations.max()), 2),
+        "mean_song_duration_seconds": round(float(song_durations.mean()), 2),
     }
 
 
@@ -64,7 +49,7 @@ def breakdown_by_column(df: pd.DataFrame, column: str, top_n: int = 10) -> pd.Da
 def build_report(duration_df: pd.DataFrame) -> dict:
     song_durations = song_max_durations(duration_df)
     report = {
-        "summary": recommend_model(song_durations),
+        "summary": duration_summary(song_durations),
         "by_program": breakdown_by_column(duration_df, "program").to_dict(orient="records"),
         "by_is_drum": breakdown_by_column(duration_df, "is_drum").to_dict(orient="records"),
     }

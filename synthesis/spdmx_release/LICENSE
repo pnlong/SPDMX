@@ -14,7 +14,3 @@ Underlying symbolic scores come from PDMX, a public-domain MusicXML/MIDI
 collection (Long et al., ICASSP 2025). Join this package to PDMX.csv on
 song_id: PDMX path is ./data/{song_id}.json and PDMX MIDI is
 ./mid/{song_id}.mid.
-
-If any audio stems were produced with Stable Audio 3, those files are
-additionally subject to the Stability AI Community License
-(https://stability.ai/license). See README.md in this directory.

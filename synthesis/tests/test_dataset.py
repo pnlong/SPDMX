@@ -12,7 +12,6 @@ from shared.config import (
     SPDMX_DATASET_DIR_NAME,
     SPDMX_MID_DIR_NAME,
     STEMS_DIR_NAME,
-    STEMS_REALIFY_DIR_NAME,
 )
 from synthesis.dataset import (
     prepare_ablation_dataset,
@@ -23,12 +22,10 @@ from synthesis.dataset import (
 from synthesis.paths import (
     ablation_dir,
     ablation_raw_dir,
-    ablation_realify_dir,
     ablations_root,
     condition_name,
     dev_root,
     full_stems_dir,
-    full_stems_realify_dir,
     song_lengths_dir,
     spdmx_audio_dir,
     spdmx_dataset_dir,
@@ -75,17 +72,17 @@ def test_dev_root():
 def test_ablation_paths():
     assert ablations_root(OUTPUT_DIR).endswith(f"/{DEV_DIR_NAME}/ablations")
     assert ablation_dir(OUTPUT_DIR, "basic") == f"{OUTPUT_DIR}/{DEV_DIR_NAME}/ablations/basic"
-    assert condition_name("basic", realify=True) == "basic_realify"
+    assert condition_name("basic") == "basic"
+    assert condition_name("basic", realify=True) == "basic"
 
 
 def test_ablation_output_dirs():
     assert ablation_raw_dir("/out", "basic") == f"/out/{DEV_DIR_NAME}/ablations/basic"
-    assert ablation_realify_dir("/out", "slakh") == f"/out/{DEV_DIR_NAME}/ablations/slakh_realify"
+    assert ablation_raw_dir("/out", "slakh") == f"/out/{DEV_DIR_NAME}/ablations/slakh"
 
 
 def test_full_stem_dirs():
     assert full_stems_dir("/out") == f"/out/{DEV_DIR_NAME}/{STEMS_DIR_NAME}"
-    assert full_stems_realify_dir("/out") == f"/out/{DEV_DIR_NAME}/{STEMS_REALIFY_DIR_NAME}"
 
 
 def test_song_lengths_dir():

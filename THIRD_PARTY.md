@@ -10,12 +10,6 @@ repository code. Training-data provenance is recorded for the paper ethics table
   and `archive_soundfonts.yaml` with archive.org / schristiancollins sources.
   Prefer public-domain / redistributable banks for shipped ablations.
 
-## Stable Audio 3 (realify)
-
-- Open-weight audio-to-audio models trained on licensed data (see
-  `synthesis/realify/stable-audio-3/` submodule docs and Stability attribution).
-- Used in ablations A2 / B2 / optional B4.
-
 ## MIDI-DDSP (neural orchestral stems, ablation B3)
 
 - **Software:** [magenta/midi-ddsp](https://github.com/magenta/midi-ddsp) —
@@ -55,5 +49,4 @@ repository code. Training-data provenance is recorded for the paper ethics table
 
 - Lyric-conditioned singing-voice synthesis (DiffSinger, NNSVS, etc.): no
   open-weight English SVS checkpoint met the same training-data provenance bar
-  as URMP/MAESTRO at the time of this work. Vocal stems use the soundfont
-  (+ optional SA3 realify) path.
+  as URMP/MAESTRO at the time of this work. Vocal stems use the soundfont path.

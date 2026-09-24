@@ -27,7 +27,6 @@ from synthesis.audio import (
 )
 from synthesis.patches import LISTENING_CATEGORY_GM_CLASSES, resolve_probe_category
 from synthesis.paths import ablations_root
-from synthesis.realify.captions.generate import generate_captions_from_tables
 from synthesis.paths import resolve_output_song_dir
 
 # Stable order for sidebar filters (probe / slakh listening categories).
@@ -317,11 +316,10 @@ class AblationCatalog:
     def _build_captions(self) -> pd.DataFrame:
         if self._stems_df.empty or self._songs_df.empty:
             return pd.DataFrame(columns=["path", "track", "prompt"])
-        return generate_captions_from_tables(
-            self._songs_df,
-            self._stems_df,
-            seed=self.caption_seed,
-        )
+        # SA3 caption generation removed; listening UI works without prompts.
+        out = self._stems_df[["path", "track"]].copy()
+        out["prompt"] = ""
+        return out
 
     def _index_song_categories(self) -> dict[str, list[str]]:
         """Map song path -> unique listening categories present in its stems."""

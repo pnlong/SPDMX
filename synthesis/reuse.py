@@ -13,7 +13,7 @@ from shared.config import (
     RENDER_MODES,
 )
 from synthesis.audio import stem_path
-from synthesis.paths import ablation_raw_dir, ablation_realify_dir, condition_name
+from synthesis.paths import ablation_raw_dir, condition_name
 
 
 def uses_ddsp(render_mode: str) -> bool:
@@ -82,16 +82,5 @@ def donor_raw_stem_path(
     return stem_path(donor_dir / "data" / song_rel, track, audio_format)
 
 
-def donor_realify_stem_path(
-    output_dir: str,
-    donor_mode: str,
-    song_rel: str,
-    track: int,
-    audio_format: str,
-) -> Path:
-    donor_dir = Path(ablation_realify_dir(output_dir, donor_mode))
-    return stem_path(donor_dir / "data" / song_rel, track, audio_format)
-
-
-def donor_condition_name(donor_mode: str, *, realify: bool) -> str:
-    return condition_name(donor_mode, realify=realify)
+def donor_condition_name(donor_mode: str) -> str:
+    return condition_name(donor_mode)

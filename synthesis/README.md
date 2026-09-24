@@ -1,6 +1,7 @@
 # synthesis
 
-Turn PDMX symbolic MIDI into mono FLAC stems; optionally realify with Stable Audio 3.
+Turn PDMX symbolic MIDI into mono FLAC stems via FluidSynth and optional
+MIDI-DDSP / DDSP-Piano hybrid backends.
 
 Environment setup: **[`SETUP.md`](../SETUP.md)** at repo root.
 
@@ -24,10 +25,11 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 
 | Script | Purpose |
 |--------|---------|
-| `synthesize.py` | Main CLI: ablation sample (default) or `--full` PDMX, `--render-mode`, `--realify` |
+| `synthesize.py` | Main CLI: ablation sample (default) or `--full` PDMX, `--render-mode` |
+| `final.py` | Hybrid production render from `recipe.yaml` |
 | `mix.py` | Post-hoc LUFS × velocity dynamics × peak gain so stems remain summable |
 | `render_mixes.py` | ffmpeg stem→`mix/<song_id>.flac` (raw sum, mono); production via `--only-pass mix` |
-| `listening/serve.py` | Localhost viewer for A1–CB2 ablation comparison |
+| `listening/serve.py` | Localhost viewer for ablation comparison |
 | `listening/make_clips.py` | Aligned 10s clips (windows from A1) for listening |
 | `build_spdmx.py` | Post-render: flattened `{OUTPUT}/SPDMX/chunk_N/<song_id>/` from `SPDMX_dev/` |
 | `build_songs_table.py` | Song-level `songs.csv` + `subset:*` from `stems.csv` (also invoked by `build_spdmx`) |
@@ -37,7 +39,9 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 
 | File | Description |
 |------|-------------|
-| `synthesize.py` | MIDI → fluidsynth → mono FLAC stems; optional SA3 realify pass |
+| `synthesize.py` | MIDI → fluidsynth / DDSP → mono FLAC stems |
+| `final.py` | Hybrid production CLI (per-category `recipe.yaml`) |
+| `recipe.yaml` | Per-category ablation id → production backend |
 | `build_spdmx.py` | Post-render flattened chunking of `SPDMX_dev/` into download chunks + `songs.csv` |
 | `render_mixes.py` | ffmpeg full-song mixes under `SPDMX_dev/mix/` |
 | `build_songs_table.py` | Aggregate `stems.csv` → `songs.csv` (`subset:all`, `subset:bdgp`, …) |
@@ -49,10 +53,10 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 | `mix.py` | Dataset-level stem normalization (summability) |
 | `dataset.py` | Ablation sampling vs full-dataset filtering |
 | `paths.py` | Output path helpers (`dev/ablations/`, `dev/stems/`, `dev/analysis/`, `SPDMX/`) |
-| `patches.py` | Slakh-style patch randomization (stub) |
+| `patches.py` | Slakh-style patch randomization |
 | `cli_common.py` | Shared argparse flags for synthesis CLIs |
 | `listening/` | Localhost ablation comparison viewer (`python -m synthesis.listening.serve`) |
-| `realify/` | Stable Audio 3 audio-to-audio wrapper and captions |
+| `ddsp/` | MIDI-DDSP + DDSP-Piano workers (Track C) |
 | `tests/` | Synthesis unit tests |
 
 ## Output layout (development)
@@ -61,9 +65,8 @@ On deepfreeze:
 
 ```
 {OUTPUT_DIR}/dev/
-├── ablations/{basic,basic_realify,slakh,slakh_realify,ddsp_basic,ddsp_basic_realify,ddsp_slakh,ddsp_slakh_realify,clips}/
-├── stems/              # synthesize --full
-└── stems_realify/
+├── ablations/{basic,slakh,ddsp_basic,ddsp_slakh,clips}/
+└── stems/              # synthesize --full
 ```
 
 Browsable in-repo via gitignored symlink [`ablations_output/`](ablations_output/) (created by `shared.setup_symlinks` or `synthesize`).

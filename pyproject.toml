@@ -1,7 +1,7 @@
 [project]
 name = "spdmx"
 version = "0.2.0"
-description = "Synthesize PDMX symbolic music as stems, captions, and SA3-realified audio"
+description = "Synthesize PDMX symbolic music as multi-stem audio"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -47,10 +47,7 @@ testpaths = [
     "shared/tests",
     "synthesis/tests",
     "synthesis/listening/tests",
-    "synthesis/realify/captions/tests",
-    "synthesis/realify/tests",
     "analysis/tests",
-    "experiments/preset_sweep/tests",
     "experiments/patch_sweep/tests",
     "experiments/listening/tests",
     "experiments/listening_shared/tests",

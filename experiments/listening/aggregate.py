@@ -144,21 +144,9 @@ def noise_audit_candidates(
     phase1_winners: dict[str, str],
 ) -> dict[str, set[str]]:
     """Per-category variant ids to compare in phase-1b (winner vs one-step-lower)."""
-    from experiments.preset_sweep.config import (
-        init_noise_level_from_variant_id,
-        lower_noise_level,
-        noise_variant_id,
-    )
+    from experiments.listening_shared.clips import PRESET_SWEEP_REMOVED
 
-    candidates: dict[str, set[str]] = {}
-    for category, variant_id in phase1_winners.items():
-        winner_level = init_noise_level_from_variant_id(variant_id)
-        lower_level = lower_noise_level(winner_level)
-        candidates[str(category)] = {
-            noise_variant_id(winner_level),
-            noise_variant_id(lower_level),
-        }
-    return candidates
+    raise RuntimeError(PRESET_SWEEP_REMOVED)
 
 
 def noise_audit_winners(
@@ -168,55 +156,10 @@ def noise_audit_winners(
     content_threshold: float = DEFAULT_NOISE_CONTENT_THRESHOLD,
 ) -> tuple[pd.DataFrame, dict[str, str]]:
     """Pick audit winners after production silence enforcement: content gate, then realism."""
-    if df.empty:
-        return pd.DataFrame(), {}
+    del df, phase1_winners, content_threshold
+    from experiments.listening_shared.clips import PRESET_SWEEP_REMOVED
 
-    from experiments.listening.verification import variant_stats
-    from experiments.preset_sweep.config import init_noise_level_from_variant_id
-
-    stats = variant_stats(df)
-    if stats.empty:
-        return pd.DataFrame(), {}
-
-    stats = stats.copy()
-    stats["init_noise_level"] = stats["variant_id"].map(_noise_level_from_variant_id)
-    candidates = noise_audit_candidates(phase1_winners)
-
-    winners = []
-    revisions: dict[str, str] = {}
-    for category, group in stats.groupby("category", dropna=False):
-        category = str(category)
-        allowed = candidates.get(category)
-        if not allowed:
-            continue
-        subset = group[group["variant_id"].isin(allowed)]
-        if subset.empty:
-            continue
-        passing = subset[subset["mean_content"] >= content_threshold]
-        pool = passing if not passing.empty else subset
-        pool = pool.sort_values(
-            ["mean_realism", "init_noise_level", "mean_content", "variant_id"],
-            ascending=[False, True, False, True],
-        )
-        best = pool.iloc[0]
-        winners.append({
-            "category": category,
-            "variant_id": best["variant_id"],
-            "mean_content": round(float(best["mean_content"]), 2),
-            "mean_realism": round(float(best["mean_realism"]), 2),
-            "n_stems": int(best["n_stems"]),
-            "passed_content_threshold": bool(best["mean_content"] >= content_threshold),
-        })
-
-        phase1_variant = phase1_winners.get(category)
-        if phase1_variant and best["variant_id"] != phase1_variant:
-            best_level = init_noise_level_from_variant_id(str(best["variant_id"]))
-            phase1_level = init_noise_level_from_variant_id(phase1_variant)
-            if best_level < phase1_level:
-                revisions[category] = str(best["variant_id"])
-
-    winners_df = pd.DataFrame(winners).sort_values("category") if winners else pd.DataFrame()
-    return winners_df, revisions
+    raise RuntimeError(PRESET_SWEEP_REMOVED)
 
 
 def shortlist_variants(
@@ -463,7 +406,7 @@ def preset_config_suggestions(
         if "cfg_scale" in match and pd.notna(match["cfg_scale"]):
             lines.append(f"    cfg_scale: {float(match['cfg_scale'])}")
         lines.append("")
-    lines.append("# After all phases: uv run python -m experiments.preset_sweep.lock")
+    lines.append("# After all phases: uv run python -m experiments.patch_sweep.lock")
     return "\n".join(lines)
 
 
@@ -650,7 +593,7 @@ def parse_args(args=None, namespace=None):
         "--output",
         default=None,
         type=Path,
-        help="Write results markdown (e.g. experiments/preset_sweep/results_notes.md).",
+        help="Write results markdown (e.g. experiments/patch_sweep/results_notes.md).",
     )
     parser.add_argument(
         "--sweep-dir",

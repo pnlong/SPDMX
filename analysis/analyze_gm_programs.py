@@ -87,9 +87,7 @@ _WORKER_PRESETS: dict | None = None
 
 def _init_worker() -> None:
     global _WORKER_PRESETS
-    from synthesis.realify.preset_config import load_presets
-
-    _WORKER_PRESETS = load_presets()
+    _WORKER_PRESETS = None
 
 
 def _worker(args: tuple[str, str]) -> tuple[list[dict], bool]:

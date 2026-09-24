@@ -211,5 +211,4 @@ Please cite PDMX and this work if you use sPDMX.
 
 ## License
 
-See `LICENSE` in this directory (CC BY 4.0, with PDMX public-domain scores and
-optional Stability AI terms for SA3-realified stems).
+See `LICENSE` in this directory (CC BY 4.0, with PDMX public-domain scores).

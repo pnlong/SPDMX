@@ -273,13 +273,13 @@ def test_pass_sequence_starts_with_layout():
     no_realify = CategoryRecipe(
         specs={"piano": CategorySpec("basic", False, "basic", "basic")},
     )
-    with_realify = CategoryRecipe(
+    with_realify_flag = CategoryRecipe(
         specs={"piano": CategorySpec("basic", True, "basic", "basic_realify")},
     )
     with_ddsp = CategoryRecipe(
         specs={"strings": CategorySpec("midi-ddsp", False, "basic", "ddsp_basic")},
     )
-    with_ddsp_realify = CategoryRecipe(
+    with_ddsp_realify_flag = CategoryRecipe(
         specs={"strings": CategorySpec("midi-ddsp", True, "basic", "ddsp_basic_realify")},
     )
     assert pass_sequence(no_realify) == (
@@ -288,11 +288,12 @@ def test_pass_sequence_starts_with_layout():
     assert pass_sequence(with_ddsp) == (
         "layout", "fluidsynth", "midi_ddsp", "mix", "verify",
     )
-    assert pass_sequence(with_realify) == (
-        "layout", "fluidsynth", "realify", "mix", "verify",
+    # Realify flag on CategorySpec is ignored; SA3 pass is gone.
+    assert pass_sequence(with_realify_flag) == (
+        "layout", "fluidsynth", "mix", "verify",
     )
-    assert pass_sequence(with_ddsp_realify) == (
-        "layout", "fluidsynth", "midi_ddsp", "realify", "mix", "verify",
+    assert pass_sequence(with_ddsp_realify_flag) == (
+        "layout", "fluidsynth", "midi_ddsp", "mix", "verify",
     )
     with_piano_ddsp = CategoryRecipe(
         specs={
@@ -876,5 +877,5 @@ def test_expected_song_count_from_spdmx_csv(tmp_path: Path):
         "song_id": ["a/b/QmOne", "a/b/QmOne", "a/b/QmTwo"],
         "track": [0, 1, 0],
     }).to_csv(dest / "stems.csv", index=False)
-    args = parse_args(["--only-pass", "realify", "-o", str(tmp_path)])
+    args = parse_args(["--only-pass", "mix", "-o", str(tmp_path)])
     assert expected_song_count(args, str(dest)) == 2

@@ -36,7 +36,7 @@ flowchart LR
 - Stems are zero-padded to a common length before later stages
 - Sample rate: **44.1 kHz**; channel layout: `STEM_CHANNELS` (default mono)
 
-Synthesis and realify write **raw** stems (no LUFS). Loudness, velocity dynamics, and summability normalization are a separate pass:
+Synthesis writes **raw** stems (no LUFS). Loudness, velocity dynamics, and summability normalization are a separate pass:
 
 ### 2. MIDI velocity dynamics
 

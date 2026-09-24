@@ -68,9 +68,8 @@ DEV_DIR_NAME = "dev"
 
 # {OUTPUT_DIR}/dev/stems/ — full-scale stem synthesis (synthesize.py --full; ablations)
 STEMS_DIR_NAME = "stems"
-STEMS_REALIFY_DIR_NAME = "stems_realify"
 
-# {OUTPUT_DIR}/dev/ablations/{basic,basic_realify,slakh,slakh_realify}/ — listening test sample
+# {OUTPUT_DIR}/dev/ablations/{basic,slakh,ddsp_basic,ddsp_slakh}/ — listening test sample
 ABLATIONS_DIR_NAME = "ablations"
 
 # {OUTPUT_DIR}/dev/analysis/ — analysis outputs (song lengths, etc.)
@@ -82,9 +81,8 @@ TRACK_NAMES_DIR_NAME = "track_names"
 # {OUTPUT_DIR}/dev/mid_corrected/ — legacy dense MIDI tree (now {OUTPUT_DIR}/SPDMX_dev/mid/)
 MID_CORRECTED_DIR_NAME = "mid_corrected"
 
-# {OUTPUT_DIR}/dev/experiments/ — experiment outputs (preset sweep, etc.)
+# {OUTPUT_DIR}/dev/experiments/ — experiment outputs (patch sweep, etc.)
 EXPERIMENTS_DIR_NAME = "experiments"
-PRESET_SWEEP_DIR_NAME = "preset_sweep"
 PATCH_SWEEP_DIR_NAME = "patch_sweep"
 
 # {OUTPUT_DIR}/SPDMX_dev/ — flat production render (synthesis.final):
@@ -180,7 +178,7 @@ RENDER_MODES = (
     RENDER_MODE_DDSP_BASIC,
     RENDER_MODE_DDSP_SLAKH,
 )
-# DDSP soundfont-fallback donors (raw / realify).
+# DDSP soundfont-fallback donors (raw ablation trees).
 FALLBACK_DONOR = {
     RENDER_MODE_DDSP_BASIC: RENDER_MODE_BASIC,
     RENDER_MODE_DDSP_SLAKH: RENDER_MODE_SLAKH,
@@ -189,39 +187,3 @@ FALLBACK_DONOR = {
 MAX_N_NOTES_IN_STEM = 50_000
 MAX_STEM_DURATION = 30 * 60
 MAX_N_SAMPLES_IN_STEM = int(MAX_STEM_DURATION * SAMPLE_RATE)
-
-SA3_SMALL_MUSIC_MAX_DURATION = 120
-SA3_MEDIUM_MAX_DURATION = 380
-
-# Stable Audio 3 realify defaults (audio-to-audio timbre transfer)
-REALIFY_INIT_NOISE_LEVEL = 0.45
-REALIFY_STEPS = 8
-REALIFY_CFG_SCALE = 1.0
-REALIFY_DURATION_PADDING_SEC = 6.0  # SA3 model.generate default
-REALIFY_CHUNK_OVERLAP_SEC = 2.0
-# Skip GPUs with less free VRAM at realify startup (medium needs ~8–10 GiB per worker).
-REALIFY_MIN_GPU_FREE_GB = 10.0
-REALIFY_CHUNKED_DECODE = True
-# SA3 stems per GPU forward pass. 0 = auto from free/total VRAM per GPU
-# (see suggest_realify_batch_size). Positive ints override (--realify-batch-size N).
-REALIFY_BATCH_SIZE = 0
-
-# Post-SA3 silence enforcement (reference vs realified energy comparison)
-REALIFY_SILENCE_ENFORCE = True
-REALIFY_SILENCE_CHUNK_MS = 1000.0
-REALIFY_SILENCE_OVERLAP_RATIO = 0.5
-REALIFY_SILENCE_THRESHOLD_DB = -60.0
-REALIFY_SILENCE_ACTIVE_MARGIN_MS = 1000.0
-REALIFY_SILENCE_FADE_MS = 200.0
-
-# Post-SA3 content fidelity gate (reference vs realified onset alignment)
-REALIFY_CONTENT_FIDELITY_ENFORCE = False
-REALIFY_CONTENT_FIDELITY_THRESHOLD = 0.85
-REALIFY_CONTENT_FIDELITY_NOISE_STEP = 0.10
-REALIFY_CONTENT_FIDELITY_MIN_NOISE = 0.25
-REALIFY_CONTENT_FIDELITY_MAX_ATTEMPTS = 4
-REALIFY_CONTENT_FIDELITY_ONSET_TOLERANCE_MS = 50.0
-REALIFY_CONTENT_FIDELITY_ACTIVE_MARGIN_MS = 100.0
-
-# Realify inference backend: "pytorch" (default) or "trt" (TensorRT eager audio-to-audio)
-REALIFY_BACKEND = "pytorch"

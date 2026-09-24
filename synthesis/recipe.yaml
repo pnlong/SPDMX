@@ -1,19 +1,18 @@
 # Per-category synthesis recipe for hybrid production rendering.
 # Keys are LISTENING_CATEGORY_GM_CLASSES. Values are ablation ids:
-#   basic, basic_realify, slakh, slakh_realify,
-#   ddsp_basic, ddsp_basic_realify, ddsp_slakh, ddsp_slakh_realify
+#   basic, slakh, ddsp_basic, ddsp_slakh
 #
-# Locked from ablation listening (realism-first; skip SA3 when gains are small
-# vs hallucination / cost). CA/CB are MIDI-DDSP; basic vs slakh is the fallback.
-# `python -m synthesis.final` reads this file.
+# Locked from ablation listening (realism-first). CA/CB are MIDI-DDSP;
+# basic vs slakh is the soundfont fallback. `python -m synthesis.final` reads
+# this file.
 
 piano: slakh                 # B1: A1 +3 realism, but slakh is a superset (PDMX is piano-heavy)
 drums: basic                 # A1: +16 realism vs B1, too large to take the diversity trade
 strings: ddsp_basic          # CA1 MIDI-DDSP
-wind: ddsp_slakh             # CB1 MIDI-DDSP; skip CB2 realify (~3 pts, hallucination risk)
+wind: ddsp_slakh             # CB1 MIDI-DDSP
 voice: slakh                 # B1: A1 +3 realism, same diversity logic as piano
 mallet: slakh                # B1
-organ: basic                 # A1; skip A2, marginal SA3 gain vs render cost
+organ: basic                 # A1
 guitar: basic                # A1
 brass: ddsp_basic            # CA1 MIDI-DDSP
 polyphonic: slakh            # B1: varied inventory for residual GM classes

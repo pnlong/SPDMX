@@ -159,7 +159,8 @@ class CategoryRecipe:
         return spec is not None and spec.method == METHOD_MIDI_DDSP
 
     def uses_realify(self) -> bool:
-        return any(spec.realify for spec in self.specs.values())
+        """SA3 realify is removed; always False (CSV ``realify`` column kept)."""
+        return False
 
     def uses_slakh(self) -> bool:
         return any(
@@ -173,11 +174,10 @@ class CategoryRecipe:
             c for c, spec in self.specs.items() if spec.method in (METHOD_BASIC, METHOD_SLAKH)
         )
         ddsp = tuple(c for c, spec in self.specs.items() if spec.method == METHOD_MIDI_DDSP)
-        realify = tuple(c for c, spec in self.specs.items() if spec.realify)
-        return {"fluidsynth": fluidsynth, "ddsp": ddsp, "realify": realify}
+        return {"fluidsynth": fluidsynth, "ddsp": ddsp, "realify": ()}
 
     def realify_categories(self) -> frozenset[str]:
-        return frozenset(c for c, spec in self.specs.items() if spec.realify)
+        return frozenset()
 
 
 def hybrid_pass_for_track(
@@ -211,27 +211,33 @@ def hybrid_pass_for_track(
 
 
 def parse_ablation_id(ablation: str) -> CategorySpec:
-    """Expand a listening-test condition id into method / realify / fallback."""
+    """Expand a listening-test condition id into method / fallback.
+
+    Legacy ``*_realify`` ids still parse (same method/fallback as the raw arm)
+    but ``realify`` is always False — SA3 is no longer part of the pipeline.
+    """
     name = str(ablation).strip()
     if name not in _ABLATION_IDS:
         raise ValueError(
             f"Unknown ablation id {name!r}. Expected one of: {', '.join(CONDITION_ORDER)}"
         )
-    realify = name.endswith("_realify")
-    raw = name[: -len("_realify")] if realify else name
+    raw = name[: -len("_realify")] if name.endswith("_realify") else name
     if raw == "basic":
-        return CategorySpec(METHOD_BASIC, realify, FALLBACK_BASIC, name)
+        return CategorySpec(METHOD_BASIC, False, FALLBACK_BASIC, name)
     if raw == "slakh":
-        return CategorySpec(METHOD_SLAKH, realify, FALLBACK_SLAKH, name)
+        return CategorySpec(METHOD_SLAKH, False, FALLBACK_SLAKH, name)
     if raw == "ddsp_basic":
-        return CategorySpec(METHOD_MIDI_DDSP, realify, FALLBACK_BASIC, name)
+        return CategorySpec(METHOD_MIDI_DDSP, False, FALLBACK_BASIC, name)
     if raw == "ddsp_slakh":
-        return CategorySpec(METHOD_MIDI_DDSP, realify, FALLBACK_SLAKH, name)
+        return CategorySpec(METHOD_MIDI_DDSP, False, FALLBACK_SLAKH, name)
     raise ValueError(f"Cannot expand ablation id {name!r}")
 
 
 def parse_category_spec(value: Any, *, category: str) -> CategorySpec:
-    """Parse an ablation id string or expanded ``{method, realify, fallback}`` mapping."""
+    """Parse an ablation id string or expanded ``{method, fallback}`` mapping.
+
+    A ``realify`` key in YAML is accepted for back-compat but always stored as False.
+    """
     if isinstance(value, str):
         return parse_ablation_id(value)
     if not isinstance(value, Mapping):
@@ -247,7 +253,7 @@ def parse_category_spec(value: Any, *, category: str) -> CategorySpec:
             f"Recipe for {category!r} has unknown method {raw_method!r}. "
             f"Expected one of: {', '.join(METHODS)}"
         )
-    realify = bool(value.get("realify", False))
+    realify = False
     raw_fallback = value.get("fallback")
     if raw_fallback is None:
         fallback = FALLBACK_SLAKH if method == METHOD_SLAKH else FALLBACK_BASIC
@@ -746,44 +752,3 @@ def require_recipe_conflicts_ok(
         "Aborted: existing stems do not match the current recipe. "
         "Re-run with -y to regenerate them, or --reset to start over."
     )
-
-
-def sync_realify_sidecar(
-    source_dir: str | Path,
-    dest_dir: str | Path,
-    recipe: CategoryRecipe,
-) -> None:
-    """Rewrite dest ``stem_recipe.csv`` from the current recipe and raw sidecar backends."""
-    from synthesis.paths import remap_path_prefix
-
-    dest = Path(dest_dir)
-    source = Path(source_dir)
-    stems_csv = dest / "stems.csv"
-    if not stems_csv.is_file():
-        return
-    stems = pd.read_csv(stems_csv)
-    src_index = load_stem_recipe_index(source)
-    rows: list[dict[str, Any]] = []
-    for _, row in stems.iterrows():
-        dest_path = str(row["path"])
-        track = int(row["track"])
-        src_path = remap_path_prefix(dest_path, dest, source)
-        rec = src_index.get((src_path, track))
-        if rec and rec.get("category"):
-            category = str(rec["category"])
-        else:
-            category = listening_category_from_stem_row(row.to_dict())
-        spec = recipe.spec_for_category(category)
-        backend = str(rec["backend"]) if rec and rec.get("backend") else BACKEND_FLUIDSYNTH
-        rows.append({
-            "path": dest_path,
-            "track": track,
-            "category": category,
-            "ablation": spec.ablation,
-            "method": spec.method,
-            "fallback": spec.fallback,
-            "backend": backend,
-            "realify": bool(spec.realify),
-        })
-    out = dest / STEM_RECIPE_FILE_NAME
-    pd.DataFrame(rows, columns=STEM_RECIPE_COLUMNS).to_csv(out, index=False)

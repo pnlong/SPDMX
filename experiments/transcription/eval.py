@@ -44,6 +44,7 @@ REPO_PAPER = REPO_ROOT / "analysis" / "paper_data"
 # (train_arm, test_preset, paper test_set label)
 PAPER_JOBS = (
     ("slakh", "slakh_redux", "slakh"),
+    ("slakh", "spdmx", "spdmx"),
     ("spdmx", "slakh_redux", "slakh"),
     ("spdmx", "spdmx", "spdmx"),
 )
@@ -239,25 +240,29 @@ def _gpu_waves(gpu: str) -> tuple[list[list[tuple[str, str, str]]], dict[tuple[s
     big = ("spdmx", "spdmx", "spdmx")
     a = ("slakh", "slakh_redux", "slakh")
     b = ("spdmx", "slakh_redux", "slakh")
+    c = ("slakh", "spdmx", "spdmx")
     assign: dict[tuple[str, str], str] = {}
     if len(ids) >= 4:
         assign[("spdmx", "spdmx")] = f"{ids[0]},{ids[1]}"
         assign[("slakh", "slakh_redux")] = ids[2]
         assign[("spdmx", "slakh_redux")] = ids[3]
-        return [[big, a, b]], assign
+        assign[("slakh", "spdmx")] = ids[3]
+        return [[big, a, b], [c]], assign
     if len(ids) == 3:
         assign[("spdmx", "spdmx")] = f"{ids[0]},{ids[1]}"
         assign[("slakh", "slakh_redux")] = ids[2]
         assign[("spdmx", "slakh_redux")] = ids[2]
-        return [[big, a], [b]], assign
+        assign[("slakh", "spdmx")] = ids[2]
+        return [[big, a], [b, c]], assign
     if len(ids) == 2:
         assign[("spdmx", "spdmx")] = f"{ids[0]},{ids[1]}"
         assign[("slakh", "slakh_redux")] = ids[0]
         assign[("spdmx", "slakh_redux")] = ids[1]
-        return [[big], [a, b]], assign
-    for j in (big, a, b):
+        assign[("slakh", "spdmx")] = ids[0]
+        return [[big], [a, b], [c]], assign
+    for j in (big, a, b, c):
         assign[(j[0], j[1])] = ids[0]
-    return [[big], [a], [b]], assign
+    return [[big], [a], [b], [c]], assign
 
 
 def main(argv: list[str] | None = None) -> None:

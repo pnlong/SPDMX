@@ -16,9 +16,11 @@ see [`experiments/COLLABORATOR_SETUP.md`](experiments/COLLABORATOR_SETUP.md)
 | Track | Capabilities | Needs |
 |-------|----------------|-------|
 | **A — Synthesis + analysis** | MIDI → FLAC stems, song-length analysis, tests | uv, fluidsynth, soundfont |
-| **B — + Realify (SA3)** | Audio-to-audio realification | Everything in A + GPU, SA3 submodule, flash-attn, Hugging Face login |
+| **C — Neural DDSP** | MIDI-DDSP + DDSP-Piano hybrid ablations | Everything in A + TF venv, GPU recommended |
 
-Do **Track A** first. Add **Track B** when you need `--realify`.
+Do **Track A** first. Add **Track C** when you need `--render-mode ddsp_basic` / `ddsp_slakh`.
+
+> **Note:** SA3 realify (`synthesis/realify`, `experiments/preset_sweep`, Track B) was removed from this repo.
 
 ---
 
@@ -90,11 +92,6 @@ cp .env.example .env
 
 Python code still imports `PDMX_FILEPATH`, `OUTPUT_DIR`, etc. from [`shared/config.py`](shared/config.py); those names read from `.env` at import time. Non-path constants stay in `config.py`.
 
-### GPU (Track B only)
-
-- NVIDIA driver + CUDA (driver must support CUDA 12.6 for our default PyTorch wheels)
-- ~6+ GB VRAM recommended for SA3 **medium**
-
 ---
 
 ## Track A — Synthesis and analysis
@@ -151,145 +148,11 @@ Default: 100-song ablation sample → `{OUTPUT_DIR}/dev/ablations/basic/`. Brows
 
 ---
 
-## Track B — Stable Audio 3 realify
+## SA3 realify (removed)
 
-Complete Track A first.
-
-### Step B1. Clone the SA3 submodule
-
-```bash
-cd ~/spdmx
-git submodule update --init --depth 1 synthesis/realify/stable-audio-3
-```
-
-Confirm upstream code is present:
-
-```bash
-test -f synthesis/realify/stable-audio-3/pyproject.toml && echo "SA3 submodule ok"
-```
-
-#### Submodule troubleshooting
-
-If `git submodule update --init` fails with *pathspec did not match*:
-
-The submodule was never registered correctly. Fix:
-
-```bash
-cd ~/spdmx
-
-# Remove any wrongly-tracked stub files
-git rm -f synthesis/realify/stable-audio-3/README.md 2>/dev/null || true
-
-# If .gitmodules has a stale entry but no gitlink:
-git config -f .gitmodules --remove-section submodule.synthesis/realify/stable-audio-3 2>/dev/null || true
-git add .gitmodules
-
-# Add the real submodule
-git submodule add https://github.com/Stability-AI/stable-audio-3.git synthesis/realify/stable-audio-3
-```
-
-If `git submodule add` says *already exists in the index*, run `git rm` on any files under that path first, then retry.
-
-After cloning on a fresh machine with a correct repo:
-
-```bash
-git clone --recurse-submodules <repo-url> ~/spdmx
-```
-
-### Step B2. Install SA3 into the spdmx venv
-
-Still from repo root — one venv for everything:
-
-```bash
-uv pip install -e synthesis/realify/stable-audio-3
-```
-
-This installs SA3 and its Python dependencies into `.venv`. You do **not** need to run `uv sync` inside the submodule for normal spdmx realify.
-
-Verify:
-
-```bash
-uv run python -c "from stable_audio_3 import StableAudioModel; print('SA3 import ok')"
-```
-
-**CUDA note:** On Linux x86_64, `pyproject.toml` installs `torch==2.7.1` from the PyTorch **cu126** index. For other CUDA versions see [SA3 CUDA docs](https://github.com/Stability-AI/stable-audio-3/blob/main/README.md#cuda-version).
-
-Check your versions:
-
-```bash
-uv run python -c "import torch; print(torch.__version__, torch.version.cuda)"
-```
-
-### Step B3. Install flash-attention (required for SA3 medium)
-
-SA3 **medium** (our default from song-length analysis) needs flash-attn. It is **not** in `pyproject.toml` — install a prebuilt wheel matching your CUDA, torch, and Python.
-
-**Example — CUDA 12.6, torch 2.7, Python 3.10** (matches default spdmx env):
-
-```bash
-uv pip install \
-  https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.6.3+cu126torch2.7-cp310-cp310-linux_x86_64.whl
-```
-
-For other combinations, browse [flash-attention-prebuild-wheels releases](https://github.com/mjun0812/flash-attention-prebuild-wheels/releases) or see [SA3 flash-attention docs](https://github.com/Stability-AI/stable-audio-3/blob/main/README.md#flash-attention).
-
-Verify:
-
-```bash
-uv run python -c "import flash_attn; print('flash-attn ok', flash_attn.__version__)"
-```
-
-**Important:** After installing flash-attn or SA3, if you run `uv sync` again, use:
-
-```bash
-uv sync --inexact --group dev
-```
-
-Otherwise uv may remove packages not listed in `pyproject.toml`.
-
-### Step B4. Hugging Face login
-
-Model weights download from Hugging Face on first realify run.
-
-```bash
-uv run hf auth login
-```
-
-Create a token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) (read access). Verify:
-
-```bash
-uv run hf auth whoami
-```
-
-We use **[stable-audio-3-medium](https://huggingface.co/stabilityai/stable-audio-3-medium)** (see song-length analysis report).
-
-### Step B5. Realify smoke test
-
-Requires completed A1 stems (`Step A4`). Realify is GPU-only and does **not** re-synthesize:
-
-```bash
-uv run python -m synthesis.synthesize --render-mode basic --realify --realify-limit 2
-```
-
-If `basic/` is incomplete, this prints an error with the command to run first.
-
-Or standalone (captions generated in memory):
-
-```bash
-uv run python -m synthesis.realify.realify \
-  --source-dir /path/to/dev/ablations/basic \
-  --output-dir /path/to/dev/ablations/basic_realify \
-  --limit 2
-```
-
-Preview captions without running realify:
-
-```bash
-uv run python -m synthesis.realify.captions.generate \
-  --dataset_dir /path/to/dev/ablations/basic
-```
-
-Preset notebook: `synthesis/realify/tests/explore_presets.ipynb`
+Stable Audio 3 realify, the `synthesis/realify` package, the SA3 git submodule,
+flash-attn / Hugging Face Track B setup, and `experiments/preset_sweep` have been
+removed. Use Track A (FluidSynth) and optional Track C (MIDI-DDSP / DDSP-Piano).
 
 ---
 
@@ -364,18 +227,14 @@ SPDMX_DDSP_PYTHON=$PWD/.venv-ddsp/bin/python \
 
 Listen before large B3 batches. Provenance notes: [`THIRD_PARTY.md`](THIRD_PARTY.md).
 
-### Step C5. Run B3 / optional B4
+### Step C5. Run DDSP ablations
 
 ```bash
-# B3 — neural DDSP + slakh soundfont fallback (no SA3)
+# Neural DDSP + slakh soundfont fallback
 # Song-level -j stays 1; neural stems within a song fan out across the GPU pool.
 SPDMX_DDSP_PYTHON=$PWD/.venv-ddsp/bin/python \
   CUDA_VISIBLE_DEVICES=0,1 \
   uv run python -m synthesis.synthesize --render-mode ddsp_slakh
-
-# B4 — optional SA3 after B3 (requires completed B3 stems)
-SPDMX_DDSP_PYTHON=$PWD/.venv-ddsp/bin/python \
-  uv run python -m synthesis.synthesize --render-mode ddsp_slakh --realify
 ```
 
 Coverage stats (program-only, then optional monophony pass):
@@ -397,36 +256,17 @@ uv python install 3.10
 sudo apt install fluidsynth   # or use project-local mamba — see above
 
 # --- clone ---
-git clone --recurse-submodules <repo-url> ~/spdmx
+git clone <repo-url> ~/spdmx
 cd ~/spdmx
+cp .env.example .env
+# edit .env for your PDMX / output / soundfont paths
 
 # --- Track A ---
 uv sync --group dev
 uv run python -c "import mido, synthesis.audio; print('spdmx ok')"
-
-# --- Track B ---
-git submodule update --init --depth 1 synthesis/realify/stable-audio-3
-uv pip install -e synthesis/realify/stable-audio-3
-uv pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.6.3+cu126torch2.7-cp310-cp310-linux_x86_64.whl
-uv run hf auth login
-uv run python -c "import flash_attn; from stable_audio_3 import StableAudioModel; print('realify ok')"
 ```
 
-Edit `shared/config.py` paths before synthesis.
-
----
-
-## Optional: SA3 standalone env
-
-To run SA3's Gradio UI or upstream tests in isolation:
-
-```bash
-cd ~/spdmx/synthesis/realify/stable-audio-3
-uv sync
-uv run python run_gradio.py --model medium
-```
-
-This uses a **separate** `.venv` inside the submodule. For spdmx `--realify`, prefer the single root venv (Track B above).
+Edit `.env` / `shared/config.py` paths before synthesis. For DDSP ablations, continue with Track C above.
 
 ---
 
@@ -435,12 +275,8 @@ This uses a **separate** `.venv` inside the submodule. For spdmx `--realify`, pr
 | Problem | Fix |
 |---------|-----|
 | `uv init` fails — project already initialized | Use `uv sync`, not `uv init` |
-| `stable-audio-3 does not appear to be a Python project` on `uv sync` | Expected — base `uv sync` does not need SA3. Install SA3 separately (Step B2) |
-| `git submodule add` — already exists in index | `git rm` stub files under `stable-audio-3/`, then re-add submodule |
-| `git submodule update` — pathspec not known | Submodule gitlink missing; see Step B1 troubleshooting |
-| `hf login` — no such command | Use `uv run hf auth login` |
-| Realify outputs static noise | flash-attn not installed correctly — re-run Step B3 verify |
 | `fluidsynth` not found | Install fluidsynth (Step 0); ensure it is on `PATH` |
+| DDSP import / CUDA errors | Use `.venv-ddsp` from Track C; see `SPDMX_DDSP_FORCE_CPU=1` |
 
 ---
 

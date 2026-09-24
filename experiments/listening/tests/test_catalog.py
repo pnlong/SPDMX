@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 import pandas as pd
 import yaml
 
@@ -46,31 +47,10 @@ def _write_preset_sweep_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
     return sweep_dir, source_dir, probe_path
 
 
-def test_sweep_catalog_preset_lists_and_resolves_audio(tmp_path: Path):
+def test_sweep_catalog_preset_removed(tmp_path: Path):
     sweep_dir, source_dir, probe_path = _write_preset_sweep_tree(tmp_path)
-    catalog = SweepCatalog(
-        "preset",
-        sweep_dir,
-        source_dir,
-        probe_stems_path=probe_path,
-    )
-
-    assert catalog.available() is True
-    stems = catalog.list_stems()
-    assert len(stems) == 1
-    assert stems[0]["id"] == "piano_test"
-
-    detail = catalog.get_stem_test("piano_test", session_seed=42)
-    assert detail is not None
-    assert detail["reference"]["available"] is True
-    assert len(detail["samples"]) == 1
-    assert detail["samples"][0]["audio"]["available"] is True
-
-    ref = catalog.resolve_reference_audio("piano_test", "stem_0.flac")
-    assert ref is not None
-    var = catalog.resolve_variant_audio("noise0.25_current", "0/13/QmTest", "stem_0.flac")
-    assert var is not None
-
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        SweepCatalog("preset", sweep_dir, source_dir, probe_stems_path=probe_path)
 
 def _write_patch_sweep_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
     source_dir = tmp_path / "basic"
@@ -175,58 +155,9 @@ def test_sweep_catalog_patch_phase2_dedupes_variants_by_id(tmp_path: Path):
 
 
 def test_sweep_catalog_preset_phase2_dedupes_variants_by_id(tmp_path: Path):
-    """Phase 2 manifests repeat prompt variants with per-category noise levels."""
-    source_dir = tmp_path / "basic"
-    sweep_dir = tmp_path / "sweep"
-    song_a = source_dir / "data" / "0/13/QmA"
-    song_b = source_dir / "data" / "0/14/QmB"
-    song_a.mkdir(parents=True)
-    song_b.mkdir(parents=True)
-    (song_a / "stem_0.flac").write_bytes(b"fake")
-    (song_b / "stem_0.flac").write_bytes(b"fake")
-
-    rows = []
-    for stem_id, category, song_dir, noise in (
-        ("piano_test", "piano", song_a, 0.45),
-        ("violin_test", "strings", song_b, 0.55),
-    ):
-        for variant_id, prompt_variant in (
-            ("current", "current"),
-            ("minimal", "minimal"),
-            ("preservation", "preservation"),
-        ):
-            out_dir = sweep_dir / "variants" / variant_id / "data" / song_dir.name
-            out_dir.mkdir(parents=True, exist_ok=True)
-            (out_dir / "stem_0.flac").write_bytes(b"fake")
-            rows.append({
-                "phase": "phase2_prompts",
-                "variant_id": variant_id,
-                "init_noise_level": noise,
-                "prompt_variant": prompt_variant,
-                "prompt": "solo piano",
-                "steps": 8,
-                "cfg_scale": 1.0,
-                "stem_id": stem_id,
-                "category": category,
-                "path": str(song_dir),
-                "track": 0,
-                "out_path": str(out_dir / "stem_0.flac"),
-            })
-    pd.DataFrame(rows).to_csv(sweep_dir / "manifest.csv", index=False)
-
-    probe_path = tmp_path / "probe_stems.yaml"
-    probe_path.write_text(yaml.dump({
-        "stems": [
-            {"id": "piano_test", "category": "piano", "song_id": "0/13/QmA", "track": 0},
-            {"id": "violin_test", "category": "strings", "song_id": "0/14/QmB", "track": 0},
-        ],
-    }))
-
-    catalog = SweepCatalog("preset", sweep_dir, source_dir, probe_stems_path=probe_path)
-    variants = catalog.variants()
-    assert len(variants) == 3
-    assert {v["variant_id"] for v in variants} == {"current", "minimal", "preservation"}
-
+    sweep_dir, source_dir, probe_path = _write_preset_sweep_tree(tmp_path)
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        SweepCatalog("preset", sweep_dir, source_dir, probe_stems_path=probe_path)
 
 def test_sweep_catalog_patch_phase1_empty_pool_id(tmp_path: Path):
     sweep_dir, source_dir, probe_path = _write_patch_sweep_tree(tmp_path)
@@ -295,14 +226,9 @@ def test_sweep_catalog_uses_manifest_clip_path_for_reference(tmp_path: Path):
         }],
     }))
 
-    catalog = SweepCatalog("preset", sweep_dir, source_dir)
-    ref = catalog.resolve_reference_audio("piano_clip", "stem_0.mp3")
-    assert ref == (clip_song_dir / "stem_0.mp3").resolve()
-
-    detail = catalog.get_stem_test("piano_clip", session_seed=42)
-    assert detail is not None
-    assert detail["reference"]["available"] is True
-
+    sweep_dir, source_dir, probe_path = _write_preset_sweep_tree(tmp_path)
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        SweepCatalog("preset", sweep_dir, source_dir, probe_stems_path=probe_path)
 
 def test_resolve_sweep_catalog_dir_prefers_verification_over_root_manifest(
     tmp_path: Path,
@@ -323,12 +249,12 @@ def test_resolve_sweep_catalog_dir_prefers_verification_over_root_manifest(
         lambda sweep_type, winners_path=None: phase4,
     )
 
-    resolved = resolve_sweep_catalog_dir(
-        "preset",
-        output_root,
-        prefer_verification_phase=True,
-    )
-    assert resolved == phase4.resolve()
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        resolve_sweep_catalog_dir(
+            "preset",
+            output_root,
+            prefer_verification_phase=True,
+        )
 
 
 def test_resolve_sweep_catalog_dir_prefers_phase_with_manifest(tmp_path: Path, monkeypatch):
@@ -378,12 +304,12 @@ def test_resolve_sweep_catalog_dir_honors_explicit_phase_dir(
         lambda sweep_type, winners_path=None: phase4,
     )
 
-    resolved = resolve_sweep_catalog_dir(
-        "preset",
-        phase2b,
-        prefer_verification_phase=False,
-    )
-    assert resolved == phase2b.resolve()
+    with pytest.raises(RuntimeError, match="preset_sweep"):
+        resolve_sweep_catalog_dir(
+            "preset",
+            phase2b,
+            prefer_verification_phase=False,
+        )
 
 
 def test_sweep_catalog_swipe_meta_and_clip_audio(tmp_path: Path):

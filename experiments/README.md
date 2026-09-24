@@ -2,9 +2,11 @@
 
 Offline parameter sweeps and tuning runs. Experiment **code and config** live here; large **audio outputs** live on deepfreeze with in-repo symlinks.
 
-**Goal:** pick **per-category** winners (piano, strings, brass, drums, …) for both Slakh patch pools and SA3 realify presets — not a single global setting for all instruments.
+**Goal:** pick **per-category** winners (piano, strings, brass, drums, …) for Slakh patch pools — not a single global setting for all instruments.
 
-**Tuning docs:** [`TUNING.md`](TUNING.md) — shared methodology, staged Slakh plan, preset sweep scope, result-recording conventions.
+**Tuning docs:** [`TUNING.md`](TUNING.md) — shared methodology, staged Slakh plan, result-recording conventions.
+
+> **Note:** SA3 realify and `experiments/preset_sweep` were removed. Patch sweep + ablation listening remain.
 
 ## Collaborator setup (ICASSP pilots)
 
@@ -32,19 +34,18 @@ experiments/
 ├── README.md
 ├── COLLABORATOR_SETUP.md     # Slack-ready Deep Freeze pilot setup
 ├── setup_pilots.py           # one-command YourMT3 + StreamGen
-├── TUNING.md                 # methodology for patch + preset tuning
+├── TUNING.md                 # methodology for patch tuning
 ├── probe_stems.yaml          # shared probe set (24 stems: 3 per category × 8)
-├── listening/                # sweep listening-test server (port 8766)
-├── listening_shared/         # shared 0–100 slider UI + scale helpers
-├── ablation_listening/       # Test 1: A1–B2 dataset comparison (port 8767)
+├── listening/                # sweep listening-test server (port 8766; patch)
+├── listening_shared/         # shared 0–100 slider UI + clip helpers
+├── ablation_listening/       # Test 1: dataset ablation comparison (port 8767)
 ├── model_listening/          # Test 2: SAO downstream comparison (port 8768)
 ├── separation/               # Hybrid Demucs matched-budget PoC
-├── sao/                      # Stable Audio Open fine-tune PoC
+├── sao/                      # Stable Audio Open fine-tune PoC (optional generative eval)
 ├── transcription/            # Multi-instrument AMT scale-up (YourMT3)
 ├── streamgen/                # Streaming accompaniment (stream-music-gen)
-├── patch_sweep/              # Slakh: soundfonts, FX, program pools
-│   └── soundfonts.yaml       # candidate GM banks (phase 1)
-└── preset_sweep/             # SA3 init_noise_level + prompt tuning
+└── patch_sweep/              # Slakh: soundfonts, FX, program pools
+    └── soundfonts.yaml       # candidate GM banks (phase 1)
 ```
 
 Paper/Blog pilots for transcription and StreamGen: see each package `README.md` and `docs/blog/`.
@@ -61,10 +62,10 @@ uv run python -m shared.setup_symlinks
 
 ```mermaid
 flowchart LR
-    sweep[Run sweep] --> listen[Listening test]
+    sweep[Run patch sweep] --> listen[Listening test]
     listen --> aggregate[aggregate.py]
-    aggregate --> config[Lock patches.py / categories.yaml]
-    config --> ablation[Full ablations A1–B2]
+    aggregate --> config[Lock patches.py]
+    config --> ablation[Full ablations]
     ablation --> validate[synthesis/listening serve]
 ```
 
@@ -73,15 +74,11 @@ flowchart LR
 ```bash
 # Patch pools (CPU; define PATCH_POOLS first)
 uv run python -m experiments.patch_sweep.sweep -j 8
-
-# SA3 presets (GPU)
-uv run python -m experiments.preset_sweep.sweep --phase phase1_noise
 ```
 
 ### Stage 2 — Listening test
 
 ```bash
-uv run python -m experiments.listening.serve --sweep preset
 uv run python -m experiments.listening.serve --sweep patch
 ```
 
@@ -91,9 +88,9 @@ Open [http://127.0.0.1:8766](http://127.0.0.1:8766). Rate each blinded variant o
 
 ```bash
 uv run python -m experiments.listening.aggregate \
-  --sweep preset \
-  --responses responses_preset.json \
-  --output experiments/preset_sweep/results_notes.md
+  --sweep patch \
+  --responses responses_patch.json \
+  --output experiments/patch_sweep/results_notes.md
 ```
 
 Update production configs from results.
@@ -104,11 +101,11 @@ Update production configs from results.
 uv run python -m synthesis.listening.serve
 ```
 
-Compare locked configs across A1–B2 (port 8765).
+Compare locked configs across ablations (port 8765).
 
 ### Stage 5 — Formal listening tests (0–100 scale)
 
-**Test 1 — dataset ablation (A1–B2):**
+**Test 1 — dataset ablation:**
 
 ```bash
 uv run python -m experiments.ablation_listening.prepare_clips
@@ -131,6 +128,4 @@ Shared UI and ngrok notes: [`listening_shared/README.md`](listening_shared/READM
 - [`TUNING.md`](TUNING.md) — overall methodology (start here)
 - [`patch_sweep/GUIDE.md`](patch_sweep/GUIDE.md) — **step-by-step Slakh tuning runbook**
 - [`patch_sweep/soundfonts.yaml`](patch_sweep/soundfonts.yaml) — candidate soundfont catalog
-- [`preset_sweep/GUIDE.md`](preset_sweep/GUIDE.md) — **step-by-step SA3 preset tuning runbook**
-- [`preset_sweep/README.md`](preset_sweep/README.md) — phased preset grids and lock target
 - [`listening/README.md`](listening/README.md)

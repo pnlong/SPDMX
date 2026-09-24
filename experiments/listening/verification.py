@@ -754,27 +754,10 @@ def bypass_realify_from_verification(doc: dict) -> dict[str, bool]:
 
 def bypass_routing_rules_from_verification(doc: dict) -> list[dict]:
     """Per-instrument bypass rules for partial category bypass."""
-    from experiments.preset_sweep.bypass_rules import bypass_rule_from_stem, merge_bypass_rules
+    del doc
+    from experiments.listening_shared.clips import PRESET_SWEEP_REMOVED
 
-    rules: list[dict] = []
-    for entry in doc.get("categories", []):
-        category = entry.get("category")
-        if not category:
-            continue
-        stems = entry.get("stems") or []
-        if not stems:
-            continue
-        bypassed = [stem for stem in stems if stem.get("bypass_realify")]
-        if not bypassed or len(bypassed) == len(stems):
-            continue
-        for stem in bypassed:
-            rules.append(bypass_rule_from_stem(
-                category=str(category),
-                track_name=stem.get("track_name") or stem.get("note"),
-                program=int(stem.get("program", 0) or 0),
-                is_drum=bool(stem.get("is_drum", False)),
-            ))
-    return merge_bypass_rules([], rules)
+    raise RuntimeError(PRESET_SWEEP_REMOVED)
 
 
 def validate_verification_entry(

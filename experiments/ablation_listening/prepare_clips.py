@@ -28,7 +28,7 @@ from experiments.ablation_listening.paths import (
     DEFAULT_CLIPS_DIR,
     DEFAULT_MANIFEST,
 )
-from experiments.preset_sweep.diverse_stems import (
+from experiments.listening_shared.clips import (
     DEFAULT_CLIP_SECONDS,
     DEFAULT_MIN_RMS,
     clip_stem_waveform,

@@ -15,7 +15,6 @@ from shared.config import (
 )
 from synthesis.cli_common import add_synthesis_args
 from synthesis.paths import (
-    MIDI_INDEX_FILE_NAME,
     ablation_raw_dir,
     production_tables_dir,
     spdmx_dev_dir,
@@ -25,14 +24,10 @@ from synthesis.pass_tables import merge_pass_tables
 from synthesis.recipe import (
     DEFAULT_RECIPE_PATH,
     load_recipe,
-    require_recipe_conflicts_ok,
-    scan_recipe_conflicts,
 )
-from synthesis.shard import format_shard_summary, shard_song_ids, validate_shard_args
 from synthesis.synthesize import (
     require_raw_synthesis,
     run_layout_pass,
-    run_realify_pass,
     run_synthesis,
     verify_claimed_stems_on_disk,
 )
@@ -45,38 +40,13 @@ def _reject_sharded_global_pass(args) -> None:
         raise SystemExit(
             f"--only-pass {args.only_pass} must run unsharded (--shard-count 1). "
             "Use --shard-count / --shard-index only on fluidsynth, ddsp_piano, "
-            "midi_ddsp, or realify."
+            "or midi_ddsp."
         )
 
-
-def _realify_allowed_song_ids(args, tables_dir: str) -> set[str] | None:
-    shard_count = int(getattr(args, "shard_count", 1) or 1)
-    shard_index = int(getattr(args, "shard_index", 0) or 0)
-    try:
-        validate_shard_args(shard_count, shard_index)
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
-    if shard_count == 1:
-        return None
-    index_path = Path(tables_dir) / MIDI_INDEX_FILE_NAME
-    if not index_path.is_file():
-        raise SystemExit(
-            f"Cannot shard realify: missing {index_path}. "
-            "Run --only-pass layout first."
-        )
-    song_ids = pd.read_csv(index_path, usecols=["song_id"])["song_id"].astype(str).tolist()
-    allowed = shard_song_ids(
-        song_ids, shard_count=shard_count, shard_index=shard_index,
-    )
-    print(
-        format_shard_summary(shard_count, shard_index, len(allowed), len(allowed)),
-        flush=True,
-    )
-    return allowed
 
 FINAL_CONDITION = "final"
 ONLY_PASSES = (
-    "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "merge", "realify",
+    "layout", "fluidsynth", "ddsp_piano", "midi_ddsp", "merge",
     "mix", "verify",
 )
 DDSP_PASSES = ("ddsp_piano", "midi_ddsp")
@@ -94,13 +64,12 @@ def parse_args(args=None, namespace=None):
             "Run one pass at a time with --only-pass "
             "(layout → fluidsynth → ddsp_piano → midi_ddsp → mix → verify). "
             "Fluidsynth, ddsp_piano, and midi_ddsp may run in parallel. "
-            "Realify, mix, and verify merge per-pass CSVs first."
+            "Mix and verify merge per-pass CSVs first."
         ),
     )
     add_synthesis_args(
         parser,
         include_render_mode=False,
-        include_realify=False,
         full_default=True,
         flac_default=True,
         include_audio_format=False,
@@ -109,7 +78,7 @@ def parse_args(args=None, namespace=None):
         "--recipe",
         default=str(DEFAULT_RECIPE_PATH),
         type=str,
-        help="YAML mapping listening category → ablation id (or method/realify/fallback).",
+        help="YAML mapping listening category → ablation id (or method/fallback).",
     )
     parser.add_argument(
         "--only-pass",
@@ -117,7 +86,7 @@ def parse_args(args=None, namespace=None):
         required=True,
         help=(
             "Required. One method pass: layout, fluidsynth, ddsp_piano, midi_ddsp, "
-            "merge, realify, mix, or verify. Fluidsynth, ddsp_piano, and midi_ddsp "
+            "merge, mix, or verify. Fluidsynth, ddsp_piano, and midi_ddsp "
             "may run in parallel. Mix normalizes raw→audio and writes "
             "mix/<song_id>.flac (dirty-aware resume). Verify checks raw completeness "
             "and fully FLAC-decodes audio/ + mixes, then mix == sum(stems). "
@@ -125,7 +94,7 @@ def parse_args(args=None, namespace=None):
             "mix+audio, rebuilds from raw/, rechecks those songs). "
             "End-of-pipeline: --only-pass mix --verify (claimed stems + "
             "full decode+mix=sum; replaces a separate verify pass). "
-            "Mix/realify/verify merge per-pass tables first."
+            "Mix/verify merge per-pass tables first."
         ),
     )
     parser.add_argument(
@@ -208,14 +177,12 @@ def pass_sequence(recipe) -> tuple[str, ...]:
         steps.append("ddsp_piano")
     if recipe.uses_ddsp():
         steps.append("midi_ddsp")
-    if recipe.uses_realify():
-        steps.append("realify")
     steps.extend(["mix", "verify"])
     return tuple(steps)
 
 
 def raw_upstream_command(recipe) -> str:
-    """CLI that must finish before realify or mix."""
+    """CLI that must finish before mix."""
     parts = ["uv run python -m synthesis.final --only-pass fluidsynth"]
     if recipe.uses_ddsp_piano():
         parts.append("uv run python -m synthesis.final --only-pass ddsp_piano")
@@ -247,7 +214,6 @@ def log_recipe_plan(recipe, *, tables_dir: str, media_dir: str, only: str) -> No
     print(f"Recipe: {recipe.path or '(in-memory)'}")
     print(f"  Fluidsynth categories: {', '.join(grouped['fluidsynth']) or '(none)'}")
     print(f"  MIDI-DDSP categories: {', '.join(grouped['ddsp']) or '(none)'}")
-    print(f"  Realify categories: {', '.join(grouped['realify']) or '(none)'}")
     print(f"  Tables: {tables_dir}")
     print(f"  Media: {media_dir}")
     print("  Audio: flac")
@@ -262,7 +228,7 @@ def log_next_pass(recipe, only: str, args=None) -> None:
         return " -j 8" if nxt in ("fluidsynth", "verify", "mix") else ""
 
     if only == "merge":
-        nxt = "realify" if recipe.uses_realify() else "mix"
+        nxt = "mix"
         print(
             f"Next: uv run python -m synthesis.final --only-pass {nxt}{_extra(nxt)}",
             flush=True,
@@ -288,19 +254,9 @@ def log_next_pass(recipe, only: str, args=None) -> None:
             "other jobs at the same time as Fluidsynth (and as each other).",
             flush=True,
         )
-        if "realify" in plan:
-            print(
-                "Realify waits until Fluidsynth, DDSP-Piano, and MIDI-DDSP have all exited.",
-                flush=True,
-            )
     if only == "ddsp_piano" and "midi_ddsp" in plan:
         print(
             "Note: --only-pass midi_ddsp can run in another job at the same time.",
-            flush=True,
-        )
-    if only in DDSP_PASSES and "realify" in plan:
-        print(
-            "Start realify only after Fluidsynth and both DDSP jobs have exited.",
             flush=True,
         )
     if only == "mix":
@@ -517,8 +473,8 @@ def run_dry_run(
 
     print(f"DRY RUN: --only-pass {only} (no writes)", flush=True)
 
-    if only in ("fluidsynth", "ddsp_piano", "midi_ddsp", "realify", "mix", "verify"):
-        stage = "realify" if only == "realify" else "raw"
+    if only in ("fluidsynth", "ddsp_piano", "midi_ddsp", "mix", "verify"):
+        stage = "raw"
         categories = None
         if only == "fluidsynth":
             categories = frozenset(recipe.pass_categories()["fluidsynth"])
@@ -526,8 +482,6 @@ def run_dry_run(
             categories = frozenset(recipe.pass_categories()["ddsp"])
         elif only == "ddsp_piano":
             categories = frozenset({"piano"}) if recipe.uses_ddsp_piano() else frozenset()
-        elif only == "realify":
-            categories = recipe.realify_categories() or None
         print("Scanning recipe conflicts …", flush=True)
         conflicts = scan_recipe_conflicts(
             tables_dir,
@@ -640,11 +594,6 @@ def run_dry_run(
             f"and sample-wise mix == sum(stems).{delete_note}",
             flush=True,
         )
-    elif only == "realify":
-        if not recipe.uses_realify():
-            print("Realify: skipped (no category sets realify).", flush=True)
-        else:
-            print("Realify: would overwrite stems marked *_realify in the recipe.", flush=True)
 
     print("DRY RUN complete (nothing written).", flush=True)
 
@@ -654,7 +603,6 @@ def main(argv=None):
     recipe = load_recipe(args.recipe)
     args.recipe = recipe
     args.render_mode = "basic"
-    args.realify = False
     only = args.only_pass
     args.only_pass = only
     tables_dir, media_dir = hybrid_dirs(args)
@@ -686,27 +634,6 @@ def main(argv=None):
         run_synthesis(args, tables_dir, media_dir=media_dir)
     elif only == "merge":
         merge_pass_tables(tables_dir, media_dir=media_dir)
-    elif only == "realify":
-        if not recipe.uses_realify():
-            print("Realify pass skipped (no category recipe sets realify).")
-        else:
-            merge_pass_tables(tables_dir, media_dir=media_dir)
-            require_raw_synthesis(
-                tables_dir,
-                run_command=raw_upstream_command(recipe),
-                audio_format=audio_format,
-                expected_n_songs=expected_song_count(args, media_dir),
-                jobs=args.jobs,
-            )
-            if not args.reset:
-                require_recipe_conflicts_ok(
-                    scan_recipe_conflicts(
-                        tables_dir, recipe, audio_format=audio_format, stage="realify",
-                    ),
-                    yes=bool(args.yes),
-                )
-            allowed = _realify_allowed_song_ids(args, tables_dir)
-            run_realify_pass(args, tables_dir, tables_dir, allowed_song_ids=allowed)
     elif only == "verify":
         merge_pass_tables(tables_dir, media_dir=media_dir)
         # Report remaining-per-pass and missing FLACs first (actionable), then

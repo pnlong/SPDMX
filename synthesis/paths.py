@@ -18,7 +18,6 @@ from shared.config import (
     SPDMX_MIX_DIR_NAME,
     SPDMX_RAW_DIR_NAME,
     STEMS_DIR_NAME,
-    STEMS_REALIFY_DIR_NAME,
     TRACK_NAMES_DIR_NAME,
 )
 
@@ -34,7 +33,13 @@ PASS_TRACK_COLUMNS = {
 
 
 def condition_name(render_mode: str, realify: bool = False) -> str:
-    return f"{render_mode}_realify" if realify else render_mode
+    """Return the ablation condition id for ``render_mode``.
+
+    ``realify`` is ignored (kept for call-site compatibility); SA3 realify
+    trees are no longer produced.
+    """
+    del realify
+    return render_mode
 
 
 def dev_root(output_dir: str) -> str:
@@ -53,16 +58,8 @@ def ablation_raw_dir(output_dir: str, render_mode: str) -> str:
     return ablation_dir(output_dir, render_mode)
 
 
-def ablation_realify_dir(output_dir: str, render_mode: str) -> str:
-    return ablation_dir(output_dir, condition_name(render_mode, realify=True))
-
-
 def full_stems_dir(output_dir: str) -> str:
     return f"{dev_root(output_dir)}/{STEMS_DIR_NAME}"
-
-
-def full_stems_realify_dir(output_dir: str) -> str:
-    return f"{dev_root(output_dir)}/{STEMS_REALIFY_DIR_NAME}"
 
 
 def analysis_root(output_dir: str) -> str:

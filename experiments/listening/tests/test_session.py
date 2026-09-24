@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 import pandas as pd
 
 from experiments.listening.catalog import SweepCatalog
@@ -9,6 +11,7 @@ from experiments.listening.session import rubric_for_catalog
 
 
 def test_rubric_for_catalog_uses_phase1b_guidance(tmp_path: Path):
+    pytest.skip("phase1b preset audit removed with preset_sweep")
     sweep_dir = tmp_path / "phase1b"
     sweep_dir.mkdir()
     pd.DataFrame([{
@@ -20,7 +23,7 @@ def test_rubric_for_catalog_uses_phase1b_guidance(tmp_path: Path):
         "out_path": str(sweep_dir / "variants/noise0.45/data/song/stem_0.flac"),
     }]).to_csv(sweep_dir / "manifest.csv", index=False)
 
-    catalog = SweepCatalog("preset", sweep_dir)
+    catalog = SweepCatalog("patch", sweep_dir)
     rubric = rubric_for_catalog(catalog)
     assert "played sections" in rubric["content_help"]
     assert "silence-corrected" in rubric["content_help"]
@@ -38,7 +41,7 @@ def test_rubric_for_catalog_default_preset(tmp_path: Path):
         "out_path": str(sweep_dir / "variants/noise0.45/data/song/stem_0.flac"),
     }]).to_csv(sweep_dir / "manifest.csv", index=False)
 
-    catalog = SweepCatalog("preset", sweep_dir)
+    catalog = SweepCatalog("patch", sweep_dir)
     rubric = rubric_for_catalog(catalog)
     assert rubric["content_help"] == "Same melody, rhythm, and timing as the reference?"
 

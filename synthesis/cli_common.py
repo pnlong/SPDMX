@@ -1,4 +1,4 @@
-"""Shared synthesis/realify CLI arguments."""
+"""Shared synthesis CLI arguments."""
 
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ from shared.config import (
     ABLATION_SAMPLE_SIZE,
     OUTPUT_DIR,
     PDMX_FILEPATH,
-    REALIFY_BATCH_SIZE,
-    REALIFY_CONTENT_FIDELITY_ENFORCE,
     RENDER_MODE_BASIC,
     RENDER_MODES,
     SOUNDFONT_PATH,
@@ -46,7 +44,6 @@ def add_synthesis_args(
     parser: argparse.ArgumentParser,
     *,
     include_render_mode: bool = True,
-    include_realify: bool = True,
     full_default: bool = False,
     flac_default: bool = False,
     include_audio_format: bool = True,
@@ -57,7 +54,7 @@ def add_synthesis_args(
     parser.add_argument(
         "--reset",
         action="store_true",
-        help="Delete the output directory and rerun from scratch (raw synthesis or realify target).",
+        help="Delete the output directory and rerun from scratch.",
     )
     parser.add_argument(
         "-j",
@@ -65,7 +62,7 @@ def add_synthesis_args(
         "--workers",
         default=int(multiprocessing.cpu_count() / 4),
         type=int,
-        help="CPU workers for synthesis, verify disk checks, mix, and CPU realify.",
+        help="CPU workers for synthesis, verify disk checks, and mix.",
     )
     if include_render_mode:
         parser.add_argument(
@@ -98,24 +95,6 @@ def add_synthesis_args(
             action="store_true",
             help="Synthesize all valid PDMX songs (default: stratified ablation sample from rated_deduplicated).",
         )
-    if include_realify:
-        parser.add_argument("--realify", action="store_true")
-    parser.add_argument("-m", "--model", default="medium", choices=["small-music", "medium"])
-    parser.add_argument(
-        "--realify-limit",
-        default=None,
-        type=int,
-        help="Realify only the first N stems (smoke tests); default: all stems.",
-    )
-    parser.add_argument(
-        "--realify-batch-size",
-        default=None,
-        type=int,
-        help=(
-            "SA3 stems per GPU forward pass. 0=auto from each GPU's free/total VRAM "
-            "(default: REALIFY_BATCH_SIZE in shared/config.py)."
-        ),
-    )
     parser.add_argument(
         "-n",
         "--sample-size",
@@ -138,21 +117,6 @@ def add_synthesis_args(
     )
     if include_audio_format:
         add_audio_format_arg(parser, flac_default=flac_default)
-    parser.add_argument(
-        "--no-silence-enforce",
-        action="store_true",
-        help="Disable post-SA3 silence enforcement on realified stems.",
-    )
-    parser.add_argument(
-        "--content-fidelity-enforce",
-        action="store_true",
-        help="Enable onset-based content fidelity gate with init_noise_level backoff.",
-    )
-    parser.add_argument(
-        "--no-content-fidelity-enforce",
-        action="store_true",
-        help="Disable content fidelity gate even if REALIFY_CONTENT_FIDELITY_ENFORCE is set.",
-    )
     parser.add_argument("--sample-seed", default=ABLATION_SAMPLE_SEED, type=int)
     parser.add_argument(
         "--register",

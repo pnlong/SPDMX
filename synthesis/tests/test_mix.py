@@ -39,12 +39,6 @@ def test_resolve_stems_dir_render_mode(tmp_path: Path):
     assert out == tmp_path / "dev" / "ablations" / "basic"
 
 
-def test_resolve_stems_dir_realify(tmp_path: Path):
-    out = resolve_stems_dir(
-        output_dir=str(tmp_path), render_mode="slakh", realify=True,
-    )
-    assert out == tmp_path / "dev" / "ablations" / "slakh_realify"
-
 
 def test_default_dest_dir_sibling():
     assert default_dest_dir(Path("/a/basic")) == Path("/a/basic_summable")

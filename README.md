@@ -1,6 +1,7 @@
 # spdmx
 
-Turn the [PDMX](https://zenodo.org/records/13763756) symbolic music dataset into audio stems, captions, and SA3-realified audio.
+Turn the [PDMX](https://zenodo.org/records/13763756) symbolic music dataset into
+audio stems via a FluidSynth + MIDI-DDSP / DDSP-Piano hybrid pipeline.
 
 **Project page:** [pnlong.github.io/SPDMX](https://pnlong.github.io/SPDMX/) (sources in [`docs/`](docs/))
 
@@ -8,9 +9,10 @@ Turn the [PDMX](https://zenodo.org/records/13763756) symbolic music dataset into
 
 1. **Synthesis setup** — `python -m analysis.prepare_synthesis` (GM register + dense corrected MIDIs; **required before any ablation**)
 2. **Synthesis** — `python -m synthesis.synthesize` with `--render-mode {basic,slakh,ddsp_basic,ddsp_slakh}`
-3. **Realify** (optional) — same command with `--realify`
-4. **Full dataset** — `python -m synthesis.final --only-pass {layout,fluidsynth,ddsp_piano,midi_ddsp,mix}` (FLAC under `{OUTPUT_DIR}/SPDMX_dev/`)
-5. **Analysis** — duration stats and SA3 model recommendation
+3. **Full dataset** — `python -m synthesis.final --only-pass {layout,fluidsynth,ddsp_piano,midi_ddsp,mix}` (FLAC under `{OUTPUT_DIR}/SPDMX_dev/`)
+4. **Analysis** — duration stats, GM register, DDSP coverage
+
+Optional generative eval: [`experiments/sao`](experiments/sao) (Stable Audio Open fine-tune PoC).
 
 ## Install
 
@@ -20,7 +22,7 @@ Turn the [PDMX](https://zenodo.org/records/13763756) symbolic music dataset into
 
 **→ ICASSP pilots (YourMT3 + StreamGen) on a Deep Freeze machine: [`experiments/COLLABORATOR_SETUP.md`](experiments/COLLABORATOR_SETUP.md)**
 
-Quick start (synthesis + analysis only):
+Quick start (synthesis + analysis):
 
 ```bash
 cd ~/spdmx
@@ -28,7 +30,7 @@ uv sync --group dev
 uv run python -c "import mido, synthesis.audio; print('spdmx ok')"
 ```
 
-For SA3 realify, submodule, flash-attention, and Hugging Face login, follow **Track B** in [`SETUP.md`](SETUP.md).
+For neural DDSP (`ddsp_basic` / `ddsp_slakh`), follow **Track C** in [`SETUP.md`](SETUP.md).
 
 ## Usage
 
@@ -36,7 +38,7 @@ Default output root: `/deepfreeze/share/SPDMX` (`SPDMX_OUTPUT_DIR` in [`.env`](.
 
 Development artifacts (ablations, analysis) live under `{OUTPUT_DIR}/dev/`. Production stems go to `{OUTPUT_DIR}/SPDMX_dev/` via `synthesis.final`.
 
-### Ablation (four conditions)
+### Ablation (four render modes)
 
 Default behavior: random sample from `subset:rated_deduplicated` (N=100, seed=42).
 
@@ -45,17 +47,13 @@ Default behavior: random sample from `subset:rated_deduplicated` (N=100, seed=42
 uv run python -m analysis.prepare_synthesis --subset all_valid -j 8
 # → {OUTPUT_DIR}/dev/analysis/instruments/all_valid/register.csv
 
-# A1 / B1 — raw stems (loads register by default)
+# A1 / B1 — FluidSynth stems (loads register by default)
 uv run python -m synthesis.synthesize --render-mode basic
 uv run python -m synthesis.synthesize --render-mode slakh
 
-# Prototyping: MP3 instead of FLAC (smaller; use same flag for realify)
-uv run python -m synthesis.synthesize --render-mode basic
-uv run python -m synthesis.synthesize --render-mode basic --realify
-
-# A2 / B2 — realify (GPU only; requires A1 / B1 stems first)
-uv run python -m synthesis.synthesize --render-mode basic --realify
-uv run python -m synthesis.synthesize --render-mode slakh --realify
+# CA1 / CB1 — neural DDSP + soundfont fallback (requires Track C / .venv-ddsp)
+uv run python -m synthesis.synthesize --render-mode ddsp_basic
+uv run python -m synthesis.synthesize --render-mode ddsp_slakh
 ```
 
 Output:
@@ -63,9 +61,9 @@ Output:
 ```
 /deepfreeze/pnlong/SPDMX/dev/ablations/
 ├── basic/
-├── basic_realify/
 ├── slakh/
-└── slakh_realify/
+├── ddsp_basic/
+└── ddsp_slakh/
 ```
 
 ### Full sPDMX (after listening test)
@@ -83,8 +81,8 @@ uv run python -m synthesis.final --only-pass mix
 ```
 
 **Multi-machine GPU rendering:** pass `--shard-count N --shard-index k` on
-`fluidsynth`, `ddsp_piano`, `midi_ddsp`, or `realify` (one unique index per
-machine). See [`synthesis/FINAL_SETUP.md`](synthesis/FINAL_SETUP.md).
+`fluidsynth`, `ddsp_piano`, or `midi_ddsp` (one unique index per machine). See
+[`synthesis/FINAL_SETUP.md`](synthesis/FINAL_SETUP.md).
 
 Writes raw FLAC stems to `{OUTPUT_DIR}/SPDMX_dev/raw/` (mix writes summable stems to `audio/`). Sanitized MIDIs, `stems.csv`, `LICENSE`, and `README.md` come from `prepare_synthesis` / layout. Mix is `sum(stems)` (no `mixture.*`). Pipeline tables live under `{OUTPUT_DIR}/dev/final/` (`stems.fluidsynth.csv` etc. during render; `stems.csv` / `data.csv` after mix or `--only-pass merge`).
 
@@ -110,12 +108,13 @@ Chunked **release** tree `{OUTPUT_DIR}/SPDMX/` uses flattened
 `songs.csv` (`subset:all` / `subset:bdgp`). Schema and joins:
 [`synthesis/spdmx_release/README.md`](synthesis/spdmx_release/README.md).
 
-Rebuild release after mixes exist::
+Rebuild release after mixes exist:
 
 ```bash
 uv run python -m synthesis.final --only-pass mix -j 8
 uv run python -m synthesis.build_spdmx -j 8
 ```
+
 ### Analysis
 
 **GM register (prerequisite for synthesis):** corrects mismatched GM program ids from MIDI track names:
@@ -136,9 +135,9 @@ uv run python -m analysis.analyze_song_lengths
 
 Writes to `{OUTPUT_DIR}/dev/analysis/song_lengths/`:
 
-- `song_length_histogram.png` — distribution with SA3 limits marked
+- `song_length_histogram.png` — duration distribution
 - `song_length_percentiles.png` — empirical CDF (percentile curve)
-- `song_length_report.json` — stats, duration percentiles, SA3 limit percentiles, and model recommendation
+- `song_length_report.json` — stats and duration percentiles
 
 Also symlinks in-repo dev output (both gitignored; run `uv run python -m shared.setup_symlinks` after clone):
 
@@ -149,13 +148,13 @@ Also symlinks in-repo dev output (both gitignored; run `uv run python -m shared.
 
 | Path | Purpose |
 |------|---------|
-| [`SETUP.md`](SETUP.md) | **Environment setup guide** (uv, SA3, flash-attn) |
+| [`SETUP.md`](SETUP.md) | **Environment setup guide** (uv, fluidsynth, DDSP) |
 | `synthesis/synthesize.py` | Main CLI: ablation sample (default) or `--full` PDMX |
+| `synthesis/final.py` | Hybrid production render from `recipe.yaml` |
 | `synthesis/build_spdmx.py` | Post-render build `{OUTPUT}/SPDMX/` from flat `SPDMX_dev/` |
 | `synthesis/distribute_spdmx.py` | Stage Zenodo metadata + per-chunk zips |
-| `synthesis/realify/` | SA3 wrapper + submodule |
-| `synthesis/realify/captions/` | Caption generation from PDMX metadata |
-| `analysis/` | Duration analysis and SA3 model recommendation — see [`analysis/README.md`](analysis/README.md) |
+| `analysis/` | Duration / GM / DDSP coverage analysis — see [`analysis/README.md`](analysis/README.md) |
+| `experiments/sao/` | Optional SAO fine-tune generative eval |
 | `.env` | Machine paths (`SPDMX_PDMX_FILEPATH`, `SPDMX_OUTPUT_DIR`, …); copy from `.env.example` |
 | `shared/config.py` | Constants + path imports from `.env` — see [`shared/README.md`](shared/README.md) |
 | `shared/setup_symlinks.py` | Create in-repo symlinks after clone (`python -m shared.setup_symlinks`) |

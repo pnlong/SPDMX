@@ -9,8 +9,7 @@ import pandas as pd
 
 from analysis.pdmx_subset import filter_pdmx_subset
 from shared.csv_tables import sanitize_track_name
-from synthesis.patches import _gm_class
-from synthesis.realify.preset_config import load_presets, resolve_category
+from synthesis.patches import _gm_class, resolve_probe_category
 
 TRACKS_DELIMITER = "-"
 
@@ -192,37 +191,36 @@ def parse_tracks_cell(tracks) -> list[int] | None:
         return None
 
 
-def program_to_stem_record(program: int, presets: dict, *, is_drum: bool = False) -> dict:
-    meta_row = pd.Series({"program": program, "is_drum": is_drum, "name": None})
+def program_to_stem_record(program: int, presets: dict | None = None, *, is_drum: bool = False) -> dict:
+    del presets  # unused; kept for call-site compatibility
     gm_id = DRUM_GM_ID if is_drum else int(program)
     return {
         "gm_id": gm_id,
         "program": int(program),
         "is_drum": bool(is_drum),
         "gm_class": _gm_class(program, is_drum),
-        "category": resolve_category(meta_row, presets),
+        "category": resolve_probe_category(
+            program=int(program), is_drum=bool(is_drum), track_name=None,
+        ),
     }
 
 
 def tracks_cell_to_stem_records(tracks, presets: dict | None = None) -> list[dict]:
     """Legacy helper: melodic programs only (no channel-10 drum detection)."""
+    del presets
     programs = parse_tracks_cell(tracks)
     if programs is None:
         return []
-    if presets is None:
-        presets = load_presets()
-    return [program_to_stem_record(program, presets, is_drum=False) for program in programs]
+    return [program_to_stem_record(program, is_drum=False) for program in programs]
 
 
 def extract_gm_stems_from_mid(mid_path: str | Path, presets: dict | None = None) -> list[dict] | None:
     """Parse a MIDI file; one record per non-empty track (drums = channel 10)."""
+    del presets
     try:
         midi = mido.MidiFile(filename=str(mid_path), charset="utf8")
     except Exception:
         return None
-
-    if presets is None:
-        presets = load_presets()
 
     rows: list[dict] = []
     for track in midi.tracks:
@@ -246,8 +244,13 @@ def extract_gm_stems_from_mid(mid_path: str | Path, presets: dict | None = None)
         if n_notes == 0:
             continue
 
-        record = program_to_stem_record(program, presets, is_drum=is_drum)
+        record = program_to_stem_record(program, is_drum=is_drum)
         record["name"] = track_name if track_name else None
+        record["category"] = resolve_probe_category(
+            program=int(program),
+            is_drum=bool(is_drum),
+            track_name=track_name if track_name else None,
+        )
         rows.append(record)
 
     return rows
@@ -285,8 +288,7 @@ def stems_from_register(
     presets: dict | None = None,
 ) -> pd.DataFrame:
     """Build GM stem records from a register table using ``program_corrected``."""
-    if presets is None:
-        presets = load_presets()
+    del presets
     if register is None or len(register) == 0:
         return stems_dataframe([])
 
@@ -296,7 +298,6 @@ def stems_from_register(
         program = int(row["program_corrected"])
         name = row.get("name")
         name = None if pd.isna(name) else name
-        meta_row = pd.Series({"program": program, "is_drum": is_drum, "name": name})
         gm_id = DRUM_GM_ID if is_drum else int(program)
         records.append(
             {
@@ -304,7 +305,9 @@ def stems_from_register(
                 "program": int(program),
                 "is_drum": bool(is_drum),
                 "gm_class": _gm_class(program, is_drum),
-                "category": resolve_category(meta_row, presets),
+                "category": resolve_probe_category(
+                    program=int(program), is_drum=bool(is_drum), track_name=name,
+                ),
                 "name": name,
             }
         )

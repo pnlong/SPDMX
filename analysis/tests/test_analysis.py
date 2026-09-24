@@ -7,7 +7,7 @@ import pandas as pd
 import soundfile as sf
 
 from analysis.analyze_durations import analyze_stem_row, stem_duration_seconds
-from analysis.report import build_report, recommend_model
+from analysis.report import build_report, duration_summary
 
 
 def _write_flac(path: Path, seconds: float, sr: int = 44100):
@@ -29,16 +29,11 @@ def test_analyze_stem_row(tmp_path: Path):
     assert abs(result["duration_seconds"] - 1.5) < 0.01
 
 
-def test_recommend_small_music():
+def test_duration_summary():
     durations = pd.Series([30, 60, 90, 100, 110])
-    rec = recommend_model(durations)
-    assert rec["recommended_model"] == "small-music"
-
-
-def test_recommend_medium():
-    durations = pd.Series([30, 60, 200, 250, 300])
-    rec = recommend_model(durations)
-    assert rec["recommended_model"] == "medium"
+    summary = duration_summary(durations)
+    assert summary["n_songs"] == 5
+    assert summary["median_song_duration_seconds"] == 90.0
 
 
 def test_build_report(tmp_path: Path):
@@ -52,4 +47,5 @@ def test_build_report(tmp_path: Path):
     ])
     report = build_report(df)
     assert "summary" in report
-    assert report["summary"]["recommended_model"] == "small-music"
+    assert report["summary"]["n_songs"] == 2
+    assert report["summary"]["median_song_duration_seconds"] == 2.0
