@@ -18,6 +18,7 @@ Released / Zenodo layout (after packaging):
 ├── stems.csv          # stem-level (one row per rendered track)
 ├── songs.csv          # song-level (one row per song_id; subsets)
 ├── chunks.csv         # per-chunk size / archive metadata
+├── chunk_assignment.csv  # song_id → chunk; kept fixed across later releases
 ├── chunk_0/
 │   └── <song_id>/
 │       ├── 0.flac
@@ -154,7 +155,7 @@ uv run python -m synthesis.build_songs_table --spdmx-root /path/to/SPDMX
 | `chunk` | Integer id → directory `chunk_{chunk}/` |
 | `n_songs` / `n_stems` | Counts in that chunk |
 | `bytes` | Total media bytes |
-| `archive` / `sha256` | Filled by `distribute_spdmx` for Zenodo zips |
+| `archive` / `sha256` | Optional; MDC uploads are two part archives, not per-chunk zips |
 
 ## Primary key (PDMX join)
 
@@ -166,23 +167,37 @@ uv run python -m synthesis.build_songs_table --spdmx-root /path/to/SPDMX
 | `mid` (`./chunk_N/{song_id}/mix.mid`) | `mid` is the PDMX MIDI path; sPDMX `mid` is dataset-relative |
 | `path` (`./chunk_N/{song_id}`) | PDMX `path` is metadata JSON; sPDMX `path` is the song directory |
 
-## Zenodo download
+### `chunk_assignment.csv`
 
-See [`ZENODO.md`](ZENODO.md) for upload logistics, size limits, recommended
-multi-record layout, and copy-paste deposit text.
+One row per song that has ever been released (`song_id`, `chunk`). Songs listed
+here stay in that chunk in later versions; only new songs are packed into the
+lightest chunk. The file is not trimmed when a song is dropped from a later
+render. Even chunk ids ship in MDC part 1 and odd chunk ids ship in part 2
+(`PARTS.md`).
 
-On Zenodo, metadata files and chunk archives are **separate downloads**:
+## Mozilla Data Collective download
 
-1. Download `stems.csv`, `songs.csv`, `chunks.csv`, `LICENSE`, `README.md`,
-   and (optional) `link_single_track_mixes.sh`.
-2. Use `songs.csv` subsets and/or `chunks.csv` (or filter `stems.csv` by `chunk`) to choose media.
-3. Download only the `chunk_N.zip` files you need (default **64** roughly
-   equal-sized chunks).
-4. Unzip each archive next to the CSVs so paths like `./chunk_0/<song_id>/…` resolve.
-5. Optionally run `./link_single_track_mixes.sh` so single-track songs get
+See [`MDC.md`](MDC.md) for staging and upload notes.
+
+The corpus is two archives because MDC has a 1 TB upload cap, plus an optional
+sample archive. Both parts contain the same CSV index and disjoint `chunk_*`
+directories (part 1: even chunk ids, part 2: odd chunk ids).
+
+1. Download `spdmx-part1.tar.gz` and `spdmx-part2.tar.gz` (or
+   `spdmx-sample.tar.gz` to preview).
+2. Extract both into one directory so `LICENSE`, CSVs, and `chunk_N/` sit together:
+
+   ```bash
+   mkdir -p SPDMX
+   tar -xzf spdmx-part1.tar.gz -C SPDMX
+   tar -xzf spdmx-part2.tar.gz -C SPDMX
+   ```
+
+3. Optionally run `./link_single_track_mixes.sh` so single-track songs get
    `mix.flac → 0.flac` (multitrack songs already ship `mix.flac`).
-6. Restrict work to local media with
-   `stems.csv[stems.csv["chunk"] == 0]` (or a set of chunk ids).
+4. Join / filter with `songs.csv` and `stems.csv` as usual. `PARTS.md` in each
+   archive states the even/odd split. Layout chunks remain useful for sharding
+   local work.
 
 ## Rebuild (lab)
 
@@ -192,6 +207,7 @@ After summable stems / mixes exist under `SPDMX_dev/` (`--only-pass mix`):
 uv run python -m synthesis.final --only-pass mix -j 8
 # or debug: uv run python -m synthesis.render_mixes -j 8
 uv run python -m synthesis.build_spdmx -j 8
+uv run python -m synthesis.distribute_spdmx -o "$SPDMX_OUTPUT_DIR"
 ```
 
 ## Citation

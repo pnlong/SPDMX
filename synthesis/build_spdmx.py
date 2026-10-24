@@ -6,13 +6,15 @@ After ``synthesis.final`` has written ``audio/``, ``mid/``, ``mix/``,
 **separate** distributable directory (default ``{OUTPUT_DIR}/SPDMX/``):
 
 1. Assigns songs to a fixed number of roughly equal-sized download chunks
-   (default 64, LPT bin packing).
+   (default 64). Songs listed in ``chunk_assignment.csv`` keep that chunk;
+   only new songs are LPT-packed.
 2. Hardlinks (or copies) stems + dense MIDI into
    ``chunk_N/<song_id>/{k.flac,mix.mid}``, plus ``mix.flac`` only for
    multitrack songs (``n_tracks >= 2``). Single-track mixes are omitted
    (identical to the lone stem; optional post-download linker restores
    ``mix.flac`` as a symlink).
-3. Writes packaged ``stems.csv`` (with ``chunk``) + ``chunks.csv`` + LICENSE/README.
+3. Writes packaged ``stems.csv`` (with ``chunk``), ``chunks.csv``,
+   ``chunk_assignment.csv``, and LICENSE/README.
 4. Packages ``songs.csv`` by remapping ``SPDMX_dev/songs.csv`` into chunk paths
    (preferred; keeps ``song_length``). Falls back to aggregating from packaged
    ``stems.csv`` if the dev songs table is missing.
@@ -46,16 +48,20 @@ from shared.config import (
 )
 from synthesis.build_songs_table import write_songs_table
 from synthesis.chunking import (
+    CHUNK_ASSIGNMENT_FILE_NAME,
     CHUNK_ASSIGNMENT_SEED,
     DEFAULT_NUM_CHUNKS,
     CHUNKS_FILE_NAME,
     assign_songs_to_chunks,
     build_chunks_manifest,
+    bundled_chunk_assignment_path,
     chunk_dir_name,
     list_chunk_dirs,
+    load_chunk_assignment,
     rewrite_songs_table_for_chunks,
     rewrite_track_map_for_chunks,
     song_media_bytes,
+    write_chunk_assignment,
 )
 from synthesis.paths import spdmx_dataset_dir, spdmx_dev_dir
 from synthesis.spdmx_release import write_spdmx_release_docs
@@ -103,7 +109,27 @@ def parse_args(args=None, namespace=None):
         "--seed",
         type=int,
         default=CHUNK_ASSIGNMENT_SEED,
-        help=f"Shuffle seed for song→chunk assignment (default: {CHUNK_ASSIGNMENT_SEED}).",
+        help=(
+            "Shuffle seed before size ordering for songs that are not in the "
+            f"frozen map (default: {CHUNK_ASSIGNMENT_SEED}). Frozen songs are "
+            "not moved. The size/song_id sort is a total order, so this seed "
+            "does not change placement when song ids are unique."
+        ),
+    )
+    parser.add_argument(
+        "--frozen-assignment",
+        default=None,
+        type=str,
+        help=(
+            "CSV of song_id,chunk to keep fixed. "
+            f"Default, when --num-chunks is {DEFAULT_NUM_CHUNKS}: "
+            f"{bundled_chunk_assignment_path()}."
+        ),
+    )
+    parser.add_argument(
+        "--no-frozen-assignment",
+        action="store_true",
+        help="Pack every song from file sizes. Ignores the bundled map.",
     )
     parser.add_argument(
         "--copy",
@@ -492,6 +518,44 @@ def _cleanup_obsolete_chunk_dirs(
     )
 
 
+def resolve_frozen_assignment(
+    *,
+    num_chunks: int,
+    frozen_assignment: str | Path | None = None,
+    use_bundled_assignment: bool = True,
+) -> tuple[dict[str, str] | None, Path | None]:
+    """Return ``(song→chunk, path)`` for songs that must stay put.
+
+    An explicit path always wins. Otherwise the bundled v1 map is used when
+    ``num_chunks`` is the production default. ``use_bundled_assignment=False``
+    packs from sizes only.
+    """
+    if frozen_assignment is not None and not use_bundled_assignment:
+        raise ValueError(
+            "pass either a frozen assignment path or --no-frozen-assignment, not both"
+        )
+    if not use_bundled_assignment:
+        return None, None
+    path = Path(frozen_assignment) if frozen_assignment is not None else None
+    if path is None:
+        if int(num_chunks) != DEFAULT_NUM_CHUNKS:
+            return None, None
+        path = bundled_chunk_assignment_path()
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Bundled chunk assignment missing: {path}. "
+                "Pass --no-frozen-assignment to pack from sizes only."
+            )
+    if not path.is_file():
+        raise FileNotFoundError(f"Frozen chunk assignment not found: {path}")
+    frozen = load_chunk_assignment(path)
+    print(
+        f"Frozen assignment: {len(frozen)} songs from {path}",
+        flush=True,
+    )
+    return frozen, path
+
+
 def chunk_dataset(
     *,
     dataset_dir: str | Path,
@@ -502,6 +566,8 @@ def chunk_dataset(
     dry_run: bool = False,
     allow_in_place: bool = False,
     jobs: int = 8,
+    frozen_assignment: str | Path | None = None,
+    use_bundled_assignment: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
     """Build a chunked release tree under *package_dir* from flat *dataset_dir*.
 
@@ -556,8 +622,23 @@ def chunk_dataset(
         more = "" if len(missing_audio) <= 5 else f" (+{len(missing_audio) - 5} more)"
         raise FileNotFoundError(f"Missing audio for song_id(s): {preview}{more}")
 
+    frozen_map, _frozen_path = resolve_frozen_assignment(
+        num_chunks=num_chunks,
+        frozen_assignment=frozen_assignment,
+        use_bundled_assignment=use_bundled_assignment,
+    )
+    n_kept = sum(1 for song_id in song_ids if frozen_map and song_id in frozen_map)
+    print(
+        f"Chunk assignment: {n_kept} songs kept, "
+        f"{len(song_ids) - n_kept} songs packed from sizes "
+        f"({num_chunks} chunks).",
+        flush=True,
+    )
     assignment = assign_songs_to_chunks(
-        song_sizes, num_chunks=num_chunks, seed=seed,
+        song_sizes,
+        num_chunks=num_chunks,
+        seed=seed,
+        frozen=frozen_map,
     )
     packaged = rewrite_track_map_for_chunks(table, assignment)
     chunks = build_chunks_manifest(packaged, assignment, song_sizes)
@@ -588,6 +669,9 @@ def chunk_dataset(
     print(f"Writing packaged CSVs under {dest} …", flush=True)
     packaged.to_csv(dest / f"{SPDMX_FILE_NAME}.csv", index=False)
     chunks.to_csv(dest / CHUNKS_FILE_NAME, index=False)
+    write_chunk_assignment(
+        dest / CHUNK_ASSIGNMENT_FILE_NAME, frozen_map, assignment
+    )
     write_spdmx_release_docs(dest)
 
     source_songs = source / SPDMX_SONGS_FILE_NAME
@@ -648,6 +732,8 @@ def main(argv=None) -> int:
             dry_run=args.dry_run,
             allow_in_place=args.in_place,
             jobs=args.jobs if args.jobs is not None else _default_jobs(),
+            frozen_assignment=args.frozen_assignment,
+            use_bundled_assignment=not args.no_frozen_assignment,
         )
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -666,6 +752,7 @@ def main(argv=None) -> int:
         print(f"  {package_dir / f'{SPDMX_FILE_NAME}.csv'}")
         print(f"  {package_dir / SPDMX_SONGS_FILE_NAME}")
         print(f"  {package_dir / CHUNKS_FILE_NAME}")
+        print(f"  {package_dir / CHUNK_ASSIGNMENT_FILE_NAME}")
         print(f"  flat production tree left untouched: {dataset_dir}")
     return 0
 

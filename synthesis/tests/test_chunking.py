@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import zipfile
+import tarfile
 from pathlib import Path
 
 import pandas as pd
@@ -16,20 +16,34 @@ from shared.config import (
 )
 from synthesis.build_spdmx import chunk_dataset
 from synthesis.chunking import (
+    CHUNK_ASSIGNMENT_FILE_NAME,
     CHUNKS_FILE_NAME,
     PACKAGED_TRACK_MAP_COLUMNS,
+    PARTS_FILE_NAME,
     SHA256SUMS_FILE_NAME,
     assign_songs_to_chunks,
     build_chunks_manifest,
+    bundled_chunk_assignment_path,
     chunk_dir_name,
     format_chunk_id,
     list_chunk_dirs,
+    load_chunk_assignment,
+    merge_chunk_assignment,
     packaged_audio_rel,
     packaged_mid_rel,
+    parse_chunk_id,
+    partition_chunk_ids,
+    parts_document,
     rewrite_songs_table_for_chunks,
     rewrite_track_map_for_chunks,
 )
-from synthesis.distribute_spdmx import stage_zenodo_files
+from synthesis.distribute_spdmx import (
+    FULL_ARCHIVE_NAME,
+    PART1_ARCHIVE_NAME,
+    PART2_ARCHIVE_NAME,
+    SAMPLE_ARCHIVE_NAME,
+    stage_mdc_archives,
+)
 from synthesis.spdmx_release import write_spdmx_release_docs
 
 
@@ -66,6 +80,47 @@ def test_assign_songs_to_chunks_caps_at_n_songs():
     sizes = {"a": 1, "b": 2}
     assignment = assign_songs_to_chunks(sizes, num_chunks=64, seed=0)
     assert len(set(assignment.values())) == 2
+
+
+def test_assign_songs_keeps_frozen_chunks_when_sizes_change():
+    frozen = {"a": "0", "b": "0"}
+    first = assign_songs_to_chunks(
+        {"a": 100, "b": 100, "c": 10},
+        num_chunks=2,
+        frozen=frozen,
+    )
+    assert first["a"] == "0"
+    assert first["b"] == "0"
+    assert first["c"] == "1"
+    again = assign_songs_to_chunks(
+        {"a": 1, "b": 1, "c": 10_000},
+        num_chunks=2,
+        frozen={"a": "0", "b": "0", "c": "1"},
+    )
+    assert again == {"a": "0", "b": "0", "c": "1"}
+
+
+def test_assign_songs_rejects_frozen_chunk_outside_range():
+    with pytest.raises(ValueError, match="outside"):
+        assign_songs_to_chunks({"a": 1}, num_chunks=2, frozen={"a": "5"})
+
+
+def test_merge_chunk_assignment_keeps_songs_missing_from_render():
+    frame = merge_chunk_assignment({"old/song": "3", "kept": "0"}, {"kept": "1", "new": "2"})
+    rows = dict(zip(frame["song_id"], frame["chunk"], strict=True))
+    assert rows == {"kept": 0, "new": 2, "old/song": 3}
+
+
+def test_bundled_chunk_assignment_covers_even_and_odd_parts():
+    frozen = load_chunk_assignment(bundled_chunk_assignment_path())
+    assert len(frozen) == 253_982
+    assert set(frozen.values()) == {str(i) for i in range(64)}
+    parts = partition_chunk_ids(set(frozen.values()))
+    assert parts[1] == [str(i) for i in range(0, 64, 2)]
+    assert parts[2] == [str(i) for i in range(1, 64, 2)]
+    text = parts_document()
+    assert "even chunk ids" in text
+    assert "odd chunk ids" in text
 
 
 def test_rewrite_track_map_for_chunks_updates_paths():
@@ -369,70 +424,176 @@ def test_chunk_dataset_repack_rereads_flat_source(tmp_path: Path):
     assert "chunk" in packaged.columns
 
 
-def test_stage_zenodo_files(tmp_path: Path):
+def _tar_names(path: Path) -> list[str]:
+    with tarfile.open(path, "r:gz") as handle:
+        return handle.getnames()
+
+
+def _chunk_ids_in_names(names: list[str]) -> set[str]:
+    found: set[str] = set()
+    for name in names:
+        for part in Path(name).parts:
+            suffix = part[len("chunk_") :]
+            if part.startswith("chunk_") and suffix.isdigit():
+                found.add(parse_chunk_id(part))
+    return found
+
+
+def test_chunk_dataset_writes_frozen_assignment(tmp_path: Path):
+    source = tmp_path / "SPDMX_dev"
+    dest = tmp_path / "SPDMX"
+    source.mkdir()
+    _write_flat_fixture(source)
+    frozen = tmp_path / "frozen.csv"
+    frozen.write_text(
+        "song_id,chunk\n0/1/QmA,1\nold/song,0\n",
+        encoding="utf-8",
+    )
+    _packaged, _chunks, assignment = chunk_dataset(
+        dataset_dir=source,
+        package_dir=dest,
+        num_chunks=2,
+        seed=0,
+        frozen_assignment=frozen,
+    )
+    assert assignment["0/1/QmA"] == "1"
+    assert assignment["0/2/QmB"] == "0"
+    saved = pd.read_csv(dest / CHUNK_ASSIGNMENT_FILE_NAME)
+    rows = dict(zip(saved["song_id"], saved["chunk"], strict=True))
+    assert rows["0/1/QmA"] == 1
+    assert rows["old/song"] == 0
+    assert "0/2/QmB" in rows
+
+
+def test_stage_mdc_archives(tmp_path: Path):
     source = tmp_path / "SPDMX_dev"
     release = tmp_path / "SPDMX"
-    stage = tmp_path / "zenodo"
+    stage = tmp_path / "mdc"
     source.mkdir()
     _write_flat_fixture(source)
     chunk_dataset(dataset_dir=source, package_dir=release, num_chunks=2, seed=0)
 
-    manifest = stage_zenodo_files(
+    archives = stage_mdc_archives(
         dataset_dir=release,
         stage_dir=stage,
-        compression="store",
+        sample_n_multitrack=1,
+        sample_n_single=1,
+        sample_seed=0,
     )
-    assert (stage / f"{SPDMX_FILE_NAME}.csv").is_file()
-    assert (stage / CHUNKS_FILE_NAME).is_file()
-    assert (stage / "LICENSE").is_file()
-    assert (stage / "README.md").is_file()
-    assert (stage / "link_single_track_mixes.sh").is_file()
-    assert (stage / "songs.csv").is_file()
+    assert [p.name for p in archives] == [
+        PART1_ARCHIVE_NAME,
+        PART2_ARCHIVE_NAME,
+        SAMPLE_ARCHIVE_NAME,
+    ]
     assert (stage / SHA256SUMS_FILE_NAME).is_file()
+    assert not (stage / "spdmx-sample").exists()
+    assert not (stage / FULL_ARCHIVE_NAME).exists()
 
-    zips = sorted(stage.glob("chunk_*.zip"))
-    assert zips
-    assert (manifest["archive"].astype(str) != "").all()
-    assert (manifest["sha256"].astype(str) != "").all()
+    part_names = {
+        1: _tar_names(stage / PART1_ARCHIVE_NAME),
+        2: _tar_names(stage / PART2_ARCHIVE_NAME),
+    }
+    part_chunks = {part: _chunk_ids_in_names(names) for part, names in part_names.items()}
+    assert part_chunks[1]
+    assert part_chunks[2]
+    assert part_chunks[1].isdisjoint(part_chunks[2])
+    assert all(int(chunk_id) % 2 == 0 for chunk_id in part_chunks[1])
+    assert all(int(chunk_id) % 2 == 1 for chunk_id in part_chunks[2])
+    release_chunks = {parse_chunk_id(path.name) for path in list_chunk_dirs(release)}
+    assert part_chunks[1] | part_chunks[2] == release_chunks
 
-    all_names: list[str] = []
-    for zpath in zips:
-        with zipfile.ZipFile(zpath) as zf:
-            all_names.extend(zf.namelist())
-    assert any(n.startswith("chunk_") and "/mix.mid" in n for n in all_names)
-    assert any(n.startswith("chunk_") and n.endswith("/0.flac") for n in all_names)
-    # Multitrack QmA ships mix.flac; single-track QmB does not.
-    assert any(n.endswith("QmA/mix.flac") for n in all_names)
-    assert not any(n.endswith("QmB/mix.flac") for n in all_names)
-    assert not any("/audio/" in n for n in all_names)
+    for names in part_names.values():
+        assert any(Path(name).name == f"{SPDMX_FILE_NAME}.csv" for name in names)
+        assert any(Path(name).name == CHUNK_ASSIGNMENT_FILE_NAME for name in names)
+        assert any(Path(name).name == PARTS_FILE_NAME for name in names)
+        assert any("mix.mid" in name for name in names)
+    joined = part_names[1] + part_names[2]
+    assert any(name.endswith("0.flac") for name in joined)
+    assert any("QmA/mix.flac" in name for name in joined)
+    assert not any("QmB/mix.flac" in name for name in joined)
+    assert not any("/audio/" in name for name in joined)
+    part1_note = next(
+        name for name in part_names[1] if Path(name).name == PARTS_FILE_NAME
+    )
+    part2_note = next(
+        name for name in part_names[2] if Path(name).name == PARTS_FILE_NAME
+    )
+    with tarfile.open(stage / PART1_ARCHIVE_NAME, "r:gz") as handle:
+        part1_text = handle.extractfile(part1_note).read()
+    with tarfile.open(stage / PART2_ARCHIVE_NAME, "r:gz") as handle:
+        part2_text = handle.extractfile(part2_note).read()
+    assert part1_text == part2_text
+
+    with tarfile.open(stage / SAMPLE_ARCHIVE_NAME, "r:gz") as handle:
+        sample_names = handle.getnames()
+    assert any("SAMPLE.md" in name for name in sample_names)
+    assert any("songs.csv" in name for name in sample_names)
 
     sums = (stage / SHA256SUMS_FILE_NAME).read_text(encoding="utf-8")
-    for path in zips:
-        assert path.name in sums
-    assert "link_single_track_mixes.sh" in sums
+    assert PART1_ARCHIVE_NAME in sums
+    assert PART2_ARCHIVE_NAME in sums
+    assert SAMPLE_ARCHIVE_NAME in sums
 
 
-def test_stage_zenodo_subset_chunks(tmp_path: Path):
+def test_stage_mdc_single_archive(tmp_path: Path):
     source = tmp_path / "SPDMX_dev"
     release = tmp_path / "SPDMX"
-    stage = tmp_path / "zenodo"
+    stage = tmp_path / "mdc"
     source.mkdir()
     _write_flat_fixture(source)
-    _, chunks, assignment = chunk_dataset(
-        dataset_dir=source,
-        package_dir=release,
-        num_chunks=2,
-        seed=0,
-    )
-    assert len(chunks) >= 2
-    only = sorted(set(assignment.values()), key=int)[0]
-    manifest = stage_zenodo_files(
+    chunk_dataset(dataset_dir=source, package_dir=release, num_chunks=2, seed=0)
+    archives = stage_mdc_archives(
         dataset_dir=release,
         stage_dir=stage,
-        chunk_ids={only},
+        parts=1,
+        skip_sample=True,
     )
-    assert list(manifest["chunk"]) == [only]
-    assert list(stage.glob("chunk_*.zip")) == [stage / f"chunk_{only}.zip"]
+    assert [path.name for path in archives] == [FULL_ARCHIVE_NAME]
+    names = _tar_names(stage / FULL_ARCHIVE_NAME)
+    assert any(name.endswith("LICENSE") or Path(name).name == "LICENSE" for name in names)
+    assert _chunk_ids_in_names(names) == {
+        parse_chunk_id(path.name) for path in list_chunk_dirs(release)
+    }
+
+
+def test_stage_mdc_refuses_oversized_part(tmp_path: Path):
+    source = tmp_path / "SPDMX_dev"
+    release = tmp_path / "SPDMX"
+    stage = tmp_path / "mdc"
+    source.mkdir()
+    _write_flat_fixture(source)
+    chunk_dataset(dataset_dir=source, package_dir=release, num_chunks=2, seed=0)
+    with pytest.raises(ValueError, match="over the"):
+        stage_mdc_archives(
+            dataset_dir=release,
+            stage_dir=stage,
+            skip_sample=True,
+            max_part_bytes=1,
+        )
+    assert not (stage / PART1_ARCHIVE_NAME).exists()
+    assert not (stage / PART2_ARCHIVE_NAME).exists()
+
+
+def test_stage_mdc_sample_only(tmp_path: Path):
+    source = tmp_path / "SPDMX_dev"
+    release = tmp_path / "SPDMX"
+    stage = tmp_path / "mdc"
+    source.mkdir()
+    _write_flat_fixture(source)
+    chunk_dataset(dataset_dir=source, package_dir=release, num_chunks=2, seed=0)
+    archives = stage_mdc_archives(
+        dataset_dir=release,
+        stage_dir=stage,
+        skip_full=True,
+        sample_n_multitrack=1,
+        sample_n_single=1,
+        keep_sample_dir=True,
+    )
+    assert [p.name for p in archives] == [SAMPLE_ARCHIVE_NAME]
+    assert (stage / "spdmx-sample" / "SAMPLE.md").is_file()
+    assert not (stage / FULL_ARCHIVE_NAME).exists()
+    assert not (stage / PART1_ARCHIVE_NAME).exists()
+    assert not (stage / PART2_ARCHIVE_NAME).exists()
 
 
 def test_build_spdmx_cli_defaults_to_release_dir(tmp_path: Path, capsys):
@@ -506,9 +667,15 @@ def test_distribute_cli(tmp_path: Path):
             str(release),
             "--stage-dir",
             str(stage),
+            "--sample-n-multitrack",
+            "1",
+            "--sample-n-single",
+            "1",
         ]
     )
     assert code == 0
     assert (stage / SHA256SUMS_FILE_NAME).is_file()
-    assert (stage / "link_single_track_mixes.sh").is_file()
-    assert (stage / "songs.csv").is_file()
+    assert (stage / PART1_ARCHIVE_NAME).is_file()
+    assert (stage / PART2_ARCHIVE_NAME).is_file()
+    assert not (stage / FULL_ARCHIVE_NAME).exists()
+    assert (stage / SAMPLE_ARCHIVE_NAME).is_file()

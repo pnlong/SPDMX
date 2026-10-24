@@ -33,7 +33,7 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 | `listening/make_clips.py` | Aligned 10s clips (windows from A1) for listening |
 | `build_spdmx.py` | Post-render: flattened `{OUTPUT}/SPDMX/chunk_N/<song_id>/` from `SPDMX_dev/` |
 | `build_songs_table.py` | Song-level `songs.csv` + `subset:*` from `stems.csv` (also invoked by `build_spdmx`) |
-| `distribute_spdmx.py` | Stage Zenodo files (metadata + `chunk_NNN.zip`) |
+| `distribute_spdmx.py` | Stage MDC archives (`spdmx-part1/2.tar.gz` + sample) |
 
 ## Source files
 
@@ -45,9 +45,9 @@ Flags: `--register PATH` to point at another CSV; `--no-register` to use raw MID
 | `build_spdmx.py` | Post-render flattened chunking of `SPDMX_dev/` into download chunks + `songs.csv` |
 | `render_mixes.py` | ffmpeg full-song mixes under `SPDMX_dev/mix/` |
 | `build_songs_table.py` | Aggregate `stems.csv` → `songs.csv` (`subset:all`, `subset:bdgp`, …) |
-| `distribute_spdmx.py` | Stage Zenodo upload files (CSVs + per-chunk zips) |
-| `spdmx_release/README.md` | **Public dataset schema** (stems/songs/chunks joins) — ships on Zenodo |
-| `chunking.py` | Song→chunk assignment (fixed N equal-ish bins) and packaged CSV helpers |
+| `distribute_spdmx.py` | Stage MDC upload archives (even/odd parts + sample `.tar.gz`) |
+| `spdmx_release/README.md` | **Public dataset schema** (stems/songs/chunks joins) — ships in the archive |
+| `chunking.py` | Song→chunk assignment (frozen map + new songs) and packaged CSV helpers |
 | `audio.py` | fluidsynth rendering, mono downmix, BS.1770-4 loudness, FLAC I/O, mixture build |
 | `velocity.py` | MIDI max-velocity → per-track dynamics scales for mix |
 | `mix.py` | Dataset-level stem normalization (summability) |
@@ -74,7 +74,7 @@ Browsable in-repo via gitignored symlink [`ablations_output/`](ablations_output/
 Flat production render: `{OUTPUT_DIR}/SPDMX_dev/` via `synthesis.final`.
 Chunked release: `{OUTPUT_DIR}/SPDMX/` via `build_spdmx`.
 
-Post-render packaging for Zenodo:
+Post-render packaging for Mozilla Data Collective:
 
 ```bash
 # 0. Normalize audio/ + write mix/<song_id>.flac (dirty-aware)
@@ -85,7 +85,7 @@ uv run python -m synthesis.final --only-pass mix -j 8
 uv run python -m synthesis.build_spdmx -o "$SPDMX_OUTPUT_DIR"
 # → {OUTPUT}/SPDMX/chunk_N/<song_id>/{k.flac,mix.flac,mix.mid} + CSVs
 
-# 2. Stage loose metadata + chunk_N.zip for upload
-uv run python -m synthesis.distribute_spdmx -o "$SPDMX_OUTPUT_DIR" \
-  --stage-dir /path/to/zenodo_stage
+# 2. Stage even/odd part archives + sample .tar.gz for MDC upload
+uv run python -m synthesis.distribute_spdmx -o "$SPDMX_OUTPUT_DIR"
+# → {OUTPUT}/SPDMX_mdc/spdmx-part{1,2}.tar.gz + spdmx-sample.tar.gz + SHA256SUMS
 ```

@@ -152,7 +152,7 @@ Also symlinks in-repo dev output (both gitignored; run `uv run python -m shared.
 | `synthesis/synthesize.py` | Main CLI: ablation sample (default) or `--full` PDMX |
 | `synthesis/final.py` | Hybrid production render from `recipe.yaml` |
 | `synthesis/build_spdmx.py` | Post-render build `{OUTPUT}/SPDMX/` from flat `SPDMX_dev/` |
-| `synthesis/distribute_spdmx.py` | Stage Zenodo metadata + per-chunk zips |
+| `synthesis/distribute_spdmx.py` | Stage MDC archives (`spdmx-part1/2.tar.gz` + sample) |
 | `analysis/` | Duration / GM / DDSP coverage analysis — see [`analysis/README.md`](analysis/README.md) |
 | `experiments/sao/` | Optional SAO fine-tune generative eval |
 | `.env` | Machine paths (`SPDMX_PDMX_FILEPATH`, `SPDMX_OUTPUT_DIR`, …); copy from `.env.example` |

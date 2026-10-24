@@ -200,7 +200,7 @@ python -m analysis.ddsp_coverage --subset rated_deduplicated
 python -m analysis.ddsp_coverage --subset rated_deduplicated --check-monophony -n 500
 ```
 
-Production layout is written by `python -m synthesis.final` (flat `audio/` + `mid/`). After the full render, `python -m synthesis.build_spdmx` builds a **new** `{OUTPUT}/SPDMX/` tree (hardlinks; flat `SPDMX_dev/` untouched), then stage zips with `python -m synthesis.distribute_spdmx --stage-dir …`.
+Production layout is written by `python -m synthesis.final` (flat `audio/` + `mid/`). After the full render, `python -m synthesis.build_spdmx` builds a **new** `{OUTPUT}/SPDMX/` tree (hardlinks; flat `SPDMX_dev/` untouched), then stage MDC archives with `python -m synthesis.distribute_spdmx`.
 
 ## Module layout
 
@@ -211,7 +211,7 @@ synthesis/
 ├── recipe.yaml         # per-category synthesis recipe (edit this)
 ├── recipe.py           # parse recipe → per-track plan + stem_recipe.csv
 ├── build_spdmx.py      # post-render: SPDMX_dev/ → SPDMX/chunk_N/
-├── distribute_spdmx.py # stage Zenodo metadata + chunk_NNN.zip
+├── distribute_spdmx.py # stage MDC spdmx-part1/2.tar.gz + sample
 ├── chunking.py         # song→chunk assignment helpers
 ├── ddsp/               # MIDI-DDSP + DDSP-Piano workers
 ```
@@ -288,7 +288,7 @@ See [`listening/README.md`](listening/README.md).
 | Stratified listening sample + 10s clips | Done |
 | `--full` for all valid PDMX | Done |
 | Hybrid `synthesis.final` from `recipe.yaml` | Done (FLAC in `{OUTPUT_DIR}/SPDMX_dev/`, mix = sum) |
-| `build_spdmx.py` / `distribute_spdmx.py` | Done (post-render chunk + Zenodo staging) |
+| `build_spdmx.py` / `distribute_spdmx.py` | Done (post-render chunk + MDC staging) |
 | Patch pools (Slakh) | Stub |
 | `mixture` per song | Not stored; `synthesis.final` (and `synthesis.mix`) apply LUFS × velocity × peak so mix = sum(stems). See [`MIXING.md`](MIXING.md). |
 | Listening test | Viewer available (`python -m synthesis.listening.serve`) |
