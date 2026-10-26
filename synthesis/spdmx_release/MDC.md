@@ -68,16 +68,16 @@ This is the only card field that differs between the two submissions.
 Suggested listing titles, separate from this field: `SPDMX (part 1 of 2)` and
 `SPDMX (part 2 of 2)`.
 
-Part 1 (140 characters):
+Part 1 (126 characters):
 
 ```
-Public-domain FLAC stems + dense MIDI for 253,982 PDMX songs. Singles omit mix.flac (use 0.flac or link_single_track_mixes.sh). Part 1 of 2.
+Public-domain FLAC stems + dense MIDI for 253,982 PDMX songs. Mixes provided as well (see below). Part 1 of 2 (download both).
 ```
 
-Part 2 (140 characters):
+Part 2 (126 characters):
 
 ```
-Public-domain FLAC stems + dense MIDI for 253,982 PDMX songs. Singles omit mix.flac (use 0.flac or link_single_track_mixes.sh). Part 2 of 2.
+Public-domain FLAC stems + dense MIDI for 253,982 PDMX songs. Mixes provided as well (see below). Part 2 of 2 (download both).
 ```
 
 ### Long description (plain text)
