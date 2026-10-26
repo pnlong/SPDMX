@@ -85,7 +85,7 @@ Public-domain FLAC stems + dense MIDI for 253,982 PDMX songs. Mixes provided as 
 ```
 SPDMX (Synthesized PDMX) renders the public-domain PDMX symbolic corpus into mono FLAC stems, optional linear-sum mixes, and dense corrected MIDI at 44.1 kHz (253,982 songs; ~5,469 mixture hours). Join to PDMX on song_id. Layout: chunk_N/<song_id>/{k.flac, mix.mid, mix.flac?}.
 
-Mozilla Data Collective hosts this corpus as two archives, part 1 of 2 and part 2 of 2. Download both and extract them into the same directory. Part 1 contains even chunk ids (chunk_0, chunk_2, ...) and part 2 contains odd chunk ids. The CSV indexes in each archive describe the full corpus. Then optionally run ./link_single_track_mixes.sh.
+Mozilla Data Collective hosts this corpus as two archives, parts 1 and 2. Download both and extract them into the same directory. Part 1 contains even chunk ids (chunk_0, chunk_2, ...) and part 2 contains odd chunk ids. The CSV indexes in each archive describe the full corpus. Then optionally run ./link_single_track_mixes.sh.
 
 Single-track songs (~65%) do not ship mix.flac (it would duplicate 0.flac). The mix CSV column still points at …/mix.flac. Resolve by (1) loading 0.flac when subset:multitrack is false / n_tracks == 1, or (2) running ./link_single_track_mixes.sh after extract to create mix.flac → 0.flac symlinks. Multitrack songs already include mix.flac. See README.md in the archive.
 
@@ -147,7 +147,7 @@ See third-party / ethics notes in the code repository for synthesizer provenance
 
 - GM program correction from track-name aliases; empty tracks dropped
 - Loudness- / velocity-aware mixing so multitrack stems remain summable
-- Release layout uses `chunk_N/` directories for sharding. On Mozilla Data Collective the corpus is two `.tar.gz` archives (part 1 of 2 and part 2 of 2). Extract both into one directory. Even chunk ids are in part 1; odd chunk ids are in part 2. `chunk_assignment.csv` keeps each song in the same chunk across later releases.
+- Release layout uses `chunk_N/` directories for sharding. On Mozilla Data Collective the corpus is two `.tar.gz` archives (parts 1 and 2). Extract both into one directory. Even chunk ids are in part 1; odd chunk ids are in part 2. `chunk_assignment.csv` keeps each song in the same chunk across later releases.
 
 **Scale.** 253,982 songs; 490,159 mono stems; ~5,469 mixture hours @ 44.1 kHz. Demo and paper materials: [pnlong.github.io/SPDMX](https://pnlong.github.io/SPDMX/)
 
