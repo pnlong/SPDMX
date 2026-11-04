@@ -196,6 +196,21 @@ a:hover {
   font-size: 0.92rem;
 }
 
+.blog-back {
+  margin: 0 0 0.85rem;
+}
+
+.blog-back a {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.blog-back a:hover {
+  color: var(--accent-2);
+}
+
 .blog-badges {
   display: inline-flex;
   flex-wrap: wrap;
@@ -308,6 +323,43 @@ a:hover {
 .post .caveat {
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.sao-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin: 1rem 0 1.5rem;
+  max-width: 40rem;
+}
+
+.sao-example {
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.sao-prompt {
+  margin: 0 0 0.75rem;
+  max-width: none;
+}
+
+.sao-arm {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 0.65rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+}
+
+.sao-arm span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.sao-arm audio {
+  width: 100%;
+  height: 2rem;
 }
 
 .hero {
@@ -560,6 +612,20 @@ figcaption code {
   background: rgba(28, 36, 32, 0.06);
   padding: 0.05em 0.3em;
   border-radius: 4px;
+}
+
+/* Block code in <pre> must not inherit inline-code padding (indents first line). */
+.steps pre code,
+.plain pre code,
+.code-block pre code,
+.bib code {
+  display: block;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: inherit;
+  white-space: inherit;
 }
 
 .chart-grid {

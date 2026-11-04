@@ -45,7 +45,7 @@ In `assets/`:
 | Page | Role |
 |------|------|
 | `index.html` | Home — stats (total + multitrack songs/hours), Cite |
-| `about.html` | Layout + plots |
+| `about.html` | Layout |
 | `download.html` | MDC Part 1 / Part 2 links, extract + symlink instructions |
 | `listen.html` | Stem demos |
 | `soundfonts.html` | Banks |

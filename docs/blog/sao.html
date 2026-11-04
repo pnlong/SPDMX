@@ -20,7 +20,6 @@
         ·
         <span class="blog-badges">
           <span class="badge badge-type-experiment">Experiment</span>
-          <span class="badge badge-status-wip">WIP</span>
         </span>
         · Generative
       </p>
@@ -35,33 +34,94 @@
 
       <h2>Setup</h2>
       <ul>
-        <li>Model: Stable Audio Open fine-tunes (pretrained checkpoint).</li>
+        <li>Model: Stable Audio Open 1.0, fine-tuned from the unwrapped pretrained checkpoint.</li>
+        <li>Budget: <strong>10k</strong> optimizer steps per arm (checkpoint <code>step=10000</code> used for generation).</li>
         <li>Arms:
           <ul>
-            <li><code>slakh</code> — Slakh train mixes</li>
-            <li><code>spdmx_matched</code> — songs with <code>subset:bdgp</code> (same BDGP pool as separation)</li>
-            <li><code>spdmx_full</code> — all SPDMX songs with a shipped mix</li>
+            <li><code>slakh</code> — Slakh train mixes (~89 song-hours, 1,289 clips)</li>
+            <li><code>spdmx_matched</code> — <code>subset:bdgp</code> (~38 song-hours, 632 songs)</li>
+            <li><code>spdmx_full</code> — all SPDMX songs with a shipped mix (~5,469 song-hours)</li>
           </ul>
         </li>
-        <li>SPDMX mixes are mono; SAO expects stereo — <code>stable-audio-tools</code> duplicates L/R at load time (do not store stereo mixes in the release).</li>
-        <li>Index shipped <code>mix.flac</code> paths (chunked release or flat <code>SPDMX_dev/mix/</code>); prefer <code>songs.csv</code> with lengths and subset flags.</li>
+        <li>SPDMX mixes are mono; SAO expects stereo — <code>stable-audio-tools</code> duplicates L/R at load time.</li>
+        <li>Eval: 100 held-out generations per arm (50 prompts × 2 seeds). FAD uses <strong>Slakh test</strong> reference mixes; CLAP is LAION-CLAP on the generations.</li>
       </ul>
 
       <h2>Metrics</h2>
       <ul>
-        <li>VGGish / OpenL3 <strong>FAD</strong> on held-out generations (reference-sensitive: Slakh-like acoustics are favored when refs are Slakh mixes).</li>
-        <li>LAION-<strong>CLAP</strong> scores on held-out generations.</li>
+        <li><strong>FAD</strong> (↓): Frechet Audio Distance vs Slakh-test mixes (reference-sensitive).</li>
+        <li><strong>CLAP</strong> (↑): LAION-CLAP score on held-out generations.</li>
       </ul>
 
       <h2>Results</h2>
-      <p><em>Metrics and audio examples will land here when the pilot finishes</em> (<code>sao_metrics.csv</code>).</p>
+      <div class="post-table-wrap">
+        <table>
+          <caption>SAO fine-tune metrics at 10k steps (n = 100 generations per arm). Source: <code>submission/data/sao_metrics.csv</code>.</caption>
+          <thead>
+            <tr>
+              <th>Train arm</th>
+              <th class="num">FAD ↓</th>
+              <th class="num">CLAP ↑</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Slakh</td><td class="num"><strong>1.41</strong></td><td class="num"><strong>0.340</strong></td></tr>
+            <tr><td>SPDMX matched (BDGP)</td><td class="num">1.57</td><td class="num">0.321</td></tr>
+            <tr><td>SPDMX full</td><td class="num">4.46</td><td class="num">0.289</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Slakh leads on both metrics under this Slakh-test reference setup. SPDMX
+        BDGP-matched is close; full-corpus fine-tuning is worse on both. That fits
+        FAD favoring Slakh-like acoustics when references are Slakh mixes, plus
+        domain mismatch for the larger, more heterogeneous full SPDMX set under a
+        fixed step budget (not a full-corpus scaling study).
+      </p>
       <p class="caveat">
-        Caveat: FAD depends strongly on the reference set; treat Slakh-referenced FAD
-        as a domain-similarity signal, not a pure quality ranking for SPDMX-trained models.
+        Caveats: steps are matched, not unique-song exposure (batch sizes differed
+        across arms in the recorded runs). Absolute CLAP gaps are small. Treat
+        Slakh-referenced FAD as a domain-similarity signal, not a pure quality ranking.
       </p>
 
+      <h2>Audio</h2>
+      <p>Same prompt, first 10&nbsp;s of each arm’s generation (seed&nbsp;0).</p>
+
+      <div class="sao-examples">
+        <div class="sao-example">
+          <p class="sao-prompt"><code>instrumental music, piano drums bass guitar</code></p>
+          <div class="sao-arm">
+            <span>Slakh</span>
+            <audio controls preload="none" src="../assets/sao/slakh_p000.mp3"></audio>
+          </div>
+          <div class="sao-arm">
+            <span>SPDMX matched</span>
+            <audio controls preload="none" src="../assets/sao/spdmx_matched_p000.mp3"></audio>
+          </div>
+          <div class="sao-arm">
+            <span>SPDMX full</span>
+            <audio controls preload="none" src="../assets/sao/spdmx_full_p000.mp3"></audio>
+          </div>
+        </div>
+        <div class="sao-example">
+          <p class="sao-prompt"><code>instrumental jazz trio, piano bass drums</code></p>
+          <div class="sao-arm">
+            <span>Slakh</span>
+            <audio controls preload="none" src="../assets/sao/slakh_p001.mp3"></audio>
+          </div>
+          <div class="sao-arm">
+            <span>SPDMX matched</span>
+            <audio controls preload="none" src="../assets/sao/spdmx_matched_p001.mp3"></audio>
+          </div>
+          <div class="sao-arm">
+            <span>SPDMX full</span>
+            <audio controls preload="none" src="../assets/sao/spdmx_full_p001.mp3"></audio>
+          </div>
+        </div>
+      </div>
+
       <h2>Code</h2>
-      <p><code>experiments/sao/</code></p>
+      <p><code>experiments/sao/</code> — prepare → train → generate → metrics.</p>
     </article>
   </main>
   <footer class="site-footer"></footer>

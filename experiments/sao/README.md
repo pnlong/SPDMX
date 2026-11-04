@@ -1,5 +1,10 @@
 # Lite Stable Audio Open fine-tune PoC
 
+**Status:** complete for the project-page Experiment post
+([`docs/blog/sao.html`](../../docs/blog/sao.html)). Metrics:
+[`submission/data/sao_metrics.csv`](../../submission/data/sao_metrics.csv)
+(copied from `{SPDMX_OUTPUT_DIR}/dev/experiments/sao/metrics/`).
+
 sPDMX is a **large MIDI-paired audio corpus**. Separation uses a BDGP-eligible
 subset; SAO compares that subset to the full corpus.
 
