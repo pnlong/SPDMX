@@ -35,8 +35,8 @@ export async function renderSoundfonts() {
       <code>${basic.file || "SGM-V2.01.sf2"}</code>
       ${basic.note ? ` · ${basic.note}` : ""}
     </p>
-    <details class="soundfont-panel">
-      <summary>Varied inventory · ${n} banks</summary>
+    <div class="soundfont-panel">
+      <h3 class="soundfont-panel-title">Varied inventory · ${n} banks</h3>
       <div class="soundfont-panel-body">
         <ul class="soundfont-grid">${items}</ul>
         <p class="soundfont-footnote">
@@ -48,6 +48,6 @@ export async function renderSoundfonts() {
           · locked shortlists in <code>winners_locked.yaml</code>
         </p>
       </div>
-    </details>
+    </div>
   `;
 }

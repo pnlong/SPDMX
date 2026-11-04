@@ -856,38 +856,16 @@ figcaption code {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: rgba(255, 252, 246, 0.55);
-  padding: 0.15rem 0;
+  padding: 0.15rem 0 0;
 }
 
-.soundfont-panel summary {
-  cursor: pointer;
-  list-style: none;
-  padding: 0.85rem 1rem;
+.soundfont-panel-title {
+  margin: 0;
+  padding: 0.85rem 1rem 0.35rem;
+  font-family: var(--sans);
   font-size: 0.92rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink);
-}
-
-.soundfont-panel summary::-webkit-details-marker {
-  display: none;
-}
-
-.soundfont-panel summary::before {
-  content: "";
-  display: inline-block;
-  width: 0.45rem;
-  height: 0.45rem;
-  margin-right: 0.55rem;
-  border-right: 1.5px solid var(--muted);
-  border-bottom: 1.5px solid var(--muted);
-  transform: rotate(-45deg);
-  vertical-align: 0.15rem;
-  transition: transform 0.15s ease;
-}
-
-.soundfont-panel[open] summary::before {
-  transform: rotate(45deg);
-  vertical-align: 0.05rem;
 }
 
 .soundfont-panel-body {
