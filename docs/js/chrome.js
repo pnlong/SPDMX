@@ -2,6 +2,7 @@
 const NAV = [
   { href: "index.html", id: "home", label: "Home" },
   { href: "about.html", id: "about", label: "About" },
+  { href: "download.html", id: "download", label: "Download" },
   { href: "listen.html", id: "listen", label: "Listen" },
   { href: "soundfonts.html", id: "soundfonts", label: "Soundfonts" },
   { href: "blog/index.html", id: "blog", label: "Blog" },
@@ -17,6 +18,7 @@ function currentTab() {
   const path = window.location.pathname;
   if (path.includes("/blog")) return "blog";
   if (path.endsWith("about.html")) return "about";
+  if (path.endsWith("download.html")) return "download";
   if (path.endsWith("listen.html")) return "listen";
   if (path.endsWith("soundfonts.html")) return "soundfonts";
   return "home";

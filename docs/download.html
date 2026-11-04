@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Download · SPDMX</title>
+  <meta name="description" content="Download SPDMX from Mozilla Data Collective: two archives, extract, and optional mix symlinks.">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/download.js"></script>
+</head>
+<body>
+  <header class="site-header"></header>
+  <main>
+    <section class="section">
+      <div class="section-head">
+        <h2>Download</h2>
+        <p>
+          SPDMX ships on
+          <a href="https://mozilladatacollective.com/">Mozilla Data Collective</a>
+          as <strong>two archives</strong> (~743&nbsp;GB each, ~1.5&nbsp;TB total).
+          You need <strong>both</strong> for the full corpus. License:
+          <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
+          MDC requires an account and accepting the dataset terms before download.
+        </p>
+      </div>
+
+      <div class="download-parts" role="list">
+        <article class="download-part" role="listitem">
+          <a
+            class="btn primary download-part-btn"
+            href="https://mozilladatacollective.com/datasets/cmw25vhb8001r08mqv2rhzlvu"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Part 1 of 2
+          </a>
+          <p class="download-part-meta">
+            Even chunks (<code>chunk_0</code>, <code>chunk_2</code>, …) · ~743&nbsp;GB
+          </p>
+        </article>
+        <article class="download-part" role="listitem">
+          <a
+            class="btn primary download-part-btn"
+            href="https://mozilladatacollective.com/datasets/cmw25vlq9001c07nx0f2l090a"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Part 2 of 2
+          </a>
+          <p class="download-part-meta">
+            Odd chunks (<code>chunk_1</code>, <code>chunk_3</code>, …) · ~743&nbsp;GB
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section alt">
+      <div class="section-head">
+        <h2>Setup</h2>
+        <p>Extract both parts into one directory, then optionally restore mix paths for single-track songs.</p>
+      </div>
+
+      <ol class="steps download-steps">
+        <li>
+          Download <strong>Part 1</strong> and <strong>Part 2</strong> from the pills above
+          (MDC may name files like <code>spdmx-part-1-of-2-….tar.gz</code>).
+        </li>
+        <li>
+          Extract both into the same folder so indexes and all <code>chunk_N/</code> sit together:
+          <div class="code-block">
+            <button type="button" class="copy-btn" data-copy-target="extract-cmd">Copy</button>
+            <pre class="bib" id="extract-cmd"><code>mkdir -p SPDMX
+tar -xzf spdmx-part-1-of-2-*.tar.gz -C SPDMX
+tar -xzf spdmx-part-2-of-2-*.tar.gz -C SPDMX</code></pre>
+          </div>
+        </li>
+        <li>
+          <strong>(Recommended)</strong> Create <code>mix.flac → 0.flac</code> symlinks for
+          single-track songs (~65% of the corpus omit <code>mix.flac</code> to avoid duplicating the stem).
+          Multitrack songs already ship <code>mix.flac</code>.
+          <div class="code-block">
+            <button type="button" class="copy-btn" data-copy-target="link-cmd">Copy</button>
+            <pre class="bib" id="link-cmd"><code>cd SPDMX
+chmod +x link_single_track_mixes.sh
+./link_single_track_mixes.sh</code></pre>
+          </div>
+          <p class="download-note">
+            Without this step, load <code>0.flac</code> when
+            <code>subset:multitrack</code> is false or <code>n_tracks == 1</code>.
+          </p>
+        </li>
+      </ol>
+
+      <h3 class="cite-label">Symlink script</h3>
+      <p class="download-note">
+        The archive includes <code>link_single_track_mixes.sh</code>. If you need it standalone,
+        copy this into the unpacked dataset root and run it:
+      </p>
+      <div class="code-block">
+        <button type="button" class="copy-btn" data-copy-target="link-script">Copy</button>
+        <pre class="bib" id="link-script"><code>#!/usr/bin/env bash
+# Optional: for single-track songs, create mix.flac → 0.flac (release omits the mix).
+# Run from the unpacked dataset root (where songs.csv lives):
+#   ./link_single_track_mixes.sh
+set -euo pipefail
+ROOT="${1:-.}"
+CSV="$ROOT/songs.csv"
+if [[ ! -f "$CSV" ]]; then
+  echo "error: missing $CSV" >&2
+  exit 1
+fi
+python3 - "$ROOT" "$CSV" &lt;&lt;'PY'
+import csv, os, sys
+root, path = sys.argv[1], sys.argv[2]
+n = 0
+with open(path, newline="", encoding="utf-8") as f:
+    for row in csv.DictReader(f):
+        multi = row.get("subset:multitrack", "")
+        if multi != "":
+            if multi.strip().lower() in ("true", "1"):
+                continue
+        elif int(float(row.get("n_tracks") or 0)) &gt;= 2:
+            continue
+        song = os.path.join(root, row["path"].lstrip("./"))
+        if not os.path.isdir(song):
+            continue
+        os.symlink("0.flac", os.path.join(song, "mix.flac"))
+        n += 1
+print(f"linked mix.flac → 0.flac for {n} single-track song(s)")
+PY</code></pre>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>After download</h2>
+        <p>
+          Filter with <code>songs.csv</code> first (e.g. <code>subset:bdgp</code>,
+          <code>subset:multitrack</code>), then restrict <code>stems.csv</code>.
+          Join to <a href="https://zenodo.org/records/13763756">PDMX</a> on
+          <code>song_id</code>. Schema details ship in <code>README.md</code> inside the archive.
+        </p>
+      </div>
+      <div class="cta-row">
+        <a class="btn" href="about.html">About &amp; plots</a>
+        <a class="btn" href="listen.html">Listen</a>
+        <a class="btn" href="https://github.com/pnlong/SPDMX">Code</a>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer"></footer>
+</body>
+</html>

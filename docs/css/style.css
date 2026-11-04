@@ -774,6 +774,103 @@ figcaption code {
   line-height: 1.45;
 }
 
+.download-cta-row {
+  margin-bottom: 1.5rem;
+}
+
+.download-parts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  margin: 0 0 0.5rem;
+}
+
+.download-part {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1.15rem 1.2rem 1.25rem;
+  background: rgba(255, 252, 246, 0.7);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.download-part-btn {
+  width: 100%;
+  padding: 0.75rem 1.1rem;
+  font-size: 1rem;
+}
+
+.download-part-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.download-part-meta code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: rgba(28, 36, 32, 0.06);
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+}
+
+.download-steps {
+  max-width: 44rem;
+}
+
+.download-steps .code-block {
+  margin: 0.75rem 0 0.35rem;
+}
+
+.download-note {
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  max-width: 44rem;
+}
+
+.download-note code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: rgba(28, 36, 32, 0.06);
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+}
+
+.code-block {
+  position: relative;
+}
+
+.code-block .bib {
+  margin: 0;
+  padding-top: 2.4rem;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  z-index: 1;
+  padding: 0.28rem 0.7rem;
+  border: 1px solid rgba(243, 239, 230, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 252, 246, 0.1);
+  color: #f3efe6;
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.copy-btn:hover,
+.copy-btn.is-copied {
+  background: rgba(232, 146, 46, 0.9);
+  border-color: transparent;
+  color: #fff;
+}
+
 .license {
   color: var(--muted);
   max-width: 42rem;
@@ -788,7 +885,8 @@ figcaption code {
 
 @media (max-width: 860px) {
   .two-col,
-  .chart-grid {
+  .chart-grid,
+  .download-parts {
     grid-template-columns: 1fr;
   }
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>About · SPDMX</title>
-  <meta name="description" content="SPDMX dataset layout, download recipe, and scale plots.">
+  <meta name="description" content="SPDMX dataset layout and scale plots.">
   <link rel="icon" href="assets/favicon.ico" sizes="any">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,27 +19,33 @@
   <main>
     <section class="section">
       <div class="section-head">
-        <h2>Get the data</h2>
+        <h2>Layout</h2>
         <p>
-          Filter with the CSV tables first, then download only the ~27 GiB chunk
-          archives you need. Each song directory holds stems, a linear-sum mix, and paired MIDI.
+          The corpus is two Mozilla Data Collective archives. Download both, then filter
+          with the CSV tables. Each song directory holds stems, an optional linear-sum mix,
+          and paired MIDI.
+          <a href="download.html">Get Part 1 and Part 2 →</a>
         </p>
+      </div>
+      <div class="cta-row download-cta-row">
+        <a class="btn primary" href="download.html">Download</a>
+        <a class="btn" href="listen.html">Listen</a>
       </div>
       <figure class="figure-block">
         <img src="assets/chunk_layout.svg" alt="SPDMX release tree" width="1200" height="490">
         <figcaption>
-          Release tree: filter with the CSVs, download ~27 GiB <code>chunk_N</code> archives,
-          then open <code>chunk_N/&lt;song_id&gt;/</code> for stems, mix, and paired MIDI.
+          Release tree: after extracting both MDC parts, filter with the CSVs, then open
+          <code>chunk_N/&lt;song_id&gt;/</code> for stems, mix, and paired MIDI.
         </figcaption>
       </figure>
       <div class="two-col">
         <div>
-          <h3>Download recipe</h3>
+          <h3>How to use it</h3>
           <ol class="steps">
-            <li>Get <code>stems.csv</code>, <code>songs.csv</code>, <code>chunks.csv</code>.</li>
+            <li>Download both parts and extract into one directory (see <a href="download.html">Download</a>).</li>
             <li>Filter songs (e.g. <code>subset:bdgp</code> or <code>n_tracks &gt;= 2</code>) then restrict stems.</li>
-            <li>Read distinct <code>chunk</code> ids and fetch those <code>chunk_N.zip</code> files.</li>
-            <li>Unzip beside the CSVs so <code>./chunk_N/&lt;song_id&gt;/…</code> resolves.</li>
+            <li>Optionally run <code>./link_single_track_mixes.sh</code> so single-track <code>mix.flac</code> resolves.</li>
+            <li>Join to PDMX on <code>song_id</code> when you need symbolic metadata beyond the shipped MIDI.</li>
           </ol>
         </div>
         <div>
@@ -47,7 +53,7 @@
           <ul class="plain">
             <li><strong>track</strong> — contiguous index after dropping empty PDMX tracks (<code>{track}.flac</code>).</li>
             <li><strong>program / is_drum</strong> — General MIDI identity after name-based correction.</li>
-            <li><strong>mix.flac</strong> — raw linear sum of stems (mono).</li>
+            <li><strong>mix.flac</strong> — raw linear sum of stems (mono); single-track songs may need a symlink.</li>
             <li><strong>mix.mid</strong> — paired MIDI aligned to the stems.</li>
           </ul>
         </div>
@@ -56,7 +62,7 @@
         <h3>Songs per chunk</h3>
         <canvas id="chart-chunks" height="120"></canvas>
         <p class="chart-note">
-          Archives are sized for ~27 GiB downloads, not equal song counts.
+          Layout chunks shard local work; MDC hosts them as two even/odd part archives.
         </p>
       </div>
     </section>
