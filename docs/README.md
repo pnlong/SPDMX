@@ -49,6 +49,6 @@ In `assets/`:
 | `download.html` | MDC Part 1 / Part 2 links, extract + symlink instructions |
 | `listen.html` | Stem demos |
 | `soundfonts.html` | Banks |
-| `blog/` | Experiment posts (Demucs, SAO, Transcription, StreamGen) |
+| `blog/` | Typed posts (Experiment badges: Demucs, Transcription, SAO, StreamGen, listening ablation) |
 
 Nav is injected by `js/chrome.js` (hamburger on small screens).

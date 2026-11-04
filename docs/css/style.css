@@ -171,6 +171,13 @@ a:hover {
   border-bottom: 1px solid var(--line);
 }
 
+.blog-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
 .blog-list a {
   color: var(--ink);
   text-decoration: none;
@@ -189,15 +196,118 @@ a:hover {
   font-size: 0.92rem;
 }
 
+.blog-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 0.2rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.badge-type-experiment {
+  color: var(--accent-2);
+  background: rgba(232, 146, 46, 0.12);
+  border-color: rgba(196, 106, 18, 0.28);
+}
+
+.badge-type-release {
+  color: #3d5a40;
+  background: rgba(90, 140, 96, 0.12);
+  border-color: rgba(90, 140, 96, 0.3);
+}
+
+.badge-type-note {
+  color: var(--muted);
+  background: rgba(106, 90, 72, 0.08);
+  border-color: rgba(106, 90, 72, 0.22);
+}
+
+.badge-status-complete {
+  color: #3d5a40;
+  background: transparent;
+}
+
+.badge-status-wip {
+  color: var(--muted);
+  background: transparent;
+}
+
 .post h1 {
   font-family: var(--display);
   font-size: clamp(1.6rem, 3vw, 2.1rem);
   margin: 0.35rem 0 1rem;
 }
 
-.post p {
+.post h2 {
+  font-family: var(--display);
+  font-size: 1.2rem;
+  margin: 1.75rem 0 0.6rem;
+}
+
+.post p,
+.post li {
   max-width: 65ch;
   line-height: 1.55;
+}
+
+.post ul {
+  padding-left: 1.2rem;
+}
+
+.post code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+.post-table-wrap {
+  overflow-x: auto;
+  margin: 1rem 0 1.25rem;
+  max-width: 100%;
+}
+
+.post table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.post th,
+.post td {
+  padding: 0.4rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.post th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.post td.num,
+.post th.num {
+  text-align: right;
+}
+
+.post .caveat {
+  color: var(--muted);
+  font-size: 0.95rem;
 }
 
 .hero {

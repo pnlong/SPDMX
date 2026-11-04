@@ -48,7 +48,7 @@ experiments/
     └── soundfonts.yaml       # candidate GM banks (phase 1)
 ```
 
-Paper/Blog pilots for transcription and StreamGen: see each package `README.md` and `docs/blog/`.
+Paper / project-page Experiment posts for transcription and StreamGen: see each package `README.md` and `docs/blog/`.
 
 ## Setup
 

@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Matched-budget Hybrid Demucs · SPDMX Blog</title>
+  <meta name="description" content="Matched-budget Hybrid Demucs separation on Slakh, SPDMX BDGP, and union.">
   <link rel="icon" href="../assets/favicon.ico" sizes="any">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../css/style.css">
   <script type="module" src="../js/blog.js"></script>
@@ -13,15 +15,83 @@
   <header class="site-header"></header>
   <main>
     <article class="section post">
-      <p class="blog-meta"><a href="index.html">Blog</a> · Separation</p>
-      <h1>Matched-budget Hybrid Demucs</h1>
-      <p>
-        We train Hybrid Demucs on bass, drums, guitar, and piano packs under a matched step budget
-        for Slakh, SPDMX (BDGP), and Slakh ∪ SPDMX. In-domain SI-SDR is strong for each solo arm;
-        cross-domain transfer is weak, consistent with prior synth–synth mismatch findings.
-        Full numbers are in the ICASSP draft Table&nbsp;2.
+      <p class="blog-meta">
+        <a href="index.html">Blog</a>
+        ·
+        <span class="blog-badges">
+          <span class="badge badge-type-experiment">Experiment</span>
+          <span class="badge badge-status-complete">Complete</span>
+        </span>
+        · Separation
       </p>
-      <p>Code: <code>experiments/separation/</code>.</p>
+      <h1>Matched-budget Hybrid Demucs</h1>
+
+      <h2>Question</h2>
+      <p>
+        Under a matched step budget, does SPDMX BDGP provide usable Hybrid Demucs
+        supervision versus Slakh2100, and how does performance transfer across
+        synthetic and recorded domains?
+      </p>
+
+      <h2>Setup</h2>
+      <ul>
+        <li>Model: four-source Hybrid Demucs, trained from random initialization.</li>
+        <li>Targets: bass, drums, guitar, piano (BDGP). SPDMX stems map from GM program ranges; Slakh from dataset metadata. Keep only songs that contain all four targets.</li>
+        <li>SPDMX pool: 632 BDGP-eligible songs → 600 train / 32 validation (song-level shuffle).</li>
+        <li>Arms: Slakh alone | SPDMX alone | Slakh ∪ SPDMX (union), sampled uniformly by song.</li>
+        <li>Budget: 32k updates, batch size 8, 10&nbsp;s crops (mono duplicated to stereo). Equal updates control compute, not unique-song exposure.</li>
+      </ul>
+
+      <h2>Metrics</h2>
+      <p>
+        Primary: SI-SDR (dB, ↑), ignoring overall loudness. Report bass–drums (BD)
+        and guitar–piano (GP) means separately. Eval on Slakh2100 and SPDMX held-out
+        mixtures, plus recorded sets where targets map cleanly: MUSDB18 (BD only),
+        MoisesDB, and MedleyDB (union of MedleyDB and MedleyDB 2.0).
+      </p>
+
+      <h2>Results</h2>
+      <div class="post-table-wrap">
+        <table>
+          <caption>Hybrid Demucs SI-SDR (↑, dB; single matched-step run). MUSDB18 reports BD only. SPDMX eval uses 32 songs.</caption>
+          <thead>
+            <tr>
+              <th>Evaluation</th>
+              <th></th>
+              <th class="num">Slakh</th>
+              <th class="num">SPDMX</th>
+              <th class="num">Union</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td rowspan="2">Slakh2100</td><td>BD</td><td class="num"><strong>10.3</strong></td><td class="num">1.4</td><td class="num">10.0</td></tr>
+            <tr><td>GP</td><td class="num"><strong>3.7</strong></td><td class="num">−4.7</td><td class="num">3.3</td></tr>
+            <tr><td rowspan="2">SPDMX</td><td>BD</td><td class="num">0.2</td><td class="num"><strong>9.5</strong></td><td class="num">7.5</td></tr>
+            <tr><td>GP</td><td class="num">−4.1</td><td class="num"><strong>3.9</strong></td><td class="num">3.3</td></tr>
+            <tr><td>MUSDB18</td><td>BD</td><td class="num">−1.7</td><td class="num"><strong>−0.5</strong></td><td class="num">−0.7</td></tr>
+            <tr><td rowspan="2">MoisesDB</td><td>BD</td><td class="num">1.2</td><td class="num">1.2</td><td class="num"><strong>2.4</strong></td></tr>
+            <tr><td>GP</td><td class="num"><strong>−9.8</strong></td><td class="num">−10.2</td><td class="num"><strong>−9.8</strong></td></tr>
+            <tr><td rowspan="2">MedleyDB</td><td>BD</td><td class="num">−3.5</td><td class="num">−4.0</td><td class="num"><strong>−2.5</strong></td></tr>
+            <tr><td>GP</td><td class="num"><strong>−11.0</strong></td><td class="num">−11.9</td><td class="num">−11.2</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        In domain, BD is strong on the matching corpus (~10&nbsp;dB), while GP remains
+        several dB lower (guitar weakest). Across synthetic domains and on recorded
+        tests, BD stays near zero or mildly positive (best MoisesDB union BD at
+        +2.4&nbsp;dB), but GP falls to roughly −4 to −12&nbsp;dB. Union retains most
+        in-domain BD on both synthetic sets and has the highest recorded BD point
+        estimates on MoisesDB and MedleyDB.
+      </p>
+      <p class="caveat">
+        Caveats: single matched-step run (no training-run uncertainty); not a
+        scaling study on the full corpus; pitched-stem transfer to recordings remains
+        weak. Treat this as an alignment / domain-gap check, not a separation SOTA claim.
+      </p>
+
+      <h2>Code</h2>
+      <p><code>experiments/separation/</code></p>
     </article>
   </main>
   <footer class="site-footer"></footer>

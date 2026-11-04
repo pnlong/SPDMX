@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>StreamGen accompaniment · SPDMX Blog</title>
+  <meta name="description" content="Matched-budget StreamGen accompaniment training on Slakh vs SPDMX.">
   <link rel="icon" href="../assets/favicon.ico" sizes="any">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../css/style.css">
   <script type="module" src="../js/blog.js"></script>
@@ -13,21 +15,47 @@
   <header class="site-header"></header>
   <main>
     <article class="section post">
-      <p class="blog-meta"><a href="index.html">Blog</a> · Streaming · WIP</p>
+      <p class="blog-meta">
+        <a href="index.html">Blog</a>
+        ·
+        <span class="blog-badges">
+          <span class="badge badge-type-experiment">Experiment</span>
+          <span class="badge badge-status-wip">WIP</span>
+        </span>
+        · Streaming
+      </p>
       <h1>StreamGen accompaniment</h1>
+
+      <h2>Question</h2>
       <p>
-        <strong>Question:</strong> does training
+        Does training
         <a href="https://github.com/lukewys/stream-music-gen">stream-music-gen</a>
-        (Wu et&nbsp;al., 2025) on SPDMX multitrack improve over the Slakh baseline under
+        (Wu et&nbsp;al., 2025) on SPDMX multitrack beat the Slakh baseline under
         matched steps?
       </p>
-      <p>
-        Pilot config: <code>dec_online</code>, <code>future_visibility = 0</code>.
-        Arms: Slakh | SPDMX multitrack | optional union. Eval: Slakh-test COCOLA / Beat F1 / FAD;
-        secondary SPDMX held-out. Domain gap is a known risk (as in Demucs).
+
+      <h2>Setup</h2>
+      <ul>
+        <li>Config: <code>dec_online</code>, <code>future_visibility = 0</code>.</li>
+        <li>Arms: Slakh | SPDMX multitrack | optional union / hour-matched SPDMX.</li>
+        <li>Data prep: DAC → RMS → mixdown via <code>prepare_streamgen_data.sh</code>; SPDMX adapter under <code>experiments/streamgen/adapters/</code>.</li>
+      </ul>
+
+      <h2>Metrics</h2>
+      <ul>
+        <li>Primary: Slakh-test COCOLA, Beat F1, FAD.</li>
+        <li>Secondary: SPDMX held-out.</li>
+      </ul>
+      <p class="caveat">
+        Domain gap is a known risk (as in the Demucs experiment): strong in-domain
+        numbers need not imply Slakh-test or recorded transfer.
       </p>
+
+      <h2>Results</h2>
       <p><em>Metrics and audio examples will land here when the pilot finishes.</em></p>
-      <p>Scaffold: <code>experiments/streamgen/</code>.</p>
+
+      <h2>Code</h2>
+      <p><code>experiments/streamgen/</code></p>
     </article>
   </main>
   <footer class="site-footer"></footer>

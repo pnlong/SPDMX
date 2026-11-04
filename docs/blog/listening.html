@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recipe listening ablation · SPDMX Blog</title>
+  <meta name="description" content="Listening study that froze the SPDMX hybrid FluidSynth / MIDI-DDSP recipe.">
+  <link rel="icon" href="../assets/favicon.ico" sizes="any">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script type="module" src="../js/blog.js"></script>
+</head>
+<body>
+  <header class="site-header"></header>
+  <main>
+    <article class="section post">
+      <p class="blog-meta">
+        <a href="index.html">Blog</a>
+        ·
+        <span class="blog-badges">
+          <span class="badge badge-type-experiment">Experiment</span>
+          <span class="badge badge-status-complete">Complete</span>
+        </span>
+        · Construction
+      </p>
+      <h1>Recipe listening ablation</h1>
+
+      <h2>Question</h2>
+      <p>
+        Which open render recipe — basic GM bank, varied redistributable soundfonts,
+        or MIDI-DDSP hybrids over those fallbacks — do listeners prefer for content
+        adherence and realism, by instrument category?
+      </p>
+
+      <h2>Setup</h2>
+      <ul>
+        <li>Conditions (factorial-style families):
+          <ul>
+            <li><strong>basic</strong> — single GM bank <code>SGM-V2.01</code></li>
+            <li><strong>varied</strong> — shortlist of redistributable banks per category (e.g. FluidR3, GeneralUser GS, Arachno, Airfont) plus light reverb</li>
+            <li><strong>MIDI-DDSP over basic</strong> / <strong>over varied</strong> — neural synth for eligible monophonic strings, brass, and winds; FluidSynth fallback otherwise</li>
+          </ul>
+        </li>
+        <li>Protocol: shared loop player; 10&nbsp;s excerpts; Content and Realism sliders (0–100); basic as visible reference among shuffled blinds.</li>
+        <li>Coverage: two stems × ten listening categories (piano, drums, strings, wind, voice, mallet, organ, guitar, brass, polyphonic); <em>N</em>&nbsp;=&nbsp;8 listeners.</li>
+        <li>Ratings treated as design guidance (highest mean by default; retain varied when close to basic for timbral diversity — not a significance rule).</li>
+      </ul>
+
+      <h2>Metrics</h2>
+      <p>
+        Per-listener mean Content and Realism by category and condition. Production
+        recipe freezes the starred condition per category from the listening figure
+        in the preprint.
+      </p>
+
+      <h2>Results</h2>
+      <p>
+        Frozen hybrid recipe (production SPDMX):
+      </p>
+      <ul>
+        <li><strong>basic</strong> — drums, organ, guitar</li>
+        <li><strong>varied</strong> — piano, voice, mallet, and miscellaneous classes</li>
+        <li><strong>MIDI-DDSP over basic</strong> — strings, brass</li>
+        <li><strong>MIDI-DDSP over varied</strong> — wind</li>
+      </ul>
+      <p>
+        See the ablation figure on the project page / preprint, and stem demos on
+        <a href="../listen.html">Listen</a>. Full soundfont attribution:
+        <a href="../soundfonts.html">Soundfonts</a>.
+      </p>
+      <p class="caveat">
+        Caveats: small listener pool; synthetic-reference study does not establish
+        corpus-wide absolute realism; MIDI-DDSP stems remain band-limited after
+        upsample from 16&nbsp;kHz.
+      </p>
+
+      <h2>Code</h2>
+      <p><code>experiments/ablation_listening/</code></p>
+    </article>
+  </main>
+  <footer class="site-footer"></footer>
+</body>
+</html>

@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stable Audio Open fine-tunes · SPDMX Blog</title>
+  <meta name="description" content="Matched-step Stable Audio Open fine-tunes on Slakh and SPDMX mixtures.">
   <link rel="icon" href="../assets/favicon.ico" sizes="any">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../css/style.css">
   <script type="module" src="../js/blog.js"></script>
@@ -13,14 +15,53 @@
   <header class="site-header"></header>
   <main>
     <article class="section post">
-      <p class="blog-meta"><a href="index.html">Blog</a> · Generative</p>
-      <h1>Stable Audio Open fine-tunes</h1>
-      <p>
-        Matched-step fine-tunes of Stable Audio Open on Slakh, SPDMX (BDGP), and full SPDMX mixtures.
-        Held-out generations are scored with VGGish FAD (Slakh mix references) and LAION-CLAP.
-        See ICASSP draft Table&nbsp;3; FAD is reference-sensitive so Slakh-like acoustics are favored here.
+      <p class="blog-meta">
+        <a href="index.html">Blog</a>
+        ·
+        <span class="blog-badges">
+          <span class="badge badge-type-experiment">Experiment</span>
+          <span class="badge badge-status-wip">WIP</span>
+        </span>
+        · Generative
       </p>
-      <p>Code: <code>experiments/sao/</code>.</p>
+      <h1>Stable Audio Open fine-tunes</h1>
+
+      <h2>Question</h2>
+      <p>
+        Do matched-step Stable Audio Open (SAO) fine-tunes on SPDMX mixtures improve
+        over Slakh under FAD and CLAP, and does the full corpus beat the
+        BDGP-matched subset?
+      </p>
+
+      <h2>Setup</h2>
+      <ul>
+        <li>Model: Stable Audio Open fine-tunes (pretrained checkpoint).</li>
+        <li>Arms:
+          <ul>
+            <li><code>slakh</code> — Slakh train mixes</li>
+            <li><code>spdmx_matched</code> — songs with <code>subset:bdgp</code> (same BDGP pool as separation)</li>
+            <li><code>spdmx_full</code> — all SPDMX songs with a shipped mix</li>
+          </ul>
+        </li>
+        <li>SPDMX mixes are mono; SAO expects stereo — <code>stable-audio-tools</code> duplicates L/R at load time (do not store stereo mixes in the release).</li>
+        <li>Index shipped <code>mix.flac</code> paths (chunked release or flat <code>SPDMX_dev/mix/</code>); prefer <code>songs.csv</code> with lengths and subset flags.</li>
+      </ul>
+
+      <h2>Metrics</h2>
+      <ul>
+        <li>VGGish / OpenL3 <strong>FAD</strong> on held-out generations (reference-sensitive: Slakh-like acoustics are favored when refs are Slakh mixes).</li>
+        <li>LAION-<strong>CLAP</strong> scores on held-out generations.</li>
+      </ul>
+
+      <h2>Results</h2>
+      <p><em>Metrics and audio examples will land here when the pilot finishes</em> (<code>sao_metrics.csv</code>).</p>
+      <p class="caveat">
+        Caveat: FAD depends strongly on the reference set; treat Slakh-referenced FAD
+        as a domain-similarity signal, not a pure quality ranking for SPDMX-trained models.
+      </p>
+
+      <h2>Code</h2>
+      <p><code>experiments/sao/</code></p>
     </article>
   </main>
   <footer class="site-footer"></footer>
