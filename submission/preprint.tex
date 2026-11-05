@@ -69,7 +69,7 @@ and an open render stack.
 \centering
 \setlength{\tabcolsep}{3.5pt}
 \caption{Multitrack resources ($N$\,=\,songs, $h$\,=\,mixture hours;
-T: R\,=\,recorded, S\,=\,synthetic; D\,=\,openly-licensed download;
+Type: R\,=\,recorded, S\,=\,synthetic; D\,=\,openly-licensed download;
 P\,=\,synthesis without proprietary instruments). SPDMX includes
 single-stem songs.
 Larger CC mixture corpora without stems (e.g.,
@@ -79,7 +79,7 @@ MTG-Jamendo~\cite{bogdanov2019mtg}) are omitted.}
 \small
 \begin{tabular}{@{}lrrccc@{}}
 \toprule
-\textbf{Dataset} & $N$ & $h$ & T & D & P \\
+\textbf{Dataset} & $N$ & $h$ & Type & D & P \\
 \midrule
 MUSDB18~\cite{rafii2019musdb18} & 150 & 10 & R & $\times$ & --- \\
 MedleyDB$^{\ddagger}$~\cite{bittner2014medleydb,bittner2016medleydb} & 196 & 13.8 & R & $\times$ & --- \\
@@ -120,7 +120,7 @@ MoisesDB~\cite{pereira2023moisesdb} provide high-quality studio stems, while
 chamber sets such as URMP~\cite{li2018creating} offer realistic ensembles at
 still smaller scale.
 All remain limited in hours and/or access.
-SPDMX instead prioritizes open scale: thousands of song-hours of
+SPDMX instead prioritizes open scale, with thousands of song-hours of
 redistributable stems with aligned scores, achieved through synthesis
 rather than expensive studio recording.
 
@@ -258,22 +258,17 @@ maximum note-on velocity to the song maximum. We uniformly apply a single
 anti-clip peak gain on the stem sum in order to keep stems linearly
 summable (mixture equals stem sum)~\cite{manilow2019cutting}.
 
-\subsection{Release layout and schema}
+\subsection{Release layout}
 \label{ssec:schema}
 
-The public release packs songs into numbered chunks. Each song directory
-contains dense mono FLAC stems (\texttt{0.flac}, \texttt{1.flac}, \ldots),
-\texttt{mix.mid}, and---for multitrack songs---a mono \texttt{mix.flac}
-equal to the linear stem sum. Single-stem songs omit \texttt{mix.flac}
-(identical to the sole stem); an optional linker can symlink
-\texttt{mix.flac}$\rightarrow$\texttt{0.flac} after download.
-Tables join on \texttt{song\_id} (the PDMX identity):
-\texttt{stems.csv} (one row per rendered track), \texttt{songs.csv}
-(one row per song, with boolean subset flags such as
-\texttt{subset:multitrack}, \texttt{subset:bdgp}, and \texttt{subset:all}),
-and \texttt{chunks.csv} (archive sizes for download planning).
-Consumers should filter songs first, then restrict stems.
-Full column documentation and join examples are on the project page.
+The public release is sharded into downloadable chunks. Each song ships mono
+FLAC stems and paired MIDI; multitrack songs also include a mono mix equal
+to the linear stem sum, while single-stem songs need no separate mix.
+Songs share PDMX identifiers, so downloading PDMX alongside SPDMX makes
+scores and other symbolic fields easy to use with the audio. Release
+metadata also marks convenient subsets such as multitrack songs and
+BDGP-eligible four-stem packs. Schema details and download instructions
+are on the project page.
 
 Several limitations follow from this construction.
 About $65\%$ of songs are single-stem, and piano dominates the inventory.

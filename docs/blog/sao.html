@@ -71,10 +71,15 @@
       </div>
       <p>
         Slakh leads on both metrics under this Slakh-test reference setup. SPDMX
-        BDGP-matched is close; full-corpus fine-tuning is worse on both. That fits
-        FAD favoring Slakh-like acoustics when references are Slakh mixes, plus
-        domain mismatch for the larger, more heterogeneous full SPDMX set under a
-        fixed step budget (not a full-corpus scaling study).
+        BDGP-matched is close; full-corpus fine-tuning is worse on both.
+        The main story is caption and content skew, not “more data is worse” in
+        general: Slakh and BDGP-matched train almost entirely on
+        multi-instrument captions (bass/drums/guitar/piano-style), while
+        <strong>~80% of SPDMX-full training captions are just
+        <code>instrumental music, piano</code></strong> (piano dominates the
+        release; ~65% of songs are single-stem). Under a fixed 10k-step budget the
+        full arm mostly reinforces that piano-heavy prior, so it sits farther from
+        Slakh-test acoustics and from multi-instrument eval prompts.
       </p>
       <p class="caveat">
         Caveats: steps are matched, not unique-song exposure (batch sizes differed
@@ -83,7 +88,12 @@
       </p>
 
       <h2>Audio</h2>
-      <p>Same prompt, first 10&nbsp;s of each arm’s generation (seed&nbsp;0).</p>
+      <p>
+        Same prompt, first 10&nbsp;s of each arm’s generation (seed&nbsp;0).
+        Slakh and SPDMX matched tend to track the listed instruments; SPDMX full
+        often collapses toward piano-like texture because that is what most of its
+        training captions described.
+      </p>
 
       <div class="sao-examples">
         <div class="sao-example">

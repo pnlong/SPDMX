@@ -34,3 +34,5 @@ experiments/transcription/YOURMT3_READY.json
 experiments/transcription/YOURMT3_READY.md
 
 submission/draft.tex
+submission/arxiv_build/
+submission/arxiv_upload.zip
