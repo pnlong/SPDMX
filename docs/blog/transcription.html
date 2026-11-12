@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Multi-instrument transcription · SPDMX Blog</title>
-  <meta name="description" content="Matched-budget multi-instrument AMT on Slakh vs SPDMX.">
+  <meta name="description" content="Fixed-budget multi-instrument AMT on Slakh vs SPDMX.">
   <link rel="icon" href="../assets/favicon.ico" sizes="any">
   <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -25,17 +25,17 @@
 
       <h2>Question</h2>
       <p>
-        Holding a small YourMT3-style model fixed, does SPDMX multitrack support
-        in-domain automatic music transcription, and how does it compare to
-        Slakh2100-redux under matched steps?
+        Because SPDMX pairs mixtures with MIDI, can it support multi-instrument
+        automatic music transcription under a fixed budget, and how does training
+        on SPDMX compare to Slakh2100-redux in-domain and across domains?
       </p>
 
       <h2>Setup</h2>
       <ul>
         <li>Model: YourMT3-style encoder–decoder (T5-small), trained from scratch.</li>
-        <li>Input: mixture audio with aligned MIDI (MT3 / YourMT3 mixture→multi-instrument setup).</li>
-        <li>Arms: Slakh2100-redux | SPDMX songs with ≥2 stems | optional union / hour-matched SPDMX subsample.</li>
-        <li>Budget: 100k matched steps.</li>
+        <li>Input: mixture audio with aligned MIDI.</li>
+        <li>Arms: Slakh2100-redux vs SPDMX songs with ≥2 stems.</li>
+        <li>Budget: 100,000 matched steps.</li>
         <li>Eval: official Slakh2100 test split and a held-out SPDMX split.</li>
       </ul>
 
@@ -45,15 +45,15 @@
         <li><strong>Multi F1</strong> (↑): includes drums; requires pitch, onset, offset, and instrument matches (drum offsets ignored).</li>
       </ul>
       <p>
-        Absolute scores are intentionally low: small budget and no pretrained MT3
-        recipes. This is an alignment and domain-gap check, not a comparison to
-        published MT3-style systems.
+        Absolute scores remain low by design: small training budget and no pretrained
+        MT3-style recipes. This is a fixed-budget alignment and domain-gap check,
+        not a comparison to published systems.
       </p>
 
       <h2>Results</h2>
       <div class="post-table-wrap">
         <table>
-          <caption>Matched-step multi-instrument transcription (T5-small from scratch, 100k steps). Track mean ± percentile-bootstrap 95% CI half-width.</caption>
+          <caption>Fixed-budget multi-instrument transcription results. Track mean ± 95% CI.</caption>
           <thead>
             <tr>
               <th>Train</th>
@@ -71,11 +71,11 @@
         </table>
       </div>
       <p>
-        On Slakh test, Slakh- and SPDMX-trained models reach onset F1 near 0.07
-        under equal update budgets (this does not isolate training-hour effects).
-        Cross-domain Slakh→SPDMX is weaker (0.041 onset / 0.010 multi). On held-out
-        SPDMX, the in-domain model reaches 0.265 onset F1 — usable in-domain
-        audio–MIDI supervision within the rendered domain.
+        On the Slakh2100 test split, Slakh- and SPDMX-trained models reach onset F1
+        near 0.07 under equal training budgets. On the SPDMX test set, Slakh-trained
+        models are much worse (0.041 onset / 0.010 multi) than the in-domain model
+        (0.265 onset / 0.191 multi), indicating that Slakh training may show lower
+        generalization than training with SPDMX under this setup.
       </p>
       <p class="caveat">
         Caveat: cross-domain transfer remains limited under this budget; scores are

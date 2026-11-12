@@ -13,7 +13,7 @@ from matplotlib.patches import Rectangle
 
 OUT = Path(__file__).resolve().parent / "datasets_table.png"
 
-# Same rows/numbers as submission/preprint.tex tab:datasets; columns fully spelled out.
+# Same rows/numbers as submission/main.tex tab:datasets; columns fully spelled out.
 HEADERS = [
     "Dataset",
     "Songs",
@@ -35,8 +35,9 @@ ROWS = [
 ]
 
 FOOTNOTE = (
-    "*Slakh2100: CC BY audio, but proprietary VST renderers.  "
-    "SPDMX includes single-stem songs; multitrack = ≥2 stems."
+    "*Slakh2100: Suspect CC BY audio, but proprietary VST renderers.  "
+    "SPDMX includes single-stem songs; multitrack = ≥2 stems.  "
+    "MedleyDB = MedleyDB ∪ MedleyDB 2.0."
 )
 
 

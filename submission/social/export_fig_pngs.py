@@ -1,4 +1,4 @@
-"""Convert preprint social-blast figures from PDF to PNG.
+"""Convert paper social-blast figures from PDF to PNG.
 
 Usage:
     uv run python -m submission.social.export_fig_pngs

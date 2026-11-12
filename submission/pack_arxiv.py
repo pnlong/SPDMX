@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Build an arXiv source zip from the dataset preprint.
+"""Build an arXiv source zip from ``main.tex``.
 
-Copies ``preprint.tex`` (not ICASSP ``main.tex``), style/bst files, and
-referenced figures; writes a BibTeX file with only cited entries; zips a
-flat upload tree.
+Copies ``main.tex``, style/bst files, and referenced figures; writes a BibTeX
+file with only cited entries; zips a flat upload tree.
 
 Usage::
 
@@ -20,7 +19,7 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_TEX = HERE / "preprint.tex"
+DEFAULT_TEX = HERE / "main.tex"
 DEFAULT_BIB = HERE / "main.bib"
 DEFAULT_OUT = HERE / "arxiv_upload.zip"
 DEFAULT_STAGE = HERE / "arxiv_build"
@@ -133,7 +132,6 @@ def pack_arxiv(
         shutil.rmtree(stage_dir)
     stage_dir.mkdir(parents=True)
 
-    # Primary manuscript only (no ICASSP main.tex).
     shutil.copy2(tex_path, stage_dir / tex_path.name)
 
     # BibTeX: keep the basename(s) referenced by \\bibliography{...}.
@@ -166,12 +164,6 @@ def pack_arxiv(
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
 
-    # Refuse to ship ICASSP main.tex even if present next to preprint.
-    banned = {"main.tex"}
-    for path in stage_dir.rglob("*"):
-        if path.is_file() and path.name in banned:
-            path.unlink()
-
     out_zip.parent.mkdir(parents=True, exist_ok=True)
     if out_zip.exists():
         out_zip.unlink()
@@ -202,7 +194,7 @@ def main(argv: list[str] | None = None) -> None:
         "--tex",
         type=Path,
         default=DEFAULT_TEX,
-        help=f"preprint source (default: {DEFAULT_TEX})",
+        help=f"manuscript source (default: {DEFAULT_TEX})",
     )
     parser.add_argument(
         "--bib",

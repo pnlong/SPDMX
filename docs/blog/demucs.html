@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Matched-budget Hybrid Demucs · SPDMX Blog</title>
-  <meta name="description" content="Matched-budget Hybrid Demucs separation on Slakh, SPDMX BDGP, and union.">
+  <meta name="description" content="Fixed-budget Hybrid Demucs separation on Slakh, SPDMX BDGP, and union.">
   <link rel="icon" href="../assets/favicon.ico" sizes="any">
   <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -25,26 +25,26 @@
 
       <h2>Question</h2>
       <p>
-        Under a matched step budget, does SPDMX BDGP provide usable Hybrid Demucs
-        supervision versus Slakh2100, and how does performance transfer across
-        synthetic and recorded domains?
+        Under a fixed step budget, can Hybrid Demucs perform well on SPDMX
+        in-domain, and how strongly does SPDMX training transfer across synthetic
+        and recorded domains relative to Slakh2100?
       </p>
 
       <h2>Setup</h2>
       <ul>
         <li>Model: four-source Hybrid Demucs, trained from random initialization.</li>
-        <li>Targets: bass, drums, guitar, piano (BDGP). SPDMX stems map from GM program ranges; Slakh from dataset metadata. Keep only songs that contain all four targets.</li>
-        <li>SPDMX pool: 632 BDGP-eligible songs → 600 train / 32 validation (song-level shuffle).</li>
-        <li>Arms: Slakh alone | SPDMX alone | Slakh ∪ SPDMX (union), sampled uniformly by song.</li>
-        <li>Budget: 32k updates, batch size 8, 10&nbsp;s crops (mono duplicated to stereo). Equal updates control compute, not unique-song exposure.</li>
+        <li>Targets: bass, drums, guitar, and piano (BDGP), following the Slakh2100 four-stem protocol. Keep only songs that contain all four targets.</li>
+        <li>SPDMX pool: 632 BDGP-eligible songs, shuffled at the song level into 600 training and 32 validation songs.</li>
+        <li>Arms: Slakh2100 alone | SPDMX alone | their concatenated union, sampled uniformly by song.</li>
+        <li>Budget: 32,000 updates, batch size 8, 10&nbsp;s crops (mono duplicated to stereo).</li>
       </ul>
 
       <h2>Metrics</h2>
       <p>
-        Primary: SI-SDR (dB, ↑), ignoring overall loudness. Report bass–drums (BD)
-        and guitar–piano (GP) means separately. Eval on Slakh2100 and SPDMX held-out
-        mixtures, plus recorded sets where targets map cleanly: MUSDB18 (BD only),
-        MoisesDB, and MedleyDB (union of MedleyDB and MedleyDB 2.0).
+        SI-SDR (dB, ↑): how closely an estimated stem matches its reference while
+        ignoring overall loudness. Report bass–drums (BD) and guitar–piano (GP)
+        means separately. Evaluate on Slakh2100 and SPDMX mixtures, and on recorded
+        corpora: MUSDB18 (BD only), MedleyDB, and MoisesDB.
       </p>
 
       <h2>Results</h2>
@@ -74,17 +74,17 @@
         </table>
       </div>
       <p>
-        In domain, BD is strong on the matching corpus (~10&nbsp;dB), while GP remains
-        several dB lower (guitar weakest). Across synthetic domains and on recorded
-        tests, BD stays near zero or mildly positive (best MoisesDB union BD at
-        +2.4&nbsp;dB), but GP falls to roughly −4 to −12&nbsp;dB. Union retains most
-        in-domain BD on both synthetic sets and has the highest recorded BD point
-        estimates on MoisesDB and MedleyDB.
+        Single-dataset training is predictably strong in-domain and weaker across
+        domains. The Slakh- and SPDMX-trained models are broadly comparable: SPDMX
+        is better on MUSDB18 and comparable on MoisesDB, while Slakh is better on
+        MedleyDB. Training on the union keeps similar in-domain performance and
+        improves generalization on MoisesDB — the best of both worlds. Overall,
+        SPDMX can be used as a standard source-separation dataset alongside Slakh2100.
       </p>
       <p class="caveat">
         Caveats: single matched-step run (no training-run uncertainty); not a
         scaling study on the full corpus; pitched-stem transfer to recordings remains
-        weak. Treat this as an alignment / domain-gap check, not a separation SOTA claim.
+        weak. Treat this as a fixed-budget domain-gap check, not a separation SOTA claim.
       </p>
 
       <h2>Code</h2>

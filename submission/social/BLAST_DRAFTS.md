@@ -17,57 +17,47 @@ uv run python -m submission.social.export_fig_pngs
 
 >250k songs. ~490k open stems. Paired MIDI.
 
-Presenting SPDMX: a listening-guided render of PDMX into CC BY 4.0 stem audio (~5.5k song-hours) 🎧
+Presenting SPDMX: open stem audio from public-domain PDMX (~5.5k song-hours, CC BY 4.0) 🎧
 
 w/ @eduardoescoto_, @zacknovack, @McAuleyLabUCSD
 🧵
 
 ![][headline.png]
 
-<!-- ~195 chars -->
-
 ---
 
-Copyright blocks redistributing training audio. Recorded multitracks are tiny or restricted. Synthetic ones lean on proprietary VSTs, or dry GM renders. 🙁
+Copyright blocks redistributing training audio, especially for tasks that need individual stems. Recorded multitrack datasets are tiny or restricted. Synthetic ones lean on proprietary VSTs, or dry GM renders. 🙁
 🧵2/5
 
 ![][datasets_table.png]
-
-<!-- ~159 chars -->
 
 ---
 
 To alleviate this, SPDMX ships 253,982 songs / 490,159 mono stems / 5,469 song-hours at 44.1 kHz.
 
-88,403 multitrack songs (2,734 h): largest openly-licensed synthetic multitrack by song-hours.
+88,403 multitrack songs (2,734 h; 34.8%): largest openly-licensed synthetic multitrack dataset by song-hours.
 🧵3/5
 
 ![][stems_per_song.png]
 
-<!-- ~196 chars -->
-
 ---
 
-We correct GM programs from track names. Stems concentrate in piano, voice, drums, and orchestral families. Every file joins PDMX metadata on song ID.
+We correct GM programs from track names and pick open FluidSynth / MIDI-DDSP recipes via a listening study. SPDMX easily links to the original PDMX corpus through shared song identifiers.
 🧵4/5
 
 ![][gm_programs.png]
 
-<!-- ~155 chars -->
-
 ---
 
-We run a listening test to pick the most realistic open soundfonts per instrument, and use MIDI-DDSP when possible. No closed VSTs.
+We demo SPDMX for source separation and transcription under fixed budgets to show that it is usable alongside Slakh2100 for synthetic training.
 
 Huge thanks to @eduardoescoto_, @zacknovack, & @McAuleyLabUCSD.
 
-📄: arxiv.org/abs/XXXX.XXXXX
+📄: arxiv.org/abs/2611.09140
 🎧: pnlong.github.io/SPDMX
 🧵5/5
 
 ![][ablation_listening.png]
-
-<!-- ~256 chars -->
 
 ---
 
@@ -77,16 +67,16 @@ Huge thanks to @eduardoescoto_, @zacknovack, & @McAuleyLabUCSD.
 
 >250k songs. ~490k open stems. Paired MIDI.
 
-Excited to share SPDMX: a listening-guided rendering of public-domain PDMX scores into an openly-licensed stem corpus with paired MIDI. We use a listening test to select the most realistic open soundfonts per instrument category, and MIDI-DDSP when possible. 253,982 songs, 490,159 mono stems, and 5,469 song-hours at 44.1 kHz under CC BY 4.0. The 88,403 multitrack songs (2,734 song-hours) are, to our knowledge, the largest openly-licensed synthetic multitrack subset by song-hours.
+Excited to share SPDMX: an openly-licensed stem corpus rendered from public-domain PDMX. 253,982 songs, 490,159 mono stems, and 5,469 song-hours at 44.1 kHz under CC BY 4.0, with paired MIDI and identifiers linking to PDMX metadata. The 88,403 multitrack songs (2,734 song-hours, 34.8%) are, to our knowledge, the largest openly-licensed synthetic multitrack subset by song-hours. We demo SPDMX for source separation and transcription, and release the open creation pipeline for reuse on other symbolic collections.
 
 w/ Eduardo Escoto, Julian McAuley, and Zachary Novack
 
-📄: https://arxiv.org/abs/XXXX.XXXXX
+📄: https://arxiv.org/abs/2611.09140
 🎧: https://pnlong.github.io/SPDMX/
 
 Go listen on the demo page!
 
-Abstract: Large public datasets have driven recent progress in machine learning, from text and vision to speech and general audio. Music remains an outlier, as copyright blocks redistribution of training audio, while many modern tasks need individual stems rather than mixtures. Existing multitrack resources trade off realism, scale, and licensing, while synthetic alternatives rely on proprietary VSTs or naive open rendering that yields weak stems. We introduce SPDMX, a listening-guided rendering of public-domain PDMX scores into an openly-licensed stem corpus with aligned scores and an open render pipeline: 253,982 songs, 490,159 mono stems, and 5,469 song-hours at 44.1 kHz under CC BY 4.0, with paired MIDI and identifiers linking to PDMX metadata. 88,403 songs (34.8%; 2,734 song-hours) provide multitrack supervision. To our knowledge, this is the largest openly-licensed synthetic multitrack subset by song-hours, enabling source separation, stem-conditioned synthesis, MIDI-to-audio, transcription, and joint symbolic–audio modeling. We release the corpus, metadata, and open pipeline for reuse on other symbolic collections. Demos and experimental notes are on the project page.
+Abstract: Large public datasets have driven recent progress in machine learning, from text and vision to speech and general audio. Music remains an outlier, as copyright blocks redistribution of training audio, in particular for modern tasks that need individual stems rather than mixtures. Existing multitrack resources trade off realism, scale, and licensing, as synthetic alternatives rely on proprietary VSTs or naive open rendering that yields weak stems. We introduce SPDMX, an openly-licensed stem corpus rendered from the public-domain PDMX dataset. SPDMX comprises 5,469 song-hours (2,734 song-hours, or 34.8%, of which are multitrack scores) at 44.1 kHz under CC BY 4.0, with paired MIDI and identifiers that link our dataset to PDMX's original metadata. To our knowledge, SPDMX's multitrack subset constitutes the largest openly-licensed synthetic multitrack subset by song-hours. We then demo SPDMX as a dataset for both source separation and transcription, showing how its increased scale can enable better training of models on synthetic data. We release SPDMX, as well as the open creation pipeline for reuse on other symbolic music datasets.
 
 ![][headline.png]
 
