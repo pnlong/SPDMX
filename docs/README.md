@@ -49,6 +49,6 @@ In `assets/`:
 | `download.html` | MDC Part 1 / Part 2 links, extract + symlink instructions |
 | `listen.html` | Stem demos |
 | `soundfonts.html` | Banks |
-| `blog/` | Typed posts (Experiment badges: Demucs, Transcription, SAO, StreamGen, listening ablation) |
+| `blog/` | Listening recipe + SAO extra; Demucs/transcription on arXiv |
 
-Nav is injected by `js/chrome.js` (hamburger on small screens).
+Nav is injected by `js/chrome.js` (hamburger on small screens). Separation/transcription results live in the paper (`arXiv:2611.09140`).

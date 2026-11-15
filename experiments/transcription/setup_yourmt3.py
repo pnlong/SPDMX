@@ -147,7 +147,7 @@ def _write_ready(yourmt3: Path, manifests: Path) -> Path:
             f"cd {src_dir}" if src_dir.is_dir() else f"cd {yourmt3}",
             "export PYTHONPATH=$PWD:${PYTHONPATH:-}",
             "# Point dataset configs at the CSV manifests under analysis/paper_data/transcription_manifests/",
-            "# See docs/blog/transcription.html and experiments/transcription/README.md",
+            "# See experiments/transcription/README.md and submission/main.tex",
         ],
     }
     path = TRANS_DIR / "YOURMT3_READY.json"

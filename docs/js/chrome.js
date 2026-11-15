@@ -67,7 +67,7 @@ export function mountChrome({ active } = {}) {
   const footer = document.querySelector(".site-footer");
   if (footer && !footer.dataset.mounted) {
     footer.dataset.mounted = "1";
-    footer.innerHTML = `<p>SPDMX · <a href="https://github.com/pnlong/SPDMX">GitHub</a> · <a href="${prefix}blog/index.html">Blog</a></p>`;
+    footer.innerHTML = `<p>SPDMX · <a href="https://github.com/pnlong/SPDMX">GitHub</a> · <a href="https://arxiv.org/abs/2611.09140">arXiv</a> · <a href="${prefix}blog/index.html">Blog</a></p>`;
   }
 
   setupNav();

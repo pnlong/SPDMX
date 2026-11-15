@@ -695,8 +695,30 @@ def _soundfont_display_name(entry: dict) -> str:
     return Path(str(raw)).name
 
 
+# Ablation ids in recipe.yaml → public strategy names on the project page.
+# Keep "slakh" out of user-facing copy; that id means the varied-soundfont path.
+_STRATEGY_FROM_ABLATION = {
+    "basic": "basic",
+    "slakh": "varied",
+    "ddsp_basic": "ddsp_basic",
+    "ddsp_slakh": "ddsp_varied",
+}
+_STRATEGY_LABELS = {
+    "basic": "Basic",
+    "varied": "Varied",
+    "ddsp_basic": "MIDI-DDSP (Basic fallback)",
+    "ddsp_varied": "MIDI-DDSP (Varied fallback)",
+}
+_STRATEGY_SUMMARIES = {
+    "basic": "Single FluidSynth bank (SGM-V2.01).",
+    "varied": "Per-category FluidSynth shortlist, sampled per song.",
+    "ddsp_basic": "MIDI-DDSP when eligible; otherwise the Basic bank.",
+    "ddsp_varied": "MIDI-DDSP when eligible; otherwise the Varied shortlist.",
+}
+
+
 def export_soundfonts() -> dict:
-    """Unique FluidSynth banks from the locked varied shortlists (+ basic default)."""
+    """Unique FluidSynth banks + per-category recipe (public strategy names)."""
     import yaml
 
     from experiments.patch_sweep.config import (
@@ -704,6 +726,8 @@ def export_soundfonts() -> dict:
         load_combined_soundfont_catalog,
     )
     from shared.config import SOUNDFONT_PATH
+    from synthesis.patches import LISTENING_CATEGORY_GM_CLASSES
+    from synthesis.recipe import DEFAULT_RECIPE_PATH
 
     catalog = {
         c["id"]: c for c in load_combined_soundfont_catalog().get("candidates", [])
@@ -723,7 +747,38 @@ def export_soundfonts() -> dict:
 
     fonts = sorted(unique.values(), key=lambda r: r["file"].lower())
     basic_file = Path(SOUNDFONT_PATH).name
+    basic_row = {"id": "sgm_v2_01", "file": basic_file}
     archive_url = "https://archive.org/download/free-soundfonts-sf2-2019-04"
+
+    recipe_raw = yaml.safe_load(DEFAULT_RECIPE_PATH.read_text(encoding="utf-8")) or {}
+    categories: list[dict] = []
+    for cat in LISTENING_CATEGORY_GM_CLASSES:
+        ablation = str(recipe_raw.get(cat, "basic")).strip().lower()
+        strategy = _STRATEGY_FROM_ABLATION.get(ablation, ablation)
+        uses_midi_ddsp = strategy.startswith("ddsp_")
+        fallback = None
+        if strategy == "ddsp_basic":
+            fallback = "basic"
+        elif strategy == "ddsp_varied":
+            fallback = "varied"
+        if strategy in ("basic", "ddsp_basic"):
+            banks = [dict(basic_row)]
+        else:
+            banks = list(by_category.get(cat, []))
+        categories.append(
+            {
+                "id": cat,
+                "label": cat.replace("_", " ").title(),
+                "ablation": ablation,
+                "strategy": strategy,
+                "strategy_label": _STRATEGY_LABELS.get(strategy, strategy),
+                "summary": _STRATEGY_SUMMARIES.get(strategy, ""),
+                "uses_midi_ddsp": uses_midi_ddsp,
+                "fallback": fallback,
+                "banks": banks,
+            }
+        )
+
     return {
         "basic": {
             "name": "SGM-V2.01",
@@ -731,14 +786,22 @@ def export_soundfonts() -> dict:
             "note": "Single-bank FluidSynth path for basic / fallback stems.",
         },
         "source": "experiments/patch_sweep/winners_locked.yaml",
+        "recipe_source": "synthesis/recipe.yaml",
         "collection": "Archive.org free-soundfonts-sf2-2019-04",
         "collection_url": archive_url,
         "n_varied": len(fonts),
         "fonts": fonts,
         "by_category": by_category,
+        "strategies": {
+            sid: {"id": sid, "label": lab, "summary": _STRATEGY_SUMMARIES[sid]}
+            for sid, lab in _STRATEGY_LABELS.items()
+        },
+        "categories": categories,
         "caption": (
-            "Varied renders sample a listening-selected shortlist per instrument "
-            "category; basic renders use SGM-V2.01."
+            "Each listening category uses a locked recipe: Basic, Varied, "
+            "MIDI-DDSP with a Basic fallback, or MIDI-DDSP with a Varied fallback. "
+            "Varied banks come from listening shortlists; MIDI-DDSP categories fall "
+            "back to the listed soundfonts when a stem is ineligible for neural synthesis."
         ),
     }
 

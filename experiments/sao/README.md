@@ -1,7 +1,7 @@
 # Lite Stable Audio Open fine-tune PoC
 
-**Status:** complete for the project-page Experiment post
-([`docs/blog/sao.html`](../../docs/blog/sao.html)). Metrics:
+**Status:** optional generative PoC (not in the paper); write-up
+[`docs/blog/sao.html`](../../docs/blog/sao.html). Metrics:
 [`submission/data/sao_metrics.csv`](../../submission/data/sao_metrics.csv)
 (copied from `{SPDMX_OUTPUT_DIR}/dev/experiments/sao/metrics/`).
 

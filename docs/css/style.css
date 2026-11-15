@@ -274,7 +274,7 @@ a:hover {
 
 .post p,
 .post li {
-  max-width: 65ch;
+  max-width: none;
   line-height: 1.55;
 }
 
@@ -390,7 +390,8 @@ a:hover {
   font-size: clamp(1.85rem, 4.2vw, 2.75rem);
   line-height: 1.15;
   letter-spacing: -0.02em;
-  max-width: 28ch;
+  max-width: none;
+  width: 100%;
 }
 
 .authors {
@@ -421,7 +422,6 @@ a:hover {
   margin: 0 0 1.75rem;
   padding: 0;
   width: 100%;
-  max-width: 40rem;
 }
 
 .stat-strip li {
@@ -448,7 +448,8 @@ a:hover {
 
 .hero-abstract {
   margin: 0 0 1.5rem;
-  max-width: 42rem;
+  max-width: none;
+  width: 100%;
   font-size: 1.02rem;
   line-height: 1.55;
   color: var(--ink);
@@ -542,7 +543,7 @@ a:hover {
 }
 
 .section-head {
-  max-width: 40rem;
+  max-width: none;
   margin-bottom: 1.75rem;
 }
 
@@ -831,67 +832,89 @@ figcaption code {
 
 .soundfonts-root {
   display: grid;
-  gap: 1rem;
+  gap: 1.75rem;
 }
 
-.soundfont-basic {
-  margin: 0;
-  padding: 0.85rem 1rem;
+.soundfont-inventory {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.soundfont-dropdown {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: rgba(255, 252, 246, 0.65);
-  font-size: 0.92rem;
-  line-height: 1.45;
+  overflow: hidden;
 }
 
-.soundfont-basic code {
-  font-family: var(--mono);
-  font-size: 0.86em;
-  background: rgba(28, 36, 32, 0.06);
-  padding: 0.05em 0.3em;
-  border-radius: 4px;
-}
-
-.soundfont-panel {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(255, 252, 246, 0.55);
-  padding: 0.15rem 0 0;
-}
-
-.soundfont-panel-title {
-  margin: 0;
-  padding: 0.85rem 1rem 0.35rem;
-  font-family: var(--sans);
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.soundfont-panel-body {
-  padding: 0 1rem 1rem;
-}
-
-.soundfont-grid {
+.soundfont-dropdown > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
   list-style: none;
-  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.soundfont-dropdown > summary::-webkit-details-marker {
+  display: none;
+}
+
+.soundfont-dropdown > summary::after {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+  flex-shrink: 0;
+}
+
+.soundfont-dropdown[open] > summary::after {
+  transform: rotate(-135deg);
+  margin-top: 0.25rem;
+}
+
+.soundfont-dropdown-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
+.soundfont-dropdown-body {
+  padding: 0 1rem 0.9rem;
+  border-top: 1px solid var(--line);
+}
+
+.soundfont-list {
+  list-style: none;
+  margin: 0.65rem 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  gap: 0.35rem 1rem;
+  grid-template-columns: 1fr;
+  gap: 0;
 }
 
-.soundfont-grid li {
+.soundfont-list li {
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   color: var(--ink);
-  line-height: 1.35;
-  padding: 0.2rem 0;
+  line-height: 1.4;
+  padding: 0.4rem 0;
   border-bottom: 1px solid rgba(26, 21, 16, 0.06);
 }
 
+.soundfont-list li:last-child {
+  border-bottom: none;
+}
+
 .soundfont-footnote {
-  margin: 0.75rem 0 0;
+  margin: 0.15rem 0 0;
   font-size: 0.8rem;
   color: var(--muted);
 }
@@ -902,9 +925,121 @@ figcaption code {
   text-underline-offset: 0.15em;
 }
 
-.soundfont-footnote code {
+.soundfont-footnote code,
+.soundfont-category-blurb code,
+.section-head code {
   font-family: var(--mono);
   font-size: 0.86em;
+  background: rgba(28, 36, 32, 0.06);
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+}
+
+.soundfont-categories {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.soundfont-section-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.35rem;
+}
+
+.soundfont-section-lead {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.soundfont-category-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+
+.soundfont-category {
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 252, 246, 0.55);
+}
+
+.soundfont-category-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.soundfont-category-head h3 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.15rem;
+}
+
+.soundfont-strategy-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.7rem;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.soundfont-category-blurb {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.soundfont-category .soundfont-dropdown {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.recipe-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 252, 246, 0.65);
+}
+
+.recipe-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.recipe-table th,
+.recipe-table td {
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.recipe-table th {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.recipe-table tr:last-child td {
+  border-bottom: none;
+}
+
+.recipe-table code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: rgba(28, 36, 32, 0.06);
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
 }
 
 .cite-label {
@@ -970,7 +1105,7 @@ figcaption code {
 }
 
 .download-steps {
-  max-width: 44rem;
+  max-width: none;
 }
 
 .download-steps .code-block {
@@ -981,7 +1116,7 @@ figcaption code {
   margin: 0.65rem 0 0;
   color: var(--muted);
   font-size: 0.92rem;
-  max-width: 44rem;
+  max-width: none;
 }
 
 .download-note code {
@@ -1027,7 +1162,7 @@ figcaption code {
 
 .license {
   color: var(--muted);
-  max-width: 42rem;
+  max-width: none;
 }
 
 .site-footer {

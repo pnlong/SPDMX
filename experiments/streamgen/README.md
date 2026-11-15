@@ -47,4 +47,4 @@ CUDA_VISIBLE_DEVICES=1 uv run --project ../.. \
 
 Placeholder metrics: `uv run python -m experiments.streamgen.train --write-placeholder-metrics`
 
-Blog: `docs/blog/streamgen.html`.
+Optional pilot (not in the paper).

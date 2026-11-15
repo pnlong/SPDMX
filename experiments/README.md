@@ -48,7 +48,7 @@ experiments/
     └── soundfonts.yaml       # candidate GM banks (phase 1)
 ```
 
-Paper / project-page Experiment posts for transcription and StreamGen: see each package `README.md` and `docs/blog/`.
+Paper experiments (separation, transcription) are in `submission/main.tex` / arXiv:2611.09140. Blog: listening recipe + SAO extra (`docs/blog/`). Per-package setup: each subdirectory `README.md`.
 
 ## Setup
 

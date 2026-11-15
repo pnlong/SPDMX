@@ -20,8 +20,12 @@
       <div class="section-head">
         <h2>Soundfonts</h2>
         <p id="soundfonts-blurb">
-          FluidSynth banks behind the release. Basic stems use SGM-V2.01;
-          varied stems draw from listening-selected shortlists.
+          SPDMX renders each stem with a locked per-category recipe: Basic,
+          Varied, MIDI-DDSP with a Basic fallback, or MIDI-DDSP with a Varied
+          fallback. Basic uses one FluidSynth bank (SGM-V2.01); Varied samples a
+          listening-selected shortlist. MIDI-DDSP recipes try neural synthesis
+          first and fall back to the listed banks when a stem is ineligible.
+          Open the dropdowns for bank names.
         </p>
       </div>
       <div id="soundfonts-root" class="soundfonts-root"></div>
