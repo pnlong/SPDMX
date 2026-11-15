@@ -5,6 +5,7 @@
     "note": "Single-bank FluidSynth path for basic / fallback stems."
   },
   "source": "experiments/patch_sweep/winners_locked.yaml",
+  "recipe_source": "synthesis/recipe.yaml",
   "collection": "Archive.org free-soundfonts-sf2-2019-04",
   "collection_url": "https://archive.org/download/free-soundfonts-sf2-2019-04",
   "n_varied": 40,
@@ -456,8 +457,6 @@
       }
     ]
   },
-  "caption": "Each listening category uses a locked recipe: Basic, Varied, MIDI-DDSP with a Basic fallback, or MIDI-DDSP with a Varied fallback. Varied banks come from listening shortlists; MIDI-DDSP categories fall back to the listed soundfonts when a stem is ineligible for neural synthesis.",
-  "recipe_source": "synthesis/recipe.yaml",
   "strategies": {
     "basic": {
       "id": "basic",
@@ -482,6 +481,54 @@
   },
   "categories": [
     {
+      "id": "drums",
+      "label": "Drums",
+      "ablation": "basic",
+      "strategy": "basic",
+      "strategy_label": "Basic",
+      "summary": "Single FluidSynth bank (SGM-V2.01).",
+      "uses_midi_ddsp": false,
+      "fallback": null,
+      "banks": [
+        {
+          "id": "sgm_v2_01",
+          "file": "SGM-V2.01.sf2"
+        }
+      ]
+    },
+    {
+      "id": "organ",
+      "label": "Organ",
+      "ablation": "basic",
+      "strategy": "basic",
+      "strategy_label": "Basic",
+      "summary": "Single FluidSynth bank (SGM-V2.01).",
+      "uses_midi_ddsp": false,
+      "fallback": null,
+      "banks": [
+        {
+          "id": "sgm_v2_01",
+          "file": "SGM-V2.01.sf2"
+        }
+      ]
+    },
+    {
+      "id": "guitar",
+      "label": "Guitar",
+      "ablation": "basic",
+      "strategy": "basic",
+      "strategy_label": "Basic",
+      "summary": "Single FluidSynth bank (SGM-V2.01).",
+      "uses_midi_ddsp": false,
+      "fallback": null,
+      "banks": [
+        {
+          "id": "sgm_v2_01",
+          "file": "SGM-V2.01.sf2"
+        }
+      ]
+    },
+    {
       "id": "piano",
       "label": "Piano",
       "ablation": "slakh",
@@ -502,74 +549,6 @@
         {
           "id": "the_xioad_bank",
           "file": "The_Xioad_Bank.sf2"
-        }
-      ]
-    },
-    {
-      "id": "drums",
-      "label": "Drums",
-      "ablation": "basic",
-      "strategy": "basic",
-      "strategy_label": "Basic",
-      "summary": "Single FluidSynth bank (SGM-V2.01).",
-      "uses_midi_ddsp": false,
-      "fallback": null,
-      "banks": [
-        {
-          "id": "sgm_v2_01",
-          "file": "SGM-V2.01.sf2"
-        }
-      ]
-    },
-    {
-      "id": "strings",
-      "label": "Strings",
-      "ablation": "ddsp_basic",
-      "strategy": "ddsp_basic",
-      "strategy_label": "MIDI-DDSP (Basic fallback)",
-      "summary": "MIDI-DDSP when eligible; otherwise the Basic bank.",
-      "uses_midi_ddsp": true,
-      "fallback": "basic",
-      "banks": [
-        {
-          "id": "sgm_v2_01",
-          "file": "SGM-V2.01.sf2"
-        }
-      ]
-    },
-    {
-      "id": "wind",
-      "label": "Wind",
-      "ablation": "ddsp_slakh",
-      "strategy": "ddsp_varied",
-      "strategy_label": "MIDI-DDSP (Varied fallback)",
-      "summary": "MIDI-DDSP when eligible; otherwise the Varied shortlist.",
-      "uses_midi_ddsp": true,
-      "fallback": "varied",
-      "banks": [
-        {
-          "id": "choriumreva",
-          "file": "ChoriumRevA.SF2"
-        },
-        {
-          "id": "fluidr3_gm2_2",
-          "file": "FluidR3_GM2-2.SF2"
-        },
-        {
-          "id": "merlin_creative_v4_15",
-          "file": "merlin_creative(v4.15).sf2"
-        },
-        {
-          "id": "merlin_gmpro_v3_15",
-          "file": "merlin_GMpro(v3.15).sf2"
-        },
-        {
-          "id": "merlin_grand_v5_37",
-          "file": "merlin_grand(v5.37).sf2"
-        },
-        {
-          "id": "merlin_vienna_v3_20",
-          "file": "merlin_vienna(v3.20).sf2"
         }
       ]
     },
@@ -642,56 +621,8 @@
       ]
     },
     {
-      "id": "organ",
-      "label": "Organ",
-      "ablation": "basic",
-      "strategy": "basic",
-      "strategy_label": "Basic",
-      "summary": "Single FluidSynth bank (SGM-V2.01).",
-      "uses_midi_ddsp": false,
-      "fallback": null,
-      "banks": [
-        {
-          "id": "sgm_v2_01",
-          "file": "SGM-V2.01.sf2"
-        }
-      ]
-    },
-    {
-      "id": "guitar",
-      "label": "Guitar",
-      "ablation": "basic",
-      "strategy": "basic",
-      "strategy_label": "Basic",
-      "summary": "Single FluidSynth bank (SGM-V2.01).",
-      "uses_midi_ddsp": false,
-      "fallback": null,
-      "banks": [
-        {
-          "id": "sgm_v2_01",
-          "file": "SGM-V2.01.sf2"
-        }
-      ]
-    },
-    {
-      "id": "brass",
-      "label": "Brass",
-      "ablation": "ddsp_basic",
-      "strategy": "ddsp_basic",
-      "strategy_label": "MIDI-DDSP (Basic fallback)",
-      "summary": "MIDI-DDSP when eligible; otherwise the Basic bank.",
-      "uses_midi_ddsp": true,
-      "fallback": "basic",
-      "banks": [
-        {
-          "id": "sgm_v2_01",
-          "file": "SGM-V2.01.sf2"
-        }
-      ]
-    },
-    {
       "id": "polyphonic",
-      "label": "Polyphonic",
+      "label": "Miscellaneous",
       "ablation": "slakh",
       "strategy": "varied",
       "strategy_label": "Varied",
@@ -728,6 +659,75 @@
           "file": "yamaha tyros 4_just_t4_fixed.sf2"
         }
       ]
+    },
+    {
+      "id": "strings",
+      "label": "Strings",
+      "ablation": "ddsp_basic",
+      "strategy": "ddsp_basic",
+      "strategy_label": "MIDI-DDSP (Basic fallback)",
+      "summary": "MIDI-DDSP when eligible; otherwise the Basic bank.",
+      "uses_midi_ddsp": true,
+      "fallback": "basic",
+      "banks": [
+        {
+          "id": "sgm_v2_01",
+          "file": "SGM-V2.01.sf2"
+        }
+      ]
+    },
+    {
+      "id": "brass",
+      "label": "Brass",
+      "ablation": "ddsp_basic",
+      "strategy": "ddsp_basic",
+      "strategy_label": "MIDI-DDSP (Basic fallback)",
+      "summary": "MIDI-DDSP when eligible; otherwise the Basic bank.",
+      "uses_midi_ddsp": true,
+      "fallback": "basic",
+      "banks": [
+        {
+          "id": "sgm_v2_01",
+          "file": "SGM-V2.01.sf2"
+        }
+      ]
+    },
+    {
+      "id": "wind",
+      "label": "Wind",
+      "ablation": "ddsp_slakh",
+      "strategy": "ddsp_varied",
+      "strategy_label": "MIDI-DDSP (Varied fallback)",
+      "summary": "MIDI-DDSP when eligible; otherwise the Varied shortlist.",
+      "uses_midi_ddsp": true,
+      "fallback": "varied",
+      "banks": [
+        {
+          "id": "choriumreva",
+          "file": "ChoriumRevA.SF2"
+        },
+        {
+          "id": "fluidr3_gm2_2",
+          "file": "FluidR3_GM2-2.SF2"
+        },
+        {
+          "id": "merlin_creative_v4_15",
+          "file": "merlin_creative(v4.15).sf2"
+        },
+        {
+          "id": "merlin_gmpro_v3_15",
+          "file": "merlin_GMpro(v3.15).sf2"
+        },
+        {
+          "id": "merlin_grand_v5_37",
+          "file": "merlin_grand(v5.37).sf2"
+        },
+        {
+          "id": "merlin_vienna_v3_20",
+          "file": "merlin_vienna(v3.20).sf2"
+        }
+      ]
     }
-  ]
+  ],
+  "caption": "Each listening category uses a locked recipe: Basic, Varied, MIDI-DDSP with a Basic fallback, or MIDI-DDSP with a Varied fallback. Varied banks come from listening shortlists; MIDI-DDSP categories fall back to the listed soundfonts when a stem is ineligible for neural synthesis."
 }

@@ -33,11 +33,13 @@ SONG_LENGTH_REPORT = (
 )
 DEFAULT_STEM_RECIPE = Path(OUTPUT_DIR) / "dev" / "final" / "stem_recipe.csv"
 
-CLIP_SECONDS = 18
+CLIP_SECONDS = 10
 CLIP_HOP_SECONDS = 1.0
 MAX_SCAN_SECONDS = 90.0
 MIN_STEM_RMS = 0.008
 CANDIDATES_PER_DEMO = 48
+CATEGORY_EXAMPLES_PER = 3
+CATEGORY_CANDIDATES = 36
 # Prefer SPDMX_dev for mixes (current on-disk chunk layout may still be split).
 DEMO_SPECS: list[dict] = [
     {
@@ -62,14 +64,41 @@ DEMO_SPECS: list[dict] = [
         "require_all_active": True,
     },
     {
-        "id": "orchestral",
-        "label": "Orchestral hybrid",
-        "blurb": "Mixed orchestral families — strings, brass, reeds, and more.",
-        "filter": "orchestral",
+        "id": "strings",
+        "label": "Strings",
+        "blurb": "Multi-stem writing with bowed strings — a MIDI-DDSP category in the release recipe.",
+        "filter": "strings",
+        "require_all_active": True,
+    },
+    {
+        "id": "brass",
+        "label": "Brass",
+        "blurb": "Multi-stem brass writing — MIDI-DDSP when eligible, Basic soundfont otherwise.",
+        "filter": "brass",
+        "require_all_active": True,
+    },
+    {
+        "id": "wind",
+        "label": "Wind / reed",
+        "blurb": "Woodwind and reed writing — MIDI-DDSP with a Varied soundfont fallback.",
+        "filter": "wind",
+        "require_all_active": True,
+    },
+    {
+        "id": "guitar",
+        "label": "Guitar-led",
+        "blurb": "Songs with guitar stems under the Basic soundfont recipe.",
+        "filter": "guitar",
+        "require_all_active": True,
+    },
+    {
+        "id": "drums",
+        "label": "Drums + keys",
+        "blurb": "Multitrack songs with drums (Basic recipe) alongside other stems.",
+        "filter": "drums",
         "require_all_active": True,
     },
 ]
-
 
 def _write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -270,23 +299,46 @@ def export_chunks(chunks: pd.DataFrame) -> dict:
 
 def _candidate_songs(songs: pd.DataFrame, kind: str) -> pd.DataFrame:
     s = songs
+    gm = s["gm_classes"].fillna("")
     if kind == "solo_piano":
-        hit = s[
-            (s["n_tracks"] == 1)
-            & s["gm_classes"].fillna("").str.fullmatch("piano", case=False)
-        ]
+        hit = s[(s["n_tracks"] == 1) & gm.str.fullmatch("piano", case=False)]
     elif kind == "bdgp":
         hit = s[s["subset:bdgp"] & (s["n_tracks"].between(4, 8))]
     elif kind == "ensemble":
         hit = s[
-            s["gm_classes"].fillna("").str.contains(r"(?:^|\|)ensemble(?:\||$)", regex=True)
+            gm.str.contains(r"(?:^|\|)ensemble(?:\||$)", regex=True)
             & (s["n_tracks"].between(3, 8))
         ]
     elif kind == "orchestral":
         hit = s[
-            s["gm_classes"].fillna("").str.contains("string|brass|reed", case=False, regex=True)
+            gm.str.contains("string|brass|reed", case=False, regex=True)
             & (s["n_tracks"].between(4, 10))
             & ~s["subset:bdgp"]
+        ]
+    elif kind == "strings":
+        hit = s[
+            gm.str.contains(r"(?:^|\|)strings(?:\||$)", case=False, regex=True)
+            & (s["n_tracks"].between(2, 8))
+        ]
+    elif kind == "brass":
+        hit = s[
+            gm.str.contains(r"(?:^|\|)brass(?:\||$)", case=False, regex=True)
+            & (s["n_tracks"].between(2, 8))
+        ]
+    elif kind == "wind":
+        hit = s[
+            gm.str.contains(r"(?:^|\|)(?:pipe|reed)(?:\||$)", case=False, regex=True)
+            & (s["n_tracks"].between(2, 8))
+        ]
+    elif kind == "guitar":
+        hit = s[
+            gm.str.contains(r"(?:^|\|)guitar(?:\||$)", case=False, regex=True)
+            & (s["n_tracks"].between(2, 6))
+        ]
+    elif kind == "drums":
+        hit = s[
+            gm.str.contains(r"(?:^|\|)drums(?:\||$)", case=False, regex=True)
+            & (s["n_tracks"].between(2, 8))
         ]
     else:
         return s.iloc[0:0]
@@ -313,7 +365,11 @@ def _window_rms(y: np.ndarray, sr: int, start_s: float, dur_s: float) -> float:
     return float(np.sqrt(np.mean(seg * seg) + 1e-12))
 
 
-def _best_all_active_start(stem_paths: list[Path]) -> tuple[float, float] | None:
+def _best_all_active_start(
+    stem_paths: list[Path],
+    *,
+    seconds: float = CLIP_SECONDS,
+) -> tuple[float, float] | None:
     """Return (start_sec, score) where every stem is active in the clip window."""
     loaded: list[tuple[np.ndarray, int]] = []
     for path in stem_paths:
@@ -325,18 +381,41 @@ def _best_all_active_start(stem_paths: list[Path]) -> tuple[float, float] | None
         return None
 
     min_dur = min(len(y) / sr for y, sr in loaded)
-    if min_dur < CLIP_SECONDS + 1.0:
+    if min_dur < seconds + 1.0:
         return None
 
     best: tuple[float, float] | None = None
     t = 0.0
-    while t + CLIP_SECONDS <= min_dur:
-        rms = [_window_rms(y, sr, t, CLIP_SECONDS) for y, sr in loaded]
+    while t + seconds <= min_dur:
+        rms = [_window_rms(y, sr, t, seconds) for y, sr in loaded]
         if min(rms) >= MIN_STEM_RMS:
             # Prefer balanced activity (high min, not just one loud stem).
             score = float(min(rms) * (1.0 + float(np.mean(rms))))
             if best is None or score > best[1]:
                 best = (t, score)
+        t += CLIP_HOP_SECONDS
+    return best
+
+
+def _best_active_start(
+    stem_path: Path,
+    *,
+    seconds: float = CLIP_SECONDS,
+) -> tuple[float, float] | None:
+    """Return (start_sec, score) for a single stem with content in the window."""
+    try:
+        y, sr = _load_mono(stem_path)
+    except Exception:
+        return None
+    dur = len(y) / sr
+    if dur < seconds + 0.5:
+        return None
+    best: tuple[float, float] | None = None
+    t = 0.0
+    while t + seconds <= dur:
+        rms = _window_rms(y, sr, t, seconds)
+        if rms >= MIN_STEM_RMS and (best is None or rms > best[1]):
+            best = (t, float(rms))
         t += CLIP_HOP_SECONDS
     return best
 
@@ -542,6 +621,157 @@ def export_audio_demos(
     return {"clip_seconds": CLIP_SECONDS, "demos": demos}
 
 
+def _recipe_strategy_label(category: str) -> str:
+    import yaml
+    from synthesis.recipe import DEFAULT_RECIPE_PATH
+
+    raw = yaml.safe_load(DEFAULT_RECIPE_PATH.read_text(encoding="utf-8")) or {}
+    ablation = str(raw.get(category, "basic")).strip().lower()
+    strategy = _STRATEGY_FROM_ABLATION.get(ablation, ablation)
+    return _STRATEGY_LABELS.get(strategy, strategy)
+
+
+def export_category_stem_examples(
+    stems: pd.DataFrame,
+    *,
+    spdmx_root: Path,
+    stem_recipe_path: Path,
+    audio_dir: Path,
+    examples_per: int = CATEGORY_EXAMPLES_PER,
+) -> list[dict]:
+    """Per listening-category single-stem 10s clips (prefer MIDI-DDSP when present)."""
+    from synthesis.pass_tables import _song_id_from_audio_dir
+
+    if not stem_recipe_path.is_file():
+        print(f"skip category stems: missing {stem_recipe_path}")
+        return []
+
+    recipe = pd.read_csv(
+        stem_recipe_path,
+        usecols=["path", "track", "category", "backend", "method"],
+    )
+    recipe["song_id"] = recipe["path"].map(_song_id_from_audio_dir)
+    recipe["track"] = recipe["track"].astype(int)
+    recipe["backend"] = recipe["backend"].astype(str).str.strip().str.lower()
+    recipe["category"] = recipe["category"].astype(str).str.strip().str.lower()
+
+    stem_meta = stems[
+        ["song_id", "track", "program", "is_drum", "chunk", "name"]
+    ].copy()
+    stem_meta["track"] = stem_meta["track"].astype(int)
+    stem_meta["chunk"] = stem_meta["chunk"].astype(int)
+    merged = recipe.merge(stem_meta, on=["song_id", "track"], how="inner")
+    if merged.empty:
+        print("skip category stems: recipe did not join to stems.csv")
+        return []
+
+    categories_out: list[dict] = []
+    cat_root = audio_dir / "categories"
+    if cat_root.exists():
+        shutil.rmtree(cat_root)
+    cat_root.mkdir(parents=True)
+
+    for category in _ordered_listening_categories():
+        pool = merged[merged["category"] == category]
+        if pool.empty:
+            print(f"skip category {category}: no stems")
+            continue
+
+        preferred = pool[pool["backend"] == "midi_ddsp"]
+        work = preferred if len(preferred) >= examples_per else pool
+        work = work.sort_values(["song_id", "track"]).reset_index(drop=True)
+        n = len(work)
+        idxs = np.unique(
+            np.linspace(0, n - 1, num=min(CATEGORY_CANDIDATES, n), dtype=int)
+        ).tolist()
+
+        picked: list[dict] = []
+        used_songs: set[str] = set()
+        for i in idxs:
+            if len(picked) >= examples_per:
+                break
+            row = work.iloc[int(i)]
+            song_id = str(row["song_id"])
+            if song_id in used_songs:
+                continue
+            track = int(row["track"])
+            chunk = int(row["chunk"])
+            src = next(
+                (
+                    p
+                    for p in (
+                        spdmx_root / f"chunk_{chunk}" / song_id / f"{track}.flac",
+                        spdmx_root
+                        / f"chunk_{chunk}"
+                        / "audio"
+                        / song_id
+                        / f"{track}.flac",
+                        Path(OUTPUT_DIR)
+                        / "SPDMX_dev"
+                        / "audio"
+                        / song_id
+                        / f"{track}.flac",
+                    )
+                    if p.is_file()
+                ),
+                None,
+            )
+            if src is None:
+                continue
+            hit = _best_active_start(src)
+            if hit is None:
+                continue
+            start_s, score = hit
+            out_dir = cat_root / category
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_name = f"{len(picked)}.mp3"
+            out = out_dir / out_name
+            if not _ffmpeg_clip(src, out, start_s=start_s):
+                continue
+            prog = int(row["program"])
+            is_drum = bool(row["is_drum"])
+            backend = str(row["backend"])
+            picked.append(
+                {
+                    "id": f"{category}_{len(picked)}",
+                    "file": f"audio/categories/{category}/{out_name}",
+                    "label": _program_name(prog, is_drum),
+                    "gm_class": _gm_class(prog, is_drum),
+                    "program": prog,
+                    "is_drum": is_drum,
+                    "backend": backend,
+                    "backend_label": (
+                        "MIDI-DDSP" if backend == "midi_ddsp" else "FluidSynth"
+                    ),
+                    "song_id": song_id,
+                    "chunk": chunk,
+                    "track": track,
+                    "clip_start_s": round(float(start_s), 2),
+                    "score": round(float(score), 4),
+                }
+            )
+            used_songs.add(song_id)
+
+        if not picked:
+            print(f"skip category {category}: no contentful clips")
+            continue
+
+        categories_out.append(
+            {
+                "id": category,
+                "label": _category_display_label(category),
+                "recipe": _recipe_strategy_label(category),
+                "examples": picked,
+            }
+        )
+        print(
+            f"category {category}: {len(picked)} stems "
+            f"({sum(1 for e in picked if e['backend'] == 'midi_ddsp')} midi-ddsp)"
+        )
+
+    return categories_out
+
+
 def export_render_backends(recipe_path: Path) -> dict:
     """Break production stems into Basic / Varied soundfonts / MIDI-DDSP.
 
@@ -715,6 +945,48 @@ _STRATEGY_SUMMARIES = {
     "ddsp_basic": "MIDI-DDSP when eligible; otherwise the Basic bank.",
     "ddsp_varied": "MIDI-DDSP when eligible; otherwise the Varied shortlist.",
 }
+# Paper Fig. listening order; ``polyphonic`` is shown as Miscellaneous.
+PAPER_CATEGORY_ORDER = (
+    "drums",
+    "organ",
+    "guitar",
+    "piano",
+    "voice",
+    "mallet",
+    "polyphonic",
+    "strings",
+    "brass",
+    "wind",
+)
+CATEGORY_DISPLAY_LABELS = {
+    "drums": "Drums",
+    "organ": "Organ",
+    "guitar": "Guitar",
+    "piano": "Piano",
+    "voice": "Voice",
+    "mallet": "Mallet",
+    "polyphonic": "Miscellaneous",
+    "strings": "Strings",
+    "brass": "Brass",
+    "wind": "Wind",
+}
+
+
+def _category_display_label(category: str) -> str:
+    return CATEGORY_DISPLAY_LABELS.get(
+        category, category.replace("_", " ").title()
+    )
+
+
+def _ordered_listening_categories() -> list[str]:
+    from synthesis.patches import LISTENING_CATEGORY_GM_CLASSES
+
+    known = set(LISTENING_CATEGORY_GM_CLASSES)
+    ordered = [c for c in PAPER_CATEGORY_ORDER if c in known]
+    for c in LISTENING_CATEGORY_GM_CLASSES:
+        if c not in ordered:
+            ordered.append(c)
+    return ordered
 
 
 def export_soundfonts() -> dict:
@@ -726,7 +998,6 @@ def export_soundfonts() -> dict:
         load_combined_soundfont_catalog,
     )
     from shared.config import SOUNDFONT_PATH
-    from synthesis.patches import LISTENING_CATEGORY_GM_CLASSES
     from synthesis.recipe import DEFAULT_RECIPE_PATH
 
     catalog = {
@@ -752,7 +1023,7 @@ def export_soundfonts() -> dict:
 
     recipe_raw = yaml.safe_load(DEFAULT_RECIPE_PATH.read_text(encoding="utf-8")) or {}
     categories: list[dict] = []
-    for cat in LISTENING_CATEGORY_GM_CLASSES:
+    for cat in _ordered_listening_categories():
         ablation = str(recipe_raw.get(cat, "basic")).strip().lower()
         strategy = _STRATEGY_FROM_ABLATION.get(ablation, ablation)
         uses_midi_ddsp = strategy.startswith("ddsp_")
@@ -768,7 +1039,7 @@ def export_soundfonts() -> dict:
         categories.append(
             {
                 "id": cat,
-                "label": cat.replace("_", " ").title(),
+                "label": _category_display_label(cat),
                 "ablation": ablation,
                 "strategy": strategy,
                 "strategy_label": _STRATEGY_LABELS.get(strategy, strategy),
@@ -890,6 +1161,18 @@ def main() -> None:
             dev_root=args.dev_root,
             audio_dir=audio_dir,
         )
+        # Drop retired mix folders (e.g. old orchestral) not in DEMO_SPECS.
+        keep_mix_ids = {d["id"] for d in DEMO_SPECS} | {"categories"}
+        for child in audio_dir.iterdir():
+            if child.is_dir() and child.name not in keep_mix_ids:
+                shutil.rmtree(child)
+        categories = export_category_stem_examples(
+            stems,
+            spdmx_root=root,
+            stem_recipe_path=args.stem_recipe,
+            audio_dir=audio_dir,
+        )
+        manifest["categories"] = categories
         _write_json(audio_dir / "manifest.json", manifest)
     else:
         print("skip audio demos")

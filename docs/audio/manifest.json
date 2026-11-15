@@ -1,12 +1,12 @@
 {
-  "clip_seconds": 18,
+  "clip_seconds": 10,
   "demos": [
     {
       "id": "solo_piano",
       "label": "Solo piano",
       "blurb": "Single-stem Acoustic Grand \u2014 typical of ~65% of the corpus.",
       "song_id": "0/0/Qma113RUUvApyeCqFzReRGQgzyoTbvx5sgm91MGkokDcMW",
-      "chunk": 45,
+      "chunk": 13,
       "n_tracks": 1,
       "clip_start_s": 5.0,
       "gm_classes": "piano",
@@ -27,9 +27,9 @@
       "label": "Bass \u00b7 Drums \u00b7 Guitar \u00b7 Piano",
       "blurb": "Four-stem BDGP subset matching common separation targets (bass, drums, guitar, piano).",
       "song_id": "1/0/Qmb1snovwcer7En7fZ3JcCLHx4LbPgReGzbJjixng1kK4W",
-      "chunk": 63,
+      "chunk": 34,
       "n_tracks": 4,
-      "clip_start_s": 72.0,
+      "clip_start_s": 80.0,
       "gm_classes": "bass|drums|guitar|piano",
       "mix": "audio/bdgp/mix.mp3",
       "stems": [
@@ -72,9 +72,9 @@
       "label": "Choir / ensemble",
       "blurb": "Multi-stem writing in the GM ensemble family (e.g. choir aahs).",
       "song_id": "0/0/Qma18FVED5wsWh2EpqKca5b56XeVHMcv6ioSU1TkVFrgXy",
-      "chunk": 55,
+      "chunk": 11,
       "n_tracks": 3,
-      "clip_start_s": 67.0,
+      "clip_start_s": 75.0,
       "gm_classes": "ensemble|piano",
       "mix": "audio/ensemble/mix.mp3",
       "stems": [
@@ -105,47 +105,669 @@
       ]
     },
     {
-      "id": "orchestral",
-      "label": "Orchestral hybrid",
-      "blurb": "Mixed orchestral families \u2014 strings, brass, reeds, and more.",
-      "song_id": "0/0/Qma1VWM2HvX9FA52cskFDZ2KmdfB1v21FExvyqAFPcMaL7",
-      "chunk": 25,
-      "n_tracks": 4,
+      "id": "strings",
+      "label": "Strings",
+      "blurb": "Multi-stem writing with bowed strings \u2014 a MIDI-DDSP category in the release recipe.",
+      "song_id": "0/1/Qma2ECeJ8uXzPTGiU5HUqYgHcbAj2Tcjc5NVXBL3pRT329",
+      "chunk": 28,
+      "n_tracks": 2,
       "clip_start_s": 24.0,
-      "gm_classes": "reed",
-      "mix": "audio/orchestral/mix.mp3",
+      "gm_classes": "strings",
+      "mix": "audio/strings/mix.mp3",
       "stems": [
         {
           "track": 0,
-          "file": "audio/orchestral/0.mp3",
-          "label": "Soprano Sax",
-          "gm_class": "reed",
-          "program": 64,
+          "file": "audio/strings/0.mp3",
+          "label": "Violin",
+          "gm_class": "strings",
+          "program": 40,
           "is_drum": false
         },
         {
           "track": 1,
-          "file": "audio/orchestral/1.mp3",
+          "file": "audio/strings/1.mp3",
+          "label": "Violin",
+          "gm_class": "strings",
+          "program": 40,
+          "is_drum": false
+        }
+      ]
+    },
+    {
+      "id": "brass",
+      "label": "Brass",
+      "blurb": "Multi-stem brass writing \u2014 MIDI-DDSP when eligible, Basic soundfont otherwise.",
+      "song_id": "0/18/QmaEiaKjTDFqAFVzZmTP6CaHtTaPPRf4wLKXJ8ETsBa3tE",
+      "chunk": 63,
+      "n_tracks": 2,
+      "clip_start_s": 24.0,
+      "gm_classes": "brass",
+      "mix": "audio/brass/mix.mp3",
+      "stems": [
+        {
+          "track": 0,
+          "file": "audio/brass/0.mp3",
+          "label": "Muted Trumpet",
+          "gm_class": "brass",
+          "program": 59,
+          "is_drum": false
+        },
+        {
+          "track": 1,
+          "file": "audio/brass/1.mp3",
+          "label": "Trombone",
+          "gm_class": "brass",
+          "program": 57,
+          "is_drum": false
+        }
+      ]
+    },
+    {
+      "id": "wind",
+      "label": "Wind / reed",
+      "blurb": "Woodwind and reed writing \u2014 MIDI-DDSP with a Varied soundfont fallback.",
+      "song_id": "0/0/Qma17geh2s3cKLnKXZ4hKyFwbywK8p95KVYj7ArRVK4Aaa",
+      "chunk": 51,
+      "n_tracks": 2,
+      "clip_start_s": 29.0,
+      "gm_classes": "reed",
+      "mix": "audio/wind/mix.mp3",
+      "stems": [
+        {
+          "track": 0,
+          "file": "audio/wind/0.mp3",
           "label": "Alto Sax",
           "gm_class": "reed",
           "program": 65,
           "is_drum": false
         },
         {
-          "track": 2,
-          "file": "audio/orchestral/2.mp3",
-          "label": "Tenor Sax",
+          "track": 1,
+          "file": "audio/wind/1.mp3",
+          "label": "Alto Sax",
           "gm_class": "reed",
-          "program": 66,
+          "program": 65,
+          "is_drum": false
+        }
+      ]
+    },
+    {
+      "id": "guitar",
+      "label": "Guitar-led",
+      "blurb": "Songs with guitar stems under the Basic soundfont recipe.",
+      "song_id": "0/0/Qma1eBhgpvND87CYVSgbFBDcZi2FbJ744LVWkdMVwpTvUh",
+      "chunk": 21,
+      "n_tracks": 2,
+      "clip_start_s": 19.0,
+      "gm_classes": "guitar",
+      "mix": "audio/guitar/mix.mp3",
+      "stems": [
+        {
+          "track": 0,
+          "file": "audio/guitar/0.mp3",
+          "label": "Acoustic Guitar (nylon)",
+          "gm_class": "guitar",
+          "program": 24,
           "is_drum": false
         },
         {
-          "track": 3,
-          "file": "audio/orchestral/3.mp3",
-          "label": "Baritone Sax",
-          "gm_class": "reed",
-          "program": 67,
+          "track": 1,
+          "file": "audio/guitar/1.mp3",
+          "label": "Acoustic Guitar (nylon)",
+          "gm_class": "guitar",
+          "program": 24,
           "is_drum": false
+        }
+      ]
+    },
+    {
+      "id": "drums",
+      "label": "Drums + keys",
+      "blurb": "Multitrack songs with drums (Basic recipe) alongside other stems.",
+      "song_id": "0/0/Qma1wPEPbMLT5M95GTcNuv7L4iyxDku6NKz61TVWj2DUYs",
+      "chunk": 61,
+      "n_tracks": 2,
+      "clip_start_s": 15.0,
+      "gm_classes": "drums",
+      "mix": "audio/drums/mix.mp3",
+      "stems": [
+        {
+          "track": 0,
+          "file": "audio/drums/0.mp3",
+          "label": "Drums",
+          "gm_class": "drums",
+          "program": 0,
+          "is_drum": true
+        },
+        {
+          "track": 1,
+          "file": "audio/drums/1.mp3",
+          "label": "Drums",
+          "gm_class": "drums",
+          "program": 0,
+          "is_drum": true
+        }
+      ]
+    }
+  ],
+  "categories": [
+    {
+      "id": "drums",
+      "label": "Drums",
+      "recipe": "Basic",
+      "examples": [
+        {
+          "id": "drums_0",
+          "file": "audio/categories/drums/0.mp3",
+          "label": "Drums",
+          "gm_class": "drums",
+          "program": 0,
+          "is_drum": true,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/0/Qma11MhFz64u8wRiW1cTZ5VJ4zTQWbYbVHDnMGafAFoaN6",
+          "chunk": 8,
+          "track": 4,
+          "clip_start_s": 0.0,
+          "score": 0.0603
+        },
+        {
+          "id": "drums_1",
+          "file": "audio/categories/drums/1.mp3",
+          "label": "Drums",
+          "gm_class": "drums",
+          "program": 96,
+          "is_drum": true,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/54/Qmay2KyFgAh2nbygZEUmTckQHCMRKXypY9r6TvY7cAJxT2",
+          "chunk": 44,
+          "track": 13,
+          "clip_start_s": 4.0,
+          "score": 0.0303
+        },
+        {
+          "id": "drums_2",
+          "file": "audio/categories/drums/2.mp3",
+          "label": "Drums",
+          "gm_class": "drums",
+          "program": 48,
+          "is_drum": true,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "1/30/QmbLSb37kJ7TRMsHjDnRX3Hkho4rKCKBheNfbeeKRxGHsU",
+          "chunk": 13,
+          "track": 5,
+          "clip_start_s": 9.0,
+          "score": 0.0517
+        }
+      ]
+    },
+    {
+      "id": "organ",
+      "label": "Organ",
+      "recipe": "Basic",
+      "examples": [
+        {
+          "id": "organ_0",
+          "file": "audio/categories/organ/0.mp3",
+          "label": "Accordion",
+          "gm_class": "organ",
+          "program": 21,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/0/Qma1JRcxE66P2c2LAtq6PFamtb27i6vJPfaPyTMEpSWmPU",
+          "chunk": 33,
+          "track": 0,
+          "clip_start_s": 39.0,
+          "score": 0.0618
+        },
+        {
+          "id": "organ_1",
+          "file": "audio/categories/organ/1.mp3",
+          "label": "Church Organ",
+          "gm_class": "organ",
+          "program": 19,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/34/QmaNGhzmY4KZtdVeRSZt3VcJL8DUTKUpUFfAaWu9FwzFDu",
+          "chunk": 19,
+          "track": 1,
+          "clip_start_s": 51.0,
+          "score": 0.0721
+        },
+        {
+          "id": "organ_2",
+          "file": "audio/categories/organ/2.mp3",
+          "label": "Church Organ",
+          "gm_class": "organ",
+          "program": 19,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/7/Qma8a8BaiMX7KNhWU1G5BZr9n8AG4jchh716xqCT8CmsPJ",
+          "chunk": 46,
+          "track": 5,
+          "clip_start_s": 12.0,
+          "score": 0.0222
+        }
+      ]
+    },
+    {
+      "id": "guitar",
+      "label": "Guitar",
+      "recipe": "Basic",
+      "examples": [
+        {
+          "id": "guitar_0",
+          "file": "audio/categories/guitar/0.mp3",
+          "label": "Acoustic Guitar (steel)",
+          "gm_class": "guitar",
+          "program": 25,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/0/Qma1LseHYwUG8oKvSU3FSAETDHDABvUKTwTq56WrHh1V6f",
+          "chunk": 24,
+          "track": 0,
+          "clip_start_s": 21.0,
+          "score": 0.0826
+        },
+        {
+          "id": "guitar_1",
+          "file": "audio/categories/guitar/1.mp3",
+          "label": "Electric Guitar (muted)",
+          "gm_class": "guitar",
+          "program": 28,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/36/QmapvxtaK5gswPE1rwChZr2R4iE1thjuNjfzo6HwuEqa1d",
+          "chunk": 35,
+          "track": 0,
+          "clip_start_s": 30.0,
+          "score": 0.0879
+        },
+        {
+          "id": "guitar_2",
+          "file": "audio/categories/guitar/2.mp3",
+          "label": "Acoustic Guitar (nylon)",
+          "gm_class": "guitar",
+          "program": 24,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/9/Qmaa6zgW92mEVQXRgeDnZEJVkdWMJzJDKx31rgGfC1nMdK",
+          "chunk": 8,
+          "track": 1,
+          "clip_start_s": 41.0,
+          "score": 0.0827
+        }
+      ]
+    },
+    {
+      "id": "piano",
+      "label": "Piano",
+      "recipe": "Varied",
+      "examples": [
+        {
+          "id": "piano_0",
+          "file": "audio/categories/piano/0.mp3",
+          "label": "Acoustic Grand Piano",
+          "gm_class": "piano",
+          "program": 0,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/0/Qma113RUUvApyeCqFzReRGQgzyoTbvx5sgm91MGkokDcMW",
+          "chunk": 13,
+          "track": 0,
+          "clip_start_s": 6.0,
+          "score": 0.0915
+        },
+        {
+          "id": "piano_1",
+          "file": "audio/categories/piano/1.mp3",
+          "label": "Acoustic Grand Piano",
+          "gm_class": "piano",
+          "program": 0,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/33/Qmanzt6tRgKid9EmhwhB8z6HNfmiRaTLZmfgBR6hoLFBr9",
+          "chunk": 20,
+          "track": 0,
+          "clip_start_s": 16.0,
+          "score": 0.0812
+        },
+        {
+          "id": "piano_2",
+          "file": "audio/categories/piano/2.mp3",
+          "label": "Acoustic Grand Piano",
+          "gm_class": "piano",
+          "program": 0,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/8/Qma9H7SdJWeByA6c4QKTwo9XcrEVAH3PqHsMyxCibXD5JH",
+          "chunk": 25,
+          "track": 0,
+          "clip_start_s": 0.0,
+          "score": 0.0798
+        }
+      ]
+    },
+    {
+      "id": "voice",
+      "label": "Voice",
+      "recipe": "Varied",
+      "examples": [
+        {
+          "id": "voice_0",
+          "file": "audio/categories/voice/0.mp3",
+          "label": "Choir Aahs",
+          "gm_class": "ensemble",
+          "program": 52,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/0/Qma18FVED5wsWh2EpqKca5b56XeVHMcv6ioSU1TkVFrgXy",
+          "chunk": 11,
+          "track": 0,
+          "clip_start_s": 73.0,
+          "score": 0.0863
+        },
+        {
+          "id": "voice_1",
+          "file": "audio/categories/voice/1.mp3",
+          "label": "Choir Aahs",
+          "gm_class": "ensemble",
+          "program": 52,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/35/QmaoKj3qAEBHdQhKBd3Lcq1pck7YcMuLj3jPTZL3DKXk7S",
+          "chunk": 50,
+          "track": 0,
+          "clip_start_s": 41.0,
+          "score": 0.0961
+        },
+        {
+          "id": "voice_2",
+          "file": "audio/categories/voice/2.mp3",
+          "label": "Choir Aahs",
+          "gm_class": "ensemble",
+          "program": 52,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "1/0/Qmb1XDxAuaEXuzSL2BzrZJnDtkaaP7CwQpDVBiaRo1sZj5",
+          "chunk": 1,
+          "track": 1,
+          "clip_start_s": 2.0,
+          "score": 0.0777
+        }
+      ]
+    },
+    {
+      "id": "mallet",
+      "label": "Mallet",
+      "recipe": "Varied",
+      "examples": [
+        {
+          "id": "mallet_0",
+          "file": "audio/categories/mallet/0.mp3",
+          "label": "Vibraphone",
+          "gm_class": "chromatic_percussion",
+          "program": 11,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/0/Qma1YZhbHM3SPRYonbFonXDjvWFg1zWLKNgYPVLC1bDm79",
+          "chunk": 54,
+          "track": 0,
+          "clip_start_s": 27.0,
+          "score": 0.0816
+        },
+        {
+          "id": "mallet_1",
+          "file": "audio/categories/mallet/1.mp3",
+          "label": "Vibraphone",
+          "gm_class": "chromatic_percussion",
+          "program": 11,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/29/QmaKwt5BEXk6w6dGXkDd3PYox35UikxR8NqJXqqG4Vs1d9",
+          "chunk": 53,
+          "track": 8,
+          "clip_start_s": 53.0,
+          "score": 0.0506
+        },
+        {
+          "id": "mallet_2",
+          "file": "audio/categories/mallet/2.mp3",
+          "label": "Xylophone",
+          "gm_class": "chromatic_percussion",
+          "program": 13,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/53/QmaXHDEwwiSdSgPxLXUnxMwhvcgoBAYCBv9F2wfQ2Vhndn",
+          "chunk": 5,
+          "track": 13,
+          "clip_start_s": 0.0,
+          "score": 0.0381
+        }
+      ]
+    },
+    {
+      "id": "polyphonic",
+      "label": "Miscellaneous",
+      "recipe": "Varied",
+      "examples": [
+        {
+          "id": "polyphonic_0",
+          "file": "audio/categories/polyphonic/0.mp3",
+          "label": "Slap Bass 2",
+          "gm_class": "bass",
+          "program": 37,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/0/Qma1c7LuqVV8Jyw1GmBnwdqKZPeoNTahvqbNkYZqQhMwN2",
+          "chunk": 46,
+          "track": 7,
+          "clip_start_s": 25.0,
+          "score": 0.0622
+        },
+        {
+          "id": "polyphonic_1",
+          "file": "audio/categories/polyphonic/1.mp3",
+          "label": "Slap Bass 2",
+          "gm_class": "bass",
+          "program": 37,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/30/QmaLJyNuJENiWk89UwZsB8P2GMBBi6bE5ezqcpy5mZY3aa",
+          "chunk": 24,
+          "track": 5,
+          "clip_start_s": 5.0,
+          "score": 0.0728
+        },
+        {
+          "id": "polyphonic_2",
+          "file": "audio/categories/polyphonic/2.mp3",
+          "label": "Pad 2 (warm)",
+          "gm_class": "synth_pad",
+          "program": 89,
+          "is_drum": false,
+          "backend": "fluidsynth",
+          "backend_label": "FluidSynth",
+          "song_id": "0/50/QmawTB6bpdvGZ7jLPxrJrg27tuP5hcEUBvk2d1QC5vB51n",
+          "chunk": 28,
+          "track": 2,
+          "clip_start_s": 13.0,
+          "score": 0.0667
+        }
+      ]
+    },
+    {
+      "id": "strings",
+      "label": "Strings",
+      "recipe": "MIDI-DDSP (Basic fallback)",
+      "examples": [
+        {
+          "id": "strings_0",
+          "file": "audio/categories/strings/0.mp3",
+          "label": "Cello",
+          "gm_class": "strings",
+          "program": 42,
+          "is_drum": false,
+          "backend": "midi_ddsp",
+          "backend_label": "MIDI-DDSP",
+          "song_id": "0/0/Qma1CmBS4rKjpqWgckrqmZppQQY8u3d7dUdCgAEBCSfUzg",
+          "chunk": 32,
+          "track": 0,
+          "clip_start_s": 71.0,
+          "score": 0.0682
+        },
+        {
+          "id": "strings_1",
+          "file": "audio/categories/strings/1.mp3",
+          "label": "Cello",
+          "gm_class": "strings",
+          "program": 42,
+          "is_drum": false,
+          "backend": "midi_ddsp",
+          "backend_label": "MIDI-DDSP",
+          "song_id": "0/36/QmapwaGHyv6VPZf9zhBQWWiHQKCNF1JuJG1upEgLADnRos",
+          "chunk": 21,
+          "track": 2,
+          "clip_start_s": 37.0,
+          "score": 0.0693
+        },
+        {
+          "id": "strings_2",
+          "file": "audio/categories/strings/2.mp3",
+          "label": "Cello",
+          "gm_class": "strings",
+          "program": 42,
+          "is_drum": false,
+          "backend": "midi_ddsp",
+          "backend_label": "MIDI-DDSP",
+          "song_id": "0/8/Qma9LQ1AoY7DSwEPtH7MxKpggPhTGWA1r8BQjJUwYL2NMC",
+          "chunk": 22,
+          "track": 0,
+          "clip_start_s": 19.0,
+          "score": 0.0714
+        }
+      ]
+    },
+    {
+      "id": "brass",
+      "label": "Brass",
+      "recipe": "MIDI-DDSP (Basic fallback)",
+      "examples": [
+        {
+          "id": "brass_0",
+          "file": "audio/categories/brass/0.mp3",
+          "label": "Trombone",
+          "gm_class": "brass",
+          "program": 57,
+          "is_drum": false,
+          "backend": "midi_ddsp",
+          "backend_label": "MIDI-DDSP",
+          "song_id": "0/0/Qma11MhFz64u8wRiW1cTZ5VJ4zTQWbYbVHDnMGafAFoaN6",
+          "chunk": 8,
+          "track": 1,
+          "clip_start_s": 75.0,
+          "score": 0.0625
+        },
+        {
+          "id": "brass_1",
+          "file": "audio/categories/brass/1.mp3",
+          "label": "Tuba",
+          "gm_class": "brass",
+          "program": 58,
+          "is_drum": false,
+          "backend": "midi_ddsp",
+          "backend_label": "MIDI-DDSP",
+          "song_id": "0/33/QmanKGb4epA4b1VhDryvK5uCRPX1kQFBiHgZbwsysmFCW8",
+          "chunk": 38,
+          "track": 1,
+          "clip_start_s": 16.0,
+          "score": 0.0892
+        },
+        {
+          "id": "brass_2",
+          "file": "audio/categories/brass/2.mp3",
+          "label": "Tuba",
+          "gm_class": "brass",
+          "program": 58,
+          "is_drum": false,
+          "backend": "midi_ddsp",
+          "backend_label": "MIDI-DDSP",
+          "song_id": "0/7/Qma8uXGsFFcXXZ8gAPVKCBPiYTpjXnSr4Yjcvfaod7ghju",
+          "chunk": 48,
+          "track": 7,
+          "clip_start_s": 49.0,
+          "score": 0.0659
+        }
+      ]
+    },
+    {
+      "id": "wind",
+      "label": "Wind",
+      "recipe": "MIDI-DDSP (Varied fallback)",
+      "examples": [
+        {
+          "id": "wind_0",
+          "file": "audio/categories/wind/0.mp3",
+          "label": "Tenor Sax",
+          "gm_class": "reed",
+          "program": 66,
+          "is_drum": false,
+          "backend": "midi_ddsp",
+          "backend_label": "MIDI-DDSP",
+          "song_id": "0/0/Qma17QDkQeaFVTi6vAj46MqWbztfC5fHn4m64fatBoNNvW",
+          "chunk": 36,
+          "track": 0,
+          "clip_start_s": 46.0,
+          "score": 0.0702
+        },
+        {
+          "id": "wind_1",
+          "file": "audio/categories/wind/1.mp3",
+          "label": "Clarinet",
+          "gm_class": "reed",
+          "program": 71,
+          "is_drum": false,
+          "backend": "midi_ddsp",
+          "backend_label": "MIDI-DDSP",
+          "song_id": "0/33/QmanCz9Bi9YyBKSv1rZoGK4CPpoi8U9m9452wsoJJQ1BWZ",
+          "chunk": 32,
+          "track": 3,
+          "clip_start_s": 1.0,
+          "score": 0.0431
+        },
+        {
+          "id": "wind_2",
+          "file": "audio/categories/wind/2.mp3",
+          "label": "Clarinet",
+          "gm_class": "reed",
+          "program": 71,
+          "is_drum": false,
+          "backend": "midi_ddsp",
+          "backend_label": "MIDI-DDSP",
+          "song_id": "0/7/Qma8Lob5yMU3n67CBiuewxR7cvqzkQ2Bz9xfvHj4DZ2Sr3",
+          "chunk": 34,
+          "track": 1,
+          "clip_start_s": 44.0,
+          "score": 0.0693
         }
       ]
     }

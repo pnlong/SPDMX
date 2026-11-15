@@ -4,14 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Listen · SPDMX</title>
-  <meta name="description" content="SPDMX stem demo player.">
+  <meta name="description" content="SPDMX listening demos: mix excerpts and per-category single stems.">
   <link rel="icon" href="assets/favicon.ico" sizes="any">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
-  <script type="module" src="js/listen.js"></script>
+  <meta http-equiv="Cache-Control" content="no-cache">
+  <link rel="stylesheet" href="css/style.css?v=listen3">
+  <script type="module" src="js/listen.js?v=listen3"></script>
 </head>
 <body>
   <header class="site-header"></header>
@@ -20,11 +21,11 @@
       <div class="section-head">
         <h2>Listen</h2>
         <p>
-          Clips from the release. Play starts every stem in sync; Mute and Solo change
-          who you hear. Only one demo plays at a time.
+          Short clips from the release: multi-stem mixes first, then single-stem
+          examples by instrument category (including MIDI-DDSP strings, brass, and wind).
         </p>
       </div>
-      <div id="demo-root" class="demo-root"></div>
+      <div id="demo-root" class="listen-page"></div>
     </section>
   </main>
   <footer class="site-footer"></footer>

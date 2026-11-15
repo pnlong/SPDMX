@@ -24,6 +24,53 @@ function strategyLabel(cat) {
   return map[cat.strategy] || cat.strategy || "Basic";
 }
 
+const PAPER_CATEGORY_ORDER = [
+  "drums",
+  "organ",
+  "guitar",
+  "piano",
+  "voice",
+  "mallet",
+  "polyphonic",
+  "strings",
+  "brass",
+  "wind",
+];
+
+const CATEGORY_DISPLAY_LABELS = {
+  drums: "Drums",
+  organ: "Organ",
+  guitar: "Guitar",
+  piano: "Piano",
+  voice: "Voice",
+  mallet: "Mallet",
+  polyphonic: "Miscellaneous",
+  strings: "Strings",
+  brass: "Brass",
+  wind: "Wind",
+};
+
+function categoryDisplayLabel(cat) {
+  return (
+    CATEGORY_DISPLAY_LABELS[cat.id] ||
+    cat.label ||
+    String(cat.id || "").replaceAll("_", " ")
+  );
+}
+
+function orderCategories(categories) {
+  const byId = new Map((categories || []).map((c) => [c.id, c]));
+  const ordered = [];
+  for (const id of PAPER_CATEGORY_ORDER) {
+    if (byId.has(id)) {
+      ordered.push(byId.get(id));
+      byId.delete(id);
+    }
+  }
+  for (const cat of byId.values()) ordered.push(cat);
+  return ordered;
+}
+
 function bankListHtml(banks) {
   const rows = (banks || [])
     .map((f) => `<li title="${escapeHtml(f.id || "")}">${escapeHtml(f.file || f.id)}</li>`)
@@ -62,15 +109,16 @@ function categoryBlurb(cat) {
 }
 
 function categoryCardHtml(cat) {
-  const label = strategyLabel(cat);
+  const recipe = strategyLabel(cat);
+  const name = categoryDisplayLabel(cat);
   const banksTitle = cat.uses_midi_ddsp
-    ? `Fallback soundfonts · ${cat.label}`
-    : `Soundfonts · ${cat.label}`;
+    ? `Fallback soundfonts · ${name}`
+    : `Soundfonts · ${name}`;
   return `
     <article class="soundfont-category">
       <div class="soundfont-category-head">
-        <h3>${escapeHtml(cat.label)}</h3>
-        <span class="soundfont-strategy-pill">${escapeHtml(label)}</span>
+        <h3>${escapeHtml(name)}</h3>
+        <span class="soundfont-strategy-pill">${escapeHtml(recipe)}</span>
       </div>
       <p class="soundfont-category-blurb">${categoryBlurb(cat)}</p>
       ${bankDropdownHtml({ title: banksTitle, banks: cat.banks })}
@@ -101,7 +149,7 @@ export async function renderSoundfonts() {
 
   const basic = data.basic || {};
   const fonts = data.fonts || [];
-  const categories = data.categories || [];
+  const categories = orderCategories(data.categories || []);
   const n = data.n_varied ?? fonts.length;
   const basicBanks = [{ id: "sgm_v2_01", file: basic.file || "SGM-V2.01.sf2" }];
 
@@ -154,7 +202,7 @@ export async function renderRecipeTable() {
     return;
   }
 
-  const categories = data.categories || [];
+  const categories = orderCategories(data.categories || []);
   if (!categories.length) {
     mount.innerHTML =
       "<p class='chart-note'>No per-category recipe data in soundfonts.json.</p>";
@@ -172,7 +220,7 @@ export async function renderRecipeTable() {
         : "—";
       return `
         <tr>
-          <td>${escapeHtml(cat.label)}</td>
+          <td>${escapeHtml(categoryDisplayLabel(cat))}</td>
           <td>${escapeHtml(recipe)}</td>
           <td>${escapeHtml(primary)}</td>
           <td>${escapeHtml(fallback)}</td>

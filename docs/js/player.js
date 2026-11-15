@@ -1,10 +1,12 @@
 async function loadManifest() {
-  const res = await fetch("audio/manifest.json");
-  if (!res.ok) return { demos: [] };
+  const res = await fetch(`audio/manifest.json?v=${Date.now()}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) return { demos: [], categories: [] };
   return res.json();
 }
 
-/** Only one demo card may play at a time. */
+/** Only one demo / stem clip may play at a time. */
 const mixers = [];
 
 function stopOtherMixers(except) {
@@ -191,20 +193,34 @@ function padLabels(labels) {
   return { width, padded: labels.map((s) => s.padEnd(width, " ")) };
 }
 
-function buildDemoCard(demo) {
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function buildDemoCard(demo, { compact = false, showMuteSolo = true } = {}) {
   const card = document.createElement("article");
-  card.className = "demo-card";
+  card.className = compact ? "demo-card demo-card-compact" : "demo-card";
 
   const stemLabels = (demo.stems || []).map((s) => s.label || `Track ${s.track}`);
   const { width, padded } = padLabels(stemLabels);
+  const clipS = demo.clip_seconds ?? 10;
+  const meta =
+    demo.meta ||
+    `${clipS}s · chunk ${demo.chunk} · ${demo.n_tracks} stem${
+      demo.n_tracks === 1 ? "" : "s"
+    }`;
 
   card.innerHTML = `
     <header>
       <div>
-        <h3 title="${demo.song_id || ""}">${demo.label}</h3>
-        <p class="blurb">${demo.blurb || ""}</p>
+        <h3 title="${escapeHtml(demo.song_id || "")}">${escapeHtml(demo.label)}</h3>
+        ${demo.blurb ? `<p class="blurb">${escapeHtml(demo.blurb)}</p>` : ""}
       </div>
-      <div class="demo-meta">chunk ${demo.chunk} · ${demo.n_tracks} stems</div>
+      <div class="demo-meta">${escapeHtml(meta)}</div>
     </header>
     <div class="mixer-transport">
       <button type="button" class="mixer-btn icon-btn primary" data-action="play" aria-label="Play" title="Play">
@@ -229,7 +245,7 @@ function buildDemoCard(demo) {
   `;
 
   const list = document.createElement("div");
-  list.className = "stem-list";
+  list.className = showMuteSolo ? "stem-list" : "stem-list stem-list-hidden";
   list.style.setProperty("--stem-label-ch", String(width));
 
   (demo.stems || []).forEach((stem, i) => {
@@ -238,12 +254,15 @@ function buildDemoCard(demo) {
     row.dataset.track = String(stem.track ?? i);
     row.dataset.mute = "0";
     row.dataset.solo = "0";
-    row.innerHTML = `
-      <span class="stem-label">${padded[i]}</span>
-      <div class="stem-actions">
+    const actions = showMuteSolo
+      ? `<div class="stem-actions">
         <button type="button" data-action="mute" aria-pressed="false">Mute</button>
         <button type="button" data-action="solo" aria-pressed="false">Solo</button>
-      </div>
+      </div>`
+      : "";
+    row.innerHTML = `
+      <span class="stem-label">${padded[i]}</span>
+      ${actions}
       <audio data-role="stem" preload="metadata" src="${stem.file}"></audio>
     `;
     list.append(row);
@@ -254,18 +273,157 @@ function buildDemoCard(demo) {
   return card;
 }
 
+function buildStemExampleCard(ex, clipSeconds) {
+  const backend = ex.backend_label || ex.backend || "";
+  return buildDemoCard(
+    {
+      label: ex.label || "Stem",
+      blurb: backend,
+      song_id: ex.song_id,
+      chunk: ex.chunk,
+      n_tracks: 1,
+      clip_seconds: clipSeconds,
+      meta: `${clipSeconds}s · ${backend || "FluidSynth"} · chunk ${ex.chunk ?? "—"}`,
+      stems: [
+        {
+          track: ex.track ?? 0,
+          file: ex.file,
+          label: ex.label || "Stem",
+        },
+      ],
+    },
+    { compact: true, showMuteSolo: false },
+  );
+}
+
+const PAPER_CATEGORY_ORDER = [
+  "drums",
+  "organ",
+  "guitar",
+  "piano",
+  "voice",
+  "mallet",
+  "polyphonic",
+  "strings",
+  "brass",
+  "wind",
+];
+
+const CATEGORY_DISPLAY_LABELS = {
+  drums: "Drums",
+  organ: "Organ",
+  guitar: "Guitar",
+  piano: "Piano",
+  voice: "Voice",
+  mallet: "Mallet",
+  polyphonic: "Miscellaneous",
+  strings: "Strings",
+  brass: "Brass",
+  wind: "Wind",
+};
+
+function orderCategories(categories) {
+  const byId = new Map((categories || []).map((c) => [c.id, c]));
+  const ordered = [];
+  for (const id of PAPER_CATEGORY_ORDER) {
+    if (byId.has(id)) {
+      ordered.push(byId.get(id));
+      byId.delete(id);
+    }
+  }
+  for (const cat of byId.values()) ordered.push(cat);
+  return ordered;
+}
+
+function categoryDisplayLabel(cat) {
+  return (
+    CATEGORY_DISPLAY_LABELS[cat.id] ||
+    cat.label ||
+    String(cat.id || "").replaceAll("_", " ")
+  );
+}
+
+function buildCategorySection(categories, clipSeconds) {
+  const section = document.createElement("section");
+  section.className = "listen-categories";
+  section.innerHTML = `
+    <div class="section-head listen-section-head">
+      <h2>By category</h2>
+      <p>
+        Single-stem ${clipSeconds}s excerpts — three per listening category, chosen
+        for audible content. MIDI-DDSP categories prefer neural stems when available.
+      </p>
+    </div>
+  `;
+
+  const list = document.createElement("div");
+  list.className = "listen-category-list";
+
+  for (const cat of orderCategories(categories)) {
+    const details = document.createElement("details");
+    details.className = "listen-category";
+    const n = (cat.examples || []).length;
+    details.innerHTML = `
+      <summary>
+        <span class="listen-category-title">${escapeHtml(categoryDisplayLabel(cat))}</span>
+        <span class="listen-category-meta">${escapeHtml(cat.recipe || "")} · ${n} clips</span>
+      </summary>
+    `;
+
+    const body = document.createElement("div");
+    body.className = "listen-category-body";
+
+    for (const ex of cat.examples || []) {
+      body.append(buildStemExampleCard(ex, clipSeconds));
+    }
+
+    details.append(body);
+    list.append(details);
+  }
+
+  section.append(list);
+  return section;
+}
+
 export async function renderDemos() {
   const root = document.getElementById("demo-root");
   if (!root) return;
   const manifest = await loadManifest();
   root.innerHTML = "";
   mixers.length = 0;
-  if (!manifest.demos?.length) {
+
+  const demos = manifest.demos || [];
+  const categories = manifest.categories || [];
+  const clipSeconds = manifest.clip_seconds ?? 10;
+
+  if (!demos.length && !categories.length) {
     root.innerHTML =
       "<p class='chart-note'>Audio demos will appear here after export.</p>";
     return;
   }
-  for (const demo of manifest.demos) {
-    root.append(buildDemoCard(demo));
+
+  if (demos.length) {
+    const mixes = document.createElement("section");
+    mixes.className = "listen-mixes";
+    mixes.innerHTML = `
+      <div class="section-head listen-section-head">
+        <h2>Mixes</h2>
+        <p>
+          ${clipSeconds}s excerpts with every stem in sync. Mute and Solo change who
+          you hear. Only one clip plays at a time.
+        </p>
+      </div>
+    `;
+    const grid = document.createElement("div");
+    grid.className = "demo-root";
+    for (const demo of demos) {
+      grid.append(buildDemoCard({ ...demo, clip_seconds: clipSeconds }));
+    }
+    mixes.append(grid);
+    root.append(mixes);
+  }
+
+  if (categories.length) {
+    root.append(buildCategorySection(categories, clipSeconds));
   }
 }
