@@ -36,8 +36,7 @@ ROWS = [
 
 FOOTNOTE = (
     "*Slakh2100: Suspect CC BY audio, but proprietary VST renderers.  "
-    "SPDMX includes single-stem songs; multitrack = ≥2 stems.  "
-    "MedleyDB = MedleyDB ∪ MedleyDB 2.0."
+    "SPDMX (All) includes single-stem songs; SPDMX (Multitrack) is the ≥2-stem subset."
 )
 
 
