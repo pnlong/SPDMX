@@ -600,7 +600,7 @@ def synthesize_song_at_index(
                     continue
                 if stem_is_valid(out_stem) and not args.reset and plan is None:
                     continue
-                waveform = _render_soundfont_stem(
+                waveform, soundfont_id, fx_profile = _render_soundfont_stem(
                     track_path, meta, args, path_output,
                 )
                 save_stem(waveform, song_dir, j, audio_format)
@@ -609,6 +609,8 @@ def synthesize_song_at_index(
                     recipe_rows.append(plan.sidecar_row(
                         path=path_output, track=j, backend=BACKEND_FLUIDSYNTH,
                         reason=meta.get("ddsp_reason"),
+                        soundfont_id=soundfont_id,
+                        fx_profile=fx_profile,
                     ))
             for path in track_paths:
                 if exists(path):
@@ -760,6 +762,8 @@ def synthesize_song_at_index(
                 out_stem = stem_path(song_dir, j, audio_format)
                 source = "rendered"
                 original_path = None
+                stem_soundfont_id = None
+                stem_fx_profile = None
                 neural_track = backend in ("midi_ddsp", "ddsp_piano") and (
                     not hybrid or meta.get("neural_ok")
                 )
@@ -805,13 +809,21 @@ def synthesize_song_at_index(
                         )
                         if stem_is_valid(alt):
                             donor_stem = alt
+                    stem_soundfont_id = None
+                    stem_fx_profile = None
                     if stem_is_valid(donor_stem):
                         copy_stem(donor_stem, out_stem)
                         source = reused_source_label(donor_mode)
                         original_path = str(donor_stem.resolve())
+                        # Donor audio already exists; re-resolve the pick for logging.
+                        _, stem_soundfont_id, stem_fx_profile = _resolve_soundfont_render(
+                            meta, args, path_output,
+                        )
                     elif getattr(args, "allow_fallback_render", False):
-                        waveform = _render_soundfont_stem(
-                            track_path, meta, args, path_output,
+                        waveform, stem_soundfont_id, stem_fx_profile = (
+                            _render_soundfont_stem(
+                                track_path, meta, args, path_output,
+                            )
                         )
                         save_stem(waveform, song_dir, j, audio_format)
                     else:
@@ -826,8 +838,10 @@ def synthesize_song_at_index(
                             "Or pass --allow-fallback-render to Fluidsynth-render missing donors."
                         )
                 else:
-                    waveform = _render_soundfont_stem(
-                        track_path, meta, args, path_output,
+                    waveform, stem_soundfont_id, stem_fx_profile = (
+                        _render_soundfont_stem(
+                            track_path, meta, args, path_output,
+                        )
                     )
                     save_stem(waveform, song_dir, j, audio_format)
 
@@ -848,6 +862,8 @@ def synthesize_song_at_index(
                         recipe_rows.append(plan.sidecar_row(
                             path=path_output, track=j, backend=backend_name,
                             reason=meta.get("ddsp_reason"),
+                            soundfont_id=stem_soundfont_id,
+                            fx_profile=stem_fx_profile,
                         ))
                     remove(track_path)
                     continue
@@ -881,6 +897,8 @@ def synthesize_song_at_index(
                     recipe_rows.append(plan.sidecar_row(
                         path=path_output, track=j, backend=backend_name,
                         reason=meta.get("ddsp_reason"),
+                        soundfont_id=stem_soundfont_id,
+                        fx_profile=stem_fx_profile,
                     ))
                 remove(track_path)
             temp_dir.cleanup()
@@ -888,9 +906,10 @@ def synthesize_song_at_index(
             waveforms = []
             for j, track_path in enumerate(track_paths):
                 meta = track_render_meta[j]
-                waveforms.append(
-                    _render_soundfont_stem(track_path, meta, args, path_output)
+                waveform, _, _ = _render_soundfont_stem(
+                    track_path, meta, args, path_output,
                 )
+                waveforms.append(waveform)
                 remove(track_path)
             temp_dir.cleanup()
             for j, waveform in enumerate(waveforms):
@@ -900,8 +919,12 @@ def synthesize_song_at_index(
     return song_info, stem_rows, routing_rows, recipe_rows, 1
 
 
-def _render_soundfont_stem(track_path: str, meta: dict, args, path_output: str):
+def _resolve_soundfont_render(
+    meta: dict, args, path_output: str,
+) -> tuple[str, str | None, str | None]:
+    """Return ``(soundfont_filepath, soundfont_id, fx_profile)`` for a stem."""
     soundfont_filepath = meta.get("soundfont_filepath") or args.soundfont_filepath
+    soundfont_id = meta.get("soundfont_id")
     fx_profile = meta.get("fx_profile")
     if meta.get("use_slakh", uses_slakh_recipes(getattr(args, "render_mode", "") or "")):
         from experiments.patch_sweep.config import soundfont_file_for_id
@@ -912,14 +935,14 @@ def _render_soundfont_stem(track_path: str, meta: dict, args, path_output: str):
             soundfont_ids = [meta["soundfont_id"]]
         category = meta.get("category") or "default"
         if soundfont_ids:
-            picked = pick_soundfont_id(
+            soundfont_id = pick_soundfont_id(
                 list(soundfont_ids),
                 category=category,
                 song_path=path_output,
                 sample_seed=args.sample_seed,
             )
             soundfont_filepath = str(
-                Path(SOUNDFONT_DIR) / soundfont_file_for_id(picked)
+                Path(SOUNDFONT_DIR) / soundfont_file_for_id(soundfont_id)
             )
         elif meta.get("soundfont"):
             soundfont_filepath = str(Path(SOUNDFONT_DIR) / meta["soundfont"])
@@ -936,11 +959,39 @@ def _render_soundfont_stem(track_path: str, meta: dict, args, path_output: str):
             )
     elif meta.get("soundfont"):
         soundfont_filepath = str(Path(SOUNDFONT_DIR) / meta["soundfont"])
-    return get_waveform_tensor(
+    if not soundfont_id:
+        soundfont_id = _soundfont_id_for_filepath(soundfont_filepath)
+    return str(soundfont_filepath), soundfont_id, fx_profile
+
+
+def _soundfont_id_for_filepath(soundfont_filepath: str | None) -> str | None:
+    """Best-effort catalog id for a concrete ``.sf2`` path (basic / default SF)."""
+    if not soundfont_filepath:
+        return None
+    try:
+        from experiments.patch_sweep.config import load_combined_soundfont_catalog
+    except ImportError:
+        return Path(soundfont_filepath).stem
+    name = Path(soundfont_filepath).name
+    for entry in load_combined_soundfont_catalog().get("candidates", []):
+        if Path(entry.get("file", "")).name == name:
+            return str(entry["id"])
+    return Path(soundfont_filepath).stem
+
+
+def _render_soundfont_stem(
+    track_path: str, meta: dict, args, path_output: str,
+) -> tuple:
+    """Render one stem; return ``(waveform, soundfont_id, fx_profile)``."""
+    soundfont_filepath, soundfont_id, fx_profile = _resolve_soundfont_render(
+        meta, args, path_output,
+    )
+    waveform = get_waveform_tensor(
         track_path,
         soundfont_filepath,
         fx_profile=fx_profile,
     )
+    return waveform, soundfont_id, fx_profile
 
 
 _WORKER_CTX: dict = {}

@@ -70,6 +70,7 @@ songs.csv  1 ──<  stems.csv     join key: song_id
 | **`stems.csv`** | one row per stem | `(song_id, track)` | load audio; instrument filters |
 | **`songs.csv`** | one row per song | `song_id` | corpus subsets; song-level filters |
 | **`chunks.csv`** | one row per chunk | `chunk` | Zenodo download planning |
+| **`stem_soundfonts.csv`** | one row per stem | `(song_id, track)` | soundfont / backend provenance (also in repo [`indexes/`](../../indexes/)) |
 
 Always prefer filtering **songs** first, then restricting stems:
 
@@ -101,6 +102,20 @@ stems_c0 = stems[stems["chunk"] == 0]
 
 Audio file for a row: `{path}/{track}.flac`. Full mix: `{mix}` (or
 `{path}/mix.flac`). Dense MIDI: `{mid}` (or `{path}/mix.mid`).
+
+### `stem_soundfonts.csv` columns
+
+Optional provenance table (gzipped under [`indexes/`](../../indexes/) on GitHub). Join to
+`stems.csv` on `(song_id, track)`.
+
+| Column | Meaning |
+|--------|---------|
+| `category` | Listening / recipe category (`piano`, `voice`, …) |
+| `ablation` / `method` / `backend` | From production `stem_recipe.csv` |
+| `soundfont_id` | Bank used when known; empty for neural or unlogged slakh picks |
+| `soundfont_id_locked` | Category primary from `winners_locked.yaml` |
+| `fx_profile` | `dry` / `light` / `warm` when known |
+| `provenance` | `recorded`, `basic_default`, `neural`, `slakh_unlogged`, … |
 
 ### `songs.csv` columns
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import random
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,14 +97,21 @@ def resolve_phase1_soundfont_id(category: str, winners_path: Path = WINNERS_PATH
     return ids[0] if ids else None
 
 
+def _stable_seed_int(*parts: object) -> int:
+    """Process-stable RNG seed (unlike ``hash()``, which is randomized per process)."""
+    payload = "\0".join(str(p) for p in parts).encode("utf-8")
+    digest = hashlib.sha256(payload).digest()
+    return int.from_bytes(digest[:8], "big") & 0x7FFFFFFF
+
+
 def soundfont_seed(sample_seed: int, song_path: str, category: str) -> int:
     """Seed soundfont RNG per (song, listening category)."""
-    return hash((sample_seed, song_path, category)) & 0x7FFFFFFF
+    return _stable_seed_int(sample_seed, song_path, category)
 
 
 def fx_profile_seed(sample_seed: int, song_path: str, category: str) -> int:
     """Seed FX RNG per (song, listening category), independent of soundfont pick."""
-    return hash((sample_seed, song_path, category, "fx")) & 0x7FFFFFFF
+    return _stable_seed_int(sample_seed, song_path, category, "fx")
 
 
 def pick_soundfont_id(

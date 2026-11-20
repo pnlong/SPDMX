@@ -34,6 +34,11 @@ STEM_RECIPE_COLUMNS = [
     # Why this backend was chosen (e.g. midi_ddsp_eligible, soundfont_polyphonic).
     # Empty/NA on older rows written before this column existed.
     "reason",
+    # Fluidsynth bank id from winners_locked / default SF; empty for neural backends.
+    # Empty/NA on rows written before this column existed.
+    "soundfont_id",
+    # FX profile applied with the soundfont render (dry/light/warm); often empty.
+    "fx_profile",
 ]
 
 METHOD_BASIC = "basic"
@@ -89,6 +94,8 @@ class TrackPlan:
         backend: str,
         realify: bool | None = None,
         reason: str | None = None,
+        soundfont_id: str | None = None,
+        fx_profile: str | None = None,
     ) -> dict[str, Any]:
         applied = self.realify if realify is None else bool(realify)
         return {
@@ -101,6 +108,8 @@ class TrackPlan:
             "backend": backend,
             "realify": applied,
             "reason": reason,
+            "soundfont_id": soundfont_id,
+            "fx_profile": fx_profile,
         }
 
 

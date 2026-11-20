@@ -85,7 +85,11 @@ Flat working tree during render:
 └── mix/<song_id>.flac
 ```
 
-Schema and joins: [`synthesis/spdmx_release/README.md`](synthesis/spdmx_release/README.md). Rebuild the chunked tree after mixes exist:
+Schema and joins: [`synthesis/spdmx_release/README.md`](synthesis/spdmx_release/README.md).
+
+**Indexes without the audio:** gzipped `stems.csv` / `songs.csv` / `stem_soundfonts.csv` live in [`indexes/`](indexes/) on this repo.
+
+Rebuild the chunked tree after mixes exist:
 
 ```bash
 uv run python -m synthesis.final --only-pass mix -j 8
